@@ -185,6 +185,19 @@ const Auth = (() => {
         return;
       }
 
+      // Mudança de endereço (22/10/2026): o login antigo ficava num endereço
+      // compartilhado com outros sites. No primeiro login neste navegador,
+      // encerra as outras sessões do usuário para que um token antigo copiado
+      // de lá deixe de valer. Uma vez só por navegador.
+      try {
+        if (!localStorage.getItem('cf_sessoes_antigas_encerradas')) {
+          const { error: outrasErr } = await supabaseClient.auth.signOut({ scope: 'others' });
+          if (!outrasErr) localStorage.setItem('cf_sessoes_antigas_encerradas', new Date().toISOString());
+        }
+      } catch (e) {
+        console.warn('Não foi possível encerrar as sessões antigas:', e);
+      }
+
       await showApp(data.user);
     } catch (err) {
       console.error("ERRO DE LOGIN COMPLETO:", err);
