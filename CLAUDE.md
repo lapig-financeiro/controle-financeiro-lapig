@@ -85,7 +85,7 @@ Uma linha por regra; o porquê e os incidentes de cada uma estão em **[docs/con
 - **Detalhe técnico só para admin** (`detalheTecnico()`): não é segurança, é público-alvo.
 - **Página Buriti**: o agente propõe, o humano aplica pela mesma revisão da importação comum; a revisão tem três grupos (Precisa de você / Já classificadas / Não entram em rubrica).
 - **Sidebar em seções**: Rotina Mensal / Acompanhamento / Cadastros; só "Usuários & Centros de Custo" é admin.
-- **Publicação**: `deploy.yml` publica `frontend/` no GitHub Pages a partir do `master`; antes de tornar o repo público, `docs/seguranca-publicacao.md`.
+- **Publicação**: `deploy.yml` publica `frontend/` no GitHub Pages a partir do `master`, em `https://lapig-financeiro.github.io/controle-financeiro-lapig/`. O repo fica na organização `lapig-financeiro` só para ter um endereço próprio: o login do Supabase mora no `localStorage`, que é por endereço, e o antigo (`victorgit10.github.io`) era dividido com 22 sites (mudança de 22/10/2026). **Nenhum outro site com Pages nessa organização.** O endereço antigo redireciona pelo repo `VictorGit10/victorgit10.github.io`; nunca recriar `VictorGit10/controle-financeiro-lapig` (o cofre usa o redirecionamento do nome antigo).
 - **A projeção mensal vem da RPC** (`calc_project_monthly`); o `SimulationEngine` só responde dentro da simulação.
 - **Valores monetários** em `numeric`; exibição com `formatBRL()`.
 - **Página inicial** é `projetos` (também na re-inicialização).

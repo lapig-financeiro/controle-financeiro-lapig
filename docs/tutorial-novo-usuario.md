@@ -11,7 +11,7 @@ nada de técnica — é tudo clicar e confirmar.
 
 ## 1. Entrar no sistema
 
-1. Abra o site: **https://victorgit10.github.io/controle-financeiro-lapig/**
+1. Abra o site: **https://lapig-financeiro.github.io/controle-financeiro-lapig/**
 2. Clique em **Entrar** e digite o login e a senha que você recebeu.
 3. Se for a primeira vez, a tela vai aparecer **vazia** — isso é normal.
    O próximo passo é criar o centro de custo.

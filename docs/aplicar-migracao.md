@@ -29,7 +29,7 @@ O Victor não lê SQL nem código e não entra no GitHub. Ele só dá **"ok" no 
      (<o que muda>). Volte em alguns minutos — não é preciso fazer nada."}`; commit
      `chore(site): manutenção LIGADA para aplicar a NNN` e push no `master`;
    - esperar o `deploy.yml` daquele commit terminar e conferir no ar
-     (`curl -s "https://victorgit10.github.io/controle-financeiro-lapig/manutencao.json?x=$RANDOM"` → `"ativo": true`);
+     (`curl -s "https://lapig-financeiro.github.io/controle-financeiro-lapig/manutencao.json?x=$RANDOM"` → `"ativo": true`);
      o site bloqueia inclusive quem está com ele aberto em até 1 min — esperar esse minuto;
    - só então disparar o `aplicar`. Depois de aplicar **e conferir**, voltar a `{"ativo": false, "mensagem": ""}`
      no commit `chore(site): manutenção DESLIGADA — NNN aplicada em produção (dd/mm/aaaa)`, junto com o registro
