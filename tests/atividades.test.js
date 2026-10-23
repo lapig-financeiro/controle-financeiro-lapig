@@ -1,37 +1,40 @@
 import { describe, it, expect } from 'vitest';
-import { grupoAtividade, motivoAgora, proximoPasso, prazoCurto, lerCaptura } from '../frontend/js/components/buriti-tarefas.js';
+import { faixaAtividade, sinalAtividade, precisaConfirmar, prazoAtividade, proximoPasso, prazoCurto, lerCaptura } from '../frontend/js/components/buriti-tarefas.js';
 
-const hoje = new Date(2026, 9, 9, 15, 0);
+const hoje = new Date(2026, 9, 9, 15, 0); // sexta-feira, 09/10/2026
 const tarefa = (extra = {}) => ({ id: 't', status: 'em_andamento', prazo: null, situacao: null, precisa_atencao: false,
-  aviso_responsavel: null, tarefa_passos: [{ id: 'p1', ordem: 1, descricao: 'Ligar para a FUNAPE', quem: 'Arthur', executor: 'pessoa', estado: 'pendente' }], ...extra });
+  aviso_responsavel: null, responsavel_id: 'v', tarefa_passos: [{ id: 'p1', ordem: 1, descricao: 'Ligar para a FUNAPE', quem: 'Arthur', executor: 'pessoa', estado: 'pendente' }], ...extra });
 
-describe('grupos da tela de Atividades', () => {
-  it('prazo em até 2 dias, vencida ou travada: precisa de atenção, para todos', () => {
-    expect(grupoAtividade(tarefa({ prazo: '2026-10-11' }), { hoje })).toBe('agora');
-    expect(grupoAtividade(tarefa({ prazo: '2026-10-12' }), { hoje })).toBe('andamento');
-    expect(grupoAtividade(tarefa({ prazo: '2026-10-01' }), { hoje })).toBe('agora');
-    expect(grupoAtividade(tarefa({ situacao: 'travado' }), { hoje })).toBe('agora');
+describe('faixas da tela de Atividades', () => {
+  it('atrasada e hoje, esta semana (até domingo), depois, sem prazo e encerrada', () => {
+    expect(faixaAtividade(tarefa({ prazo: '2026-10-05' }), { hoje })).toBe('hoje');
+    expect(faixaAtividade(tarefa({ prazo: '2026-10-09' }), { hoje })).toBe('hoje');
+    expect(faixaAtividade(tarefa({ prazo: '2026-10-10' }), { hoje })).toBe('semana');
+    expect(faixaAtividade(tarefa({ prazo: '2026-10-11' }), { hoje })).toBe('semana');
+    expect(faixaAtividade(tarefa({ prazo: '2026-10-12' }), { hoje })).toBe('depois');
+    expect(faixaAtividade(tarefa(), { hoje })).toBe('sem_prazo');
+    expect(faixaAtividade(tarefa({ status: 'concluida', prazo: '2026-10-05' }), { hoje })).toBe('encerrada');
   });
-  it('passo marcado como feito e pedido de atenção só puxam para cima na visão do admin', () => {
-    const feita = tarefa({ tarefa_passos: [{ ...tarefa().tarefa_passos[0], estado: 'sugerido' }] });
-    expect(grupoAtividade(feita, { admin: true, hoje })).toBe('agora');
-    expect(grupoAtividade(feita, { admin: false, hoje })).toBe('andamento');
-    expect(grupoAtividade(tarefa({ aviso_responsavel: 'Arthur: travado' }), { admin: true, hoje })).toBe('agora');
-    expect(grupoAtividade(tarefa({ precisa_atencao: true, motivo_atencao: 'x' }), { admin: false, hoje })).toBe('andamento');
+  it('esperar alguém de fora vence a data, mesmo atrasada', () => {
+    expect(faixaAtividade(tarefa({ status: 'aguardando_terceiro', prazo: '2026-10-01' }), { hoje })).toBe('esperando');
+    expect(faixaAtividade(tarefa({ situacao: 'esperando', prazo: '2026-10-09' }), { hoje })).toBe('esperando');
   });
-  it('esperando alguém de fora e encerradas', () => {
-    expect(grupoAtividade(tarefa({ status: 'aguardando_terceiro' }), { hoje })).toBe('esperando');
-    expect(grupoAtividade(tarefa({ situacao: 'esperando' }), { hoje })).toBe('esperando');
-    expect(grupoAtividade(tarefa({ status: 'aguardando_terceiro', prazo: '2026-10-09' }), { hoje })).toBe('agora');
-    expect(grupoAtividade(tarefa({ status: 'concluida' }), { hoje })).toBe('encerrada');
+  it('no domingo não existe "esta semana": o que vem depois é "depois"', () => {
+    const domingo = new Date(2026, 9, 11, 10, 0);
+    expect(faixaAtividade(tarefa({ prazo: '2026-10-11' }), { hoje: domingo })).toBe('hoje');
+    expect(faixaAtividade(tarefa({ prazo: '2026-10-12' }), { hoje: domingo })).toBe('depois');
   });
-  it('o motivo diz o principal em poucas palavras', () => {
-    expect(motivoAgora(tarefa({ prazo: '2026-10-07' }), { hoje })).toBe('vencida há 2 dias');
-    expect(motivoAgora(tarefa({ prazo: '2026-10-08' }), { hoje })).toBe('vencida há 1 dia');
-    expect(motivoAgora(tarefa({ prazo: '2026-10-09' }), { hoje })).toBe('vence hoje');
-    expect(motivoAgora(tarefa({ prazo: '2026-10-10' }), { hoje })).toBe('vence amanhã');
-    expect(motivoAgora(tarefa({ situacao: 'travado', prazo: '2026-10-10' }), { hoje })).toBe('travada');
-    expect(motivoAgora(tarefa({ tarefa_passos: [{ ...tarefa().tarefa_passos[0], estado: 'sugerido' }] }), { admin: true, hoje })).toBe('confirmar');
+  it('o sinal da linha: confirmar e atenção só para o admin; esperando para todos', () => {
+    const sugerido = tarefa({ tarefa_passos: [{ ...tarefa().tarefa_passos[0], estado: 'sugerido' }] });
+    expect(precisaConfirmar(sugerido)).toBe(true);
+    expect(sinalAtividade(sugerido, { admin: true })).toEqual({ chave: 'confirmar', texto: 'confirmar passo' });
+    expect(sinalAtividade(sugerido, { admin: false })).toBeNull();
+    expect(sinalAtividade(tarefa({ aviso_responsavel: 'Arthur: travado' }), { admin: true }))
+      .toEqual({ chave: 'atencao', texto: 'precisa de você' });
+    expect(sinalAtividade(tarefa({ status: 'aguardando_terceiro' }), { admin: false }))
+      .toEqual({ chave: 'esperando', texto: 'esperando' });
+    expect(sinalAtividade(tarefa({ situacao: 'travado' }), { admin: false }))
+      .toEqual({ chave: 'travado', texto: 'travada' });
   });
 });
 
@@ -53,6 +56,13 @@ describe('próximo passo e prazo curto', () => {
     expect(prazoCurto('2026-10-14', hoje)).toEqual({ texto: 'em 5 dias', nivel: 'perto' });
     expect(prazoCurto('2026-10-31', hoje)).toEqual({ texto: '31 out', nivel: 'longe' });
     expect(prazoCurto('2026-10-06', hoje)).toEqual({ texto: 'venceu há 3 dias', nivel: 'vencido' });
+  });
+  it('na linha, atraso é "há N dias" e sem prazo não escreve nada', () => {
+    expect(prazoAtividade(null, hoje)).toEqual({ texto: '', nivel: 'nenhum' });
+    expect(prazoAtividade('2026-10-06', hoje)).toEqual({ texto: 'há 3 dias', nivel: 'atrasado' });
+    expect(prazoAtividade('2026-10-09', hoje)).toEqual({ texto: 'hoje', nivel: 'hoje' });
+    expect(prazoAtividade('2026-10-10', hoje)).toEqual({ texto: 'amanhã', nivel: 'perto' });
+    expect(prazoAtividade('2026-10-31', hoje)).toEqual({ texto: '31 out', nivel: 'longe' });
   });
 });
 

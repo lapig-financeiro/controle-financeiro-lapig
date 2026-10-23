@@ -168,34 +168,69 @@ function diasAte(prazo, hoje = new Date()) {
 
 const aberta = t => ['em_andamento', 'aguardando_terceiro'].includes(t.status);
 
-// Em que grupo a atividade aparece. "agora": vence em até 2 dias, travou, ou (para o admin) tem passo
-// marcado como feito esperando confirmação ou pedido de atenção. "esperando": depende de alguém de fora.
-export const GRUPOS = {
-  agora: 'Precisa de atenção',
-  andamento: 'Em andamento',
-  esperando: 'Esperando alguém',
-};
+// Faixas por tempo, em ordem fixa. A tela de Atividades mostra só as que têm algo e responde primeiro
+// "o que eu faço agora?": atrasadas/hoje, esta semana, depois, sem prazo e, por último, o que espera
+// terceiro (a parte que não depende de quem está olhando).
+export const FAIXAS_ATIVIDADE = [
+  { chave: 'hoje', titulo: 'Atrasadas e hoje' },
+  { chave: 'semana', titulo: 'Esta semana' },
+  { chave: 'depois', titulo: 'Depois' },
+  { chave: 'sem_prazo', titulo: 'Sem prazo' },
+  { chave: 'esperando', titulo: 'Esperando' },
+];
 
-export function grupoAtividade(t, { admin = false, hoje = new Date() } = {}) {
-  if (!aberta(t)) return 'encerrada';
-  const dias = diasAte(t.prazo, hoje);
-  const confirmar = admin && (t.tarefa_passos || []).some(s => s.estado === 'sugerido');
-  if (t.situacao === 'travado' || confirmar || (admin && (t.precisa_atencao || t.aviso_responsavel)) ||
-    (dias !== null && dias <= 2)) return 'agora';
-  if (t.status === 'aguardando_terceiro' || t.situacao === 'esperando') return 'esperando';
-  return 'andamento';
+export const estaEsperando = t => t?.status === 'aguardando_terceiro' || t?.situacao === 'esperando';
+
+// Passo que alguém marcou como feito esperando a confirmação do admin.
+export function precisaConfirmar(t) {
+  return (t?.tarefa_passos || []).some(s => s.estado === 'sugerido');
 }
 
-// Por que está em "agora", em poucas palavras (o primeiro motivo que vale).
-export function motivoAgora(t, { admin = false, hoje = new Date() } = {}) {
-  const dias = diasAte(t.prazo, hoje);
-  if (dias !== null && dias < 0) return `vencida há ${-dias} ${dias === -1 ? 'dia' : 'dias'}`;
-  if (t.situacao === 'travado') return 'travada';
-  if (admin && (t.tarefa_passos || []).some(s => s.estado === 'sugerido')) return 'confirmar';
-  if (dias === 0) return 'vence hoje';
-  if (dias !== null && dias <= 2) return dias === 1 ? 'vence amanhã' : 'vence em 2 dias';
-  if (admin && t.precisa_atencao) return t.motivo_atencao || 'atenção';
+// Pedido de atenção do operador/responsável (o cartão mostra o motivo).
+export function precisaAtencao(t) {
+  return Boolean(t?.precisa_atencao || t?.aviso_responsavel);
+}
+
+// O sinal discreto da linha, além do prazo: confirmar um passo, atenção pedida, espera de terceiro
+// ou a tarefa travada que o responsável registrou.
+export function sinalAtividade(t, { admin = false } = {}) {
+  if (admin && precisaConfirmar(t)) return { chave: 'confirmar', texto: 'confirmar passo' };
+  if (admin && precisaAtencao(t)) return { chave: 'atencao', texto: 'precisa de você' };
+  if (estaEsperando(t)) return { chave: 'esperando', texto: 'esperando' };
+  if (t?.situacao === 'travado') return { chave: 'travado', texto: 'travada' };
   return null;
+}
+
+// "Esta semana" termina no domingo; depois disso a atividade cai em "Depois".
+const diasAteDomingo = hoje => (7 - hoje.getDay()) % 7;
+
+// Faixa em que a atividade aparece. Esperar alguém de fora vence a data: fica no fim, mais apagada.
+export function faixaAtividade(t, { hoje = new Date() } = {}) {
+  if (!aberta(t)) return 'encerrada';
+  if (estaEsperando(t)) return 'esperando';
+  const dias = diasAte(t.prazo, hoje);
+  if (dias === null) return 'sem_prazo';
+  if (dias <= 0) return 'hoje';
+  if (dias <= diasAteDomingo(hoje)) return 'semana';
+  return 'depois';
+}
+
+// Depende da pessoa logada? Sim para o que é dela e, para o admin, para o que espera confirmação ou atenção.
+export function minhaVez(t, { admin = false, eu = null } = {}) {
+  if (!aberta(t)) return false;
+  if (eu && t.responsavel_id === eu) return true;
+  return admin && (precisaConfirmar(t) || precisaAtencao(t));
+}
+
+// Prazo na linha, sem alarme: atraso vira "há 3 dias" (âmbar discreto), nunca "vencida" em vermelho.
+export function prazoAtividade(prazo, hoje = new Date()) {
+  if (!prazo) return { texto: '', nivel: 'nenhum' };
+  const p = prazoCurto(prazo, hoje);
+  if (p.nivel !== 'vencido') return p;
+  const dias = diasAte(prazo, hoje);
+  if (dias === 0) return { texto: 'hoje', nivel: 'hoje' };
+  const n = -dias;
+  return { texto: `há ${n} ${n === 1 ? 'dia' : 'dias'}`, nivel: 'atrasado' };
 }
 
 // O que vem a seguir: para o admin, o passo que alguém marcou como feito; senão, o primeiro em aberto.
@@ -222,6 +257,49 @@ export function prazoCurto(prazo, hoje = new Date()) {
 
 // Ordem dentro do grupo: prazo (vencidas primeiro, sem prazo por último), depois a mais antiga.
 export function ordenarAtividades(lista) { return ordenarTarefas(lista); }
+
+// Para o admin, o que espera confirmação ou atenção vem antes dentro da faixa; o resto segue por prazo.
+function pesoAtencao(t, admin) {
+  if (!admin) return 0;
+  if (precisaConfirmar(t)) return 0;
+  if (precisaAtencao(t)) return 1;
+  return 2;
+}
+
+// Faixas da tela, na ordem fixa e só com as que têm atividade. Tarefas encerradas ficam de fora.
+export function agruparAtividades(tarefas, { admin = false, hoje = new Date() } = {}) {
+  const abertas = (tarefas || []).filter(aberta);
+  return FAIXAS_ATIVIDADE
+    .map(({ chave, titulo }) => ({
+      chave,
+      titulo,
+      tarefas: ordenarAtividades(abertas.filter(t => faixaAtividade(t, { hoje }) === chave))
+        .sort((a, b) => pesoAtencao(a, admin) - pesoAtencao(b, admin)),
+    }))
+    .filter(faixa => faixa.tarefas.length);
+}
+
+// Vista Equipe: um bloco por responsável (alfabético, "Sem responsável" no fim), cada um com as faixas.
+export function agruparPorPessoa(tarefas, { admin = false, hoje = new Date(), eu = null } = {}) {
+  const porPessoa = new Map();
+  for (const t of tarefas || []) {
+    if (!aberta(t)) continue;
+    const chave = t.responsavel_id || '';
+    if (!porPessoa.has(chave)) {
+      porPessoa.set(chave, {
+        id: chave || null,
+        nome: chave ? t.responsavel || 'Pessoa sem nome no sistema' : 'Sem responsável',
+        sem: !chave,
+        eu: Boolean(chave && eu && chave === eu),
+        itens: [],
+      });
+    }
+    porPessoa.get(chave).itens.push(t);
+  }
+  return [...porPessoa.values()]
+    .sort((a, b) => Number(a.sem) - Number(b.sem) || a.nome.localeCompare(b.nome, 'pt-BR'))
+    .map(({ itens, ...pessoa }) => ({ ...pessoa, blocos: agruparAtividades(itens, { admin, hoje }) }));
+}
 
 export const normalizar = texto => String(texto ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -276,5 +354,7 @@ if (typeof window !== 'undefined') {
   window.BuritiTarefas = { rotuloOrigem, seloPrazo, ordenarTarefas, dataHora, gmailLink, saudeVigia, ESTADOS_PASSO,
     seloClassificacao, motivoLegivel, ligadaAutomaticamente, textoComLinks, validarFeito, registroFeito, podeRegistrarFeito,
     SITUACOES, validarAtualizacao, lerAtualizacao,
-    GRUPOS, grupoAtividade, motivoAgora, proximoPasso, prazoCurto, ordenarAtividades, normalizar, lerCaptura };
+    FAIXAS_ATIVIDADE, estaEsperando, precisaConfirmar, precisaAtencao, sinalAtividade, faixaAtividade, minhaVez,
+    prazoAtividade, proximoPasso, prazoCurto, ordenarAtividades, agruparAtividades, agruparPorPessoa,
+    normalizar, lerCaptura };
 }

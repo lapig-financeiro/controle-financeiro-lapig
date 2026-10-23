@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prévia — Atividades</title>
+  <link rel="stylesheet" href="../../frontend/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Exo+2:wght@600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <style>
+    body.previa { background: var(--bg-primary); }
+    .previa__barra { position: sticky; top: 0; z-index: 100; display: flex; justify-content: space-between;
+      align-items: center; gap: var(--sp-4); flex-wrap: wrap; padding: 10px 20px;
+      background: var(--text-primary); color: var(--text-inverse); }
+    .previa__barra strong { font-family: var(--font-heading); font-size: 0.9rem; letter-spacing: 0.01em; }
+    .previa__nota { margin-left: 10px; font-size: 0.75rem; opacity: 0.7; }
+    .previa__seletor { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; }
+    .previa__seletor select { font: inherit; padding: 5px 8px; border: 0; border-radius: var(--radius-sm);
+      background: var(--bg-surface); color: var(--text-primary); }
+    .previa__conteudo { max-width: 960px; margin: 0 auto; }
+    .previa-toast { position: fixed; right: 20px; bottom: 20px; z-index: 300; padding: 9px 14px;
+      border-radius: var(--radius-md); background: var(--text-primary); color: var(--text-inverse);
+      font-size: 0.8rem; box-shadow: var(--shadow-md); }
+    .previa-modal { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center;
+      justify-content: center; padding: 20px; background: rgba(27, 58, 42, 0.35); }
+    .previa-modal__caixa { width: 100%; max-height: 90vh; overflow: auto; padding: var(--sp-5);
+      background: var(--bg-surface); color: var(--text-primary); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg); }
+    .previa-modal__titulo { margin: 0 0 var(--sp-3); font-size: 1.05rem; }
+    .previa-modal__erro { color: var(--danger); font-size: 0.8rem; }
+    .previa-modal__acoes { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-4); }
+  </style>
+  <script src="../../frontend/vendor/lucide.js"></script>
+</head>
+<body class="previa">
+  <header class="previa__barra">
+    <div>
+      <strong>Prévia · Atividades</strong>
+      <span class="previa__nota">dados de mentira · hoje é <span data-hoje>—</span> · nada toca o banco</span>
+    </div>
+    <label class="previa__seletor">Logado como
+      <select data-login>
+        <option value="admin">admin · Ana Ribeiro</option>
+        <option value="professor">professor · Bruno Tavares</option>
+      </select>
+    </label>
+  </header>
+
+  <main class="previa__conteudo">
+    <div class="content" id="page-content"></div>
+  </main>
+
+  <script type="module" src="../../frontend/js/pure-fns.js"></script>
+  <script type="module" src="../../frontend/js/components/buriti-tarefas.js"></script>
+  <script type="module" src="previa.js"></script>
+</body>
+</html>

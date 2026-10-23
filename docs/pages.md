@@ -198,28 +198,36 @@ independentemente do limite de eventos recentes.
 ## Atividades (`atividades.js`, mig. 058)
 
 Substitui a antiga Minhas tarefas e a aba Tarefas da página Buriti (pedido do Victor em 09/10/2026:
-uma tela só, sem telas sobrepostas). Lista única das tarefas abertas que o login enxerga (o RLS decide:
-admin vê todas; o Arthur, as dele; professor, as dos seus centros).
+uma tela só, sem telas sobrepostas). Em 23/10/2026 a tela foi reorganizada para responder primeiro
+"o que eu faço agora?": duas vistas, faixas por tempo e uma linha curta por tarefa. O RLS decide o
+que cada login enxerga (admin vê todas; o Arthur, as dele; professor, as dos seus centros).
 
-- **Grupos** (`grupoAtividade`): *Precisa de atenção* (vence em até 2 dias, vencida, travada e, para o
-  admin, passo marcado como feito esperando confirmação ou pedido de atenção), *Em andamento* e *Esperando
-  alguém* (`aguardando_terceiro` ou situação "esperando"). "Por projeto" agrupa a mesma lista por centro.
-- **Linha**: título, centro, próximo passo (`proximoPasso`; para o admin, "Confirmar: …" primeiro; some
-  quando repete o título), último movimento (atualização do responsável ou evento mais recente, sem
-  criação/troca de responsável), prazo em palavras (`prazoCurto`), motivo curto e quem está com ela
-  ("Você" para o próprio login).
-- **Filtros**: Tudo / Comigo / Com <pessoa> / Sem responsável, só quando há mais de um responsável na lista.
-  Filtro e vista ficam no `localStorage` (com try/catch; sem ele, volta ao padrão).
-- **Clique na linha** abre o cartão completo da 054–057 (`BuritiTarefasUI.cartao(t, false, { semTopo: true })`)
-  com todas as ações; depois de cada ação a tarefa é relida (`depois`) e muda de grupo se for o caso.
-  Concluir, para o admin, confirma junto os passos em aberto (caso da atividade que ele mesmo anotou).
-  Prazo (admin) usa `atualizar_prazo`.
+- **Duas vistas** (`vista`, lembrada em `atividades:vista`): *Minha vez* abre a tela e mostra o que
+  depende do login (`minhaVez`: responsável = você e, para o admin, passo esperando confirmação ou
+  pedido de atenção). *Equipe* agrupa tudo por responsável (`agruparPorPessoa`), em ordem alfabética e
+  com "Sem responsável" no fim; cada bloco repete as faixas em versão compacta e serve para consulta.
+- **Faixas** (`FAIXAS_ATIVIDADE`/`faixaAtividade`), na ordem fixa e só quando têm algo: *Atrasadas e
+  hoje* → *Esta semana* (até o domingo) → *Depois* → *Sem prazo* → *Esperando* (`aguardando_terceiro`
+  ou situação "esperando" vence a data e fica no fim, mais apagada). Dentro da faixa, o prazo manda
+  (vencidas primeiro); para o admin, "confirmar passo" e "precisa de você" sobem.
+- **Linha**: título, centro, prazo em palavras (`prazoAtividade`: atraso é "há 3 dias" em âmbar, nunca
+  vermelho; sem prazo não escreve nada), quem está com ela quando não é você, e um sinal discreto
+  (`sinalAtividade`: confirmar passo / precisa de você / esperando / travada). Nada de contador,
+  motivo longo ou último movimento na linha: isso é o cartão.
+- **Clique na linha** abre o cartão completo da 054–057 (`BuritiTarefasUI.cartao(t, { semTopo: true })`)
+  com todas as ações; depois de cada ação a tarefa é relida (`depois`) e muda de faixa, de responsável
+  ou sai da vista. Concluir, para o admin, confirma junto os passos em aberto.
 - **Anotar** (só admin): uma linha como no caderno, `30.068 remanejar rubricas até 20/10 @Arthur`.
-  `lerCaptura` exige o código de um centro cadastrado, aceita data dd/mm[/aa] (sem ano e já passada há mais
-  de um mês = ano seguinte) e `@nome` (prefixo de qualquer parte do nome, sem acento; ambíguo ou
+  `lerCaptura` exige o código de um centro cadastrado, aceita data dd/mm[/aa] (sem ano e já passada há
+  mais de um mês = ano seguinte) e `@nome` (prefixo de qualquer parte do nome, sem acento; ambíguo ou
   desconhecido é recusado); sem @ fica com quem anota. A prévia aparece enquanto se digita. Grava por
   `criar_tarefa_na_tela` (um passo de pessoa igual ao título).
-- **Concluídas**: últimos 60 dias.
+- **Encerradas**: fora da vista principal, num acesso discreto no rodapé (`Encerradas nos últimos 60
+  dias`) e com "Voltar para as abertas". Concluir e cancelar saem da lista aberta.
+
+**Prévia sem banco:** `tools/previa-atividades/index.html` carrega o `style.css` e os arquivos reais da
+tela com `Auth`, dados e RPCs falsos; um seletor alterna entre admin e professor e aceita
+`?login=professor`, `?vista=equipe` e `?abrir=<id>`. Servida a partir da raiz (`python -m http.server`).
 
 **Link direto:** `#atividades`; `#minhas-tarefas` (dos e-mails antigos ao Arthur) também abre Atividades.
 Sem sessão, mostra o login e abre depois de autenticar. **Entrada sem link:** não-admin sem centros e com

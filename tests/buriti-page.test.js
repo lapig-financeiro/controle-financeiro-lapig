@@ -384,6 +384,9 @@ describe('Atribuição e permissões no cartão', () => {
   it('professor do escopo que não é responsável apenas lê', async () => {
     admin = false;
     await window.AtividadesPage.render(root);
+    // Minha vez é só o que depende dele; as tarefas do escopo aparecem na Equipe.
+    expect(root.querySelectorAll('.ativ__item')).toHaveLength(0);
+    root.querySelector('[data-vista="equipe"]').click();
     expect(root.querySelectorAll('.ativ__item')).toHaveLength(2);
     expect(abrir('t1').querySelector('[data-acao="atualizar"], [data-acao="confirmar"], [data-acao="concluir"], [data-acao="nota"]')).toBeNull();
   });
