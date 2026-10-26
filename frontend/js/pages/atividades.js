@@ -1,5 +1,5 @@
 // Atividades: a tela responde "o que eu faço agora?" antes de "o que existe".
-// Minha vez (abre nela) mostra o que depende do login; Equipe agrupa tudo por pessoa, para consulta.
+// Minhas tarefas (abre nela) mostra o que depende do login; Equipe agrupa tudo por pessoa, para consulta.
 // Uma linha por tarefa; passos, histórico e ações só no cartão completo da 054–057, ao clicar.
 window.AtividadesPage = (() => {
   const f = () => window.BuritiTarefas;
@@ -252,7 +252,7 @@ window.AtividadesPage = (() => {
       <p class="ativ__previa" data-anotar-previa aria-live="polite" hidden></p>` : ''}
       <div class="ativ__barra">
         <div class="ativ__vistas" role="group" aria-label="Vista">
-          <button type="button" class="ativ__chip" data-vista="minha">Minha vez</button>
+          <button type="button" class="ativ__chip" data-vista="minha">Minhas tarefas</button>
           <button type="button" class="ativ__chip" data-vista="equipe">Equipe</button>
         </div>
         <button type="button" class="ativ__discreto" data-voltar hidden>← Voltar para as abertas</button>

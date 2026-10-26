@@ -2356,7 +2356,7 @@ img { max-width: 100%; display: block; }
 .buriti-opcao:has(input:checked) { border-color: var(--accent); background: var(--bg-elevated); }
 
 /* ============================================================
-   Atividades (058) — Minha vez / Equipe
+   Atividades (058) — Minhas tarefas / Equipe
    Calma visual: faixas por tempo, uma linha por tarefa, poucos
    contornos. Atraso é âmbar; vermelho fica só para erro.
    ============================================================ */

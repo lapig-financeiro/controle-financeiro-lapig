@@ -91,7 +91,7 @@ const faixas = () => [...root.querySelectorAll('.ativ__faixa')].map(g => [g.quer
   [...g.querySelectorAll('.ativ__titulo')].map(t => t.textContent.trim())]);
 
 describe('tela de Atividades', () => {
-  it('Minha vez abre nas faixas por tempo e a linha é curta', async () => {
+  it('Minhas tarefas abre nas faixas por tempo e a linha é curta', async () => {
     await window.AtividadesPage.render(root);
     expect(faixas()).toEqual([
       ['Atrasadas e hoje', ['Prorrogação']],
@@ -113,7 +113,7 @@ describe('tela de Atividades', () => {
     expect(root.querySelector('[data-vista="minha"]').getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('Equipe agrupa por pessoa e volta para Minha vez', async () => {
+  it('Equipe agrupa por pessoa e volta para Minhas tarefas', async () => {
     await window.AtividadesPage.render(root);
     root.querySelector('[data-vista="equipe"]').click();
     await vi.waitFor(() => expect(root.querySelector('[data-pessoa="arthur"]')).not.toBeNull());
@@ -182,7 +182,7 @@ describe('tela de Atividades', () => {
     expect(supabaseClient.rpc.mock.calls.some(c => c[0] === 'criar_tarefa_na_tela')).toBe(false);
   });
 
-  it('quem não é admin não anota e a Minha vez mostra só o que é dele', async () => {
+  it('quem não é admin não anota e a Minhas tarefas mostra só o que é dele', async () => {
     admin = false; eu = 'arthur';
     db.tarefas = db.tarefas.filter(t => t.responsavel_id === 'arthur');
     await window.AtividadesPage.render(root);

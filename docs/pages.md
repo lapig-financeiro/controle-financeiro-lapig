@@ -202,7 +202,7 @@ uma tela só, sem telas sobrepostas). Em 23/10/2026 a tela foi reorganizada para
 "o que eu faço agora?": duas vistas, faixas por tempo e uma linha curta por tarefa. O RLS decide o
 que cada login enxerga (admin vê todas; o Arthur, as dele; professor, as dos seus centros).
 
-- **Duas vistas** (`vista`, lembrada em `atividades:vista`): *Minha vez* abre a tela e mostra o que
+- **Duas vistas** (`vista`, lembrada em `atividades:vista`): *Minhas tarefas* abre a tela e mostra o que
   depende do login (`minhaVez`: responsável = você e, para o admin, passo esperando confirmação ou
   pedido de atenção). *Equipe* agrupa tudo por responsável (`agruparPorPessoa`), em ordem alfabética e
   com "Sem responsável" no fim; cada bloco repete as faixas em versão compacta e serve para consulta.

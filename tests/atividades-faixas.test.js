@@ -44,7 +44,7 @@ describe('faixas da tela em ordem fixa', () => {
   });
 });
 
-describe('minha vez', () => {
+describe('minhas tarefas', () => {
   it('é o que está comigo', () => {
     expect(minhaVez(t('minha', { responsavel_id: 'ana' }), { eu: 'ana' })).toBe(true);
     expect(minhaVez(t('outra', { responsavel_id: 'bruno' }), { eu: 'ana' })).toBe(false);

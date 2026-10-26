@@ -82,11 +82,11 @@ export function criarBanco() {
           { descricao: 'Reunir as notas fiscais' },
           { descricao: 'Anexar o comprovante de transferência', quem: 'Bruno Tavares', estado: 'sugerido' },
         ] }),
-      // De outra pessoa, sem pedir atenção: aparece na Equipe, não na Minha vez do admin.
+      // De outra pessoa, sem pedir atenção: aparece na Equipe, não na Minhas tarefas do admin.
       tarefa({ id: 't9', titulo: 'Reservar o auditório para a reunião', centro: '30.104', prazo: '2026-10-24', dono: 'carla' }),
       // Sem responsável.
       tarefa({ id: 't10', titulo: 'Definir quem cuida do novo convênio', centro: '30.102', prazo: '2026-10-28', dono: null }),
-      // Pedido de atenção de outra pessoa: entra na Minha vez do admin.
+      // Pedido de atenção de outra pessoa: entra na Minhas tarefas do admin.
       tarefa({ id: 't11', titulo: 'Assinatura do termo de cooperação', centro: '30.101', prazo: '2026-10-27', dono: 'diego',
         precisa: true, motivo: 'Travou na assinatura do termo' }),
       // Outra atrasada, de outra pessoa.
