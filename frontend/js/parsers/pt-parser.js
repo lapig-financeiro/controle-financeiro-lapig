@@ -58,6 +58,18 @@ const TOPLEVEL_TO_CODE = {
   h: 'g',         // alguns DOCX usam 'h' para "Ganho econômico" (era 'g' antes)
 };
 
+// Célula que é só um valor ("R$ 1.000,00", "74.000,00", "0,00"). Nome com
+// número ("h - Doação 30.076") não é valor, e coluna extra não vira nome.
+const RE_CELULA_VALOR = /^\s*(?:R\$\s*)?-?\s*\d[\d.\s]*(?:,\d+)?\s*$/i;
+
+// Valor em reais. Sem vírgula, "114.000" é milhar (DAO de 114 mil), não 114:
+// num plano, ponto seguido de três dígitos nunca é casa decimal.
+function brl(s) {
+  const t = String(s ?? '').replace(/[R$\s ]/g, '');
+  if (/^-?\d{1,3}(?:\.\d{3})+$/.test(t)) return parseBRL(t.replace(/\./g, ''));
+  return parseBRL(s);
+}
+
 // ── Helpers de DOM ─────────────────────────────────────────
 
 function htmlToDom(html) {
@@ -102,7 +114,8 @@ function findTabelaCanonica(doc) {
 
 // ── Parse de linhas da tabela ──────────────────────────────
 
-function parseLinhas(tabela) {
+// `grupos` recebe os grupos a–h cujo total declarado difere da soma dos itens.
+function parseLinhas(tabela, grupos = []) {
   const out = [];
   const trs = Array.from(tabela.querySelectorAll('tr'));
   const inicioDespesas = trs.findIndex((tr, i) =>
@@ -114,6 +127,29 @@ function parseLinhas(tabela) {
   let currentTop = null;             // letra a–h do pai atual
   let pendingTopValue = null;        // valor agregador do top-level lido
   let pendingTopWasUsed = false;
+  let pendingTopName = '';
+  let somaItens = 0;                 // soma das sub-rubricas do top-level atual
+
+  // Grupo com itens cujo total declarado não fecha: a soma vale, mas avisa.
+  const conferirGrupo = () => {
+    if (currentTop && pendingTopValue != null && pendingTopWasUsed
+        && Math.abs(somaItens - pendingTopValue) >= 0.01) {
+      grupos.push({ nome: pendingTopName, declarado: pendingTopValue, itens: somaItens });
+    }
+  };
+  // Top-level sem sub-rubrica vira linha-folha. "h" só é ganho econômico se
+  // disser isso; outra coisa (ex.: "h - Doação 30.076") vai para revisão.
+  const folhaDoTop = () => {
+    const code = TOPLEVEL_TO_CODE[currentTop];
+    if (!code || code === 'a') return;
+    const linha = { rubrica_code: code, descricao_livre: null, valor_previsto: pendingTopValue };
+    if (currentTop === 'h' && !/ganho/i.test(pendingTopName)) {
+      linha.descricao_livre = pendingTopName;
+      linha._fallback = true;
+      linha._raw_name = pendingTopName;
+    }
+    out.push(linha);
+  };
 
   for (const tr of linhas) {
     const cells = Array.from(tr.children);
@@ -123,16 +159,22 @@ function parseLinhas(tabela) {
     const cellTexts = cells.map(textOf).filter(Boolean);
     if (cellTexts.length === 0) continue;
 
-    // Identifica nome e valor: o último texto numericamente parseável é o valor.
-    let valueIdx = -1;
-    for (let i = cellTexts.length - 1; i >= 0; i--) {
-      if (parseBRL(cellTexts[i]) != null && /\d/.test(cellTexts[i])) {
-        valueIdx = i;
-        break;
+    // Identifica nome e valor. Com várias colunas de valor (valor atual,
+    // acréscimo, soma), vale a última e as outras não entram no nome.
+    const ehValor = cellTexts.map(t => RE_CELULA_VALOR.test(t));
+    let valueIdx = ehValor.lastIndexOf(true);
+    if (valueIdx < 0) {
+      // Valor fora do formato estrito: o último texto numericamente parseável.
+      for (let i = cellTexts.length - 1; i >= 0; i--) {
+        if (parseBRL(cellTexts[i]) != null && /\d/.test(cellTexts[i])) {
+          valueIdx = i;
+          break;
+        }
       }
     }
-    const valor = valueIdx >= 0 ? parseBRL(cellTexts[valueIdx]) : null;
-    const nameParts = cellTexts.slice(0, valueIdx >= 0 ? valueIdx : cellTexts.length);
+    const valor = valueIdx >= 0 ? brl(cellTexts[valueIdx]) : null;
+    const nameParts = cellTexts.slice(0, valueIdx >= 0 ? valueIdx : cellTexts.length)
+      .filter((t, i) => !ehValor[i]);
     const nome = nameParts.join(' ').trim();
     if (!nome) continue;
 
@@ -150,19 +192,13 @@ function parseLinhas(tabela) {
     if (topMatch && isStrong) {
       // Encerra o top-level anterior — se ele não gerou nenhuma linha-filha
       // mas tem valor, vira uma linha-folha (caso 'c – Passagens' isolado).
-      if (currentTop && pendingTopValue != null && !pendingTopWasUsed) {
-        const code = TOPLEVEL_TO_CODE[currentTop];
-        if (code && code !== 'a') {
-          out.push({
-            rubrica_code: code,
-            descricao_livre: null,
-            valor_previsto: pendingTopValue,
-          });
-        }
-      }
+      if (currentTop && pendingTopValue != null && !pendingTopWasUsed) folhaDoTop();
+      conferirGrupo();
       currentTop = topMatch[1].toLowerCase();
       pendingTopValue = (valor != null && valor > 0) ? valor : null;
       pendingTopWasUsed = false;
+      pendingTopName = nome.replace(/\s+total$/i, '');
+      somaItens = 0;
       continue;
     }
 
@@ -172,20 +208,13 @@ function parseLinhas(tabela) {
       sub.valor_previsto = valor;
       out.push(sub);
       pendingTopWasUsed = true;
+      somaItens += valor;
     }
   }
 
   // Flush do último top-level que não teve sub-rubrica.
-  if (currentTop && pendingTopValue != null && !pendingTopWasUsed) {
-    const code = TOPLEVEL_TO_CODE[currentTop];
-    if (code && code !== 'a') {
-      out.push({
-        rubrica_code: code,
-        descricao_livre: null,
-        valor_previsto: pendingTopValue,
-      });
-    }
-  }
+  if (currentTop && pendingTopValue != null && !pendingTopWasUsed) folhaDoTop();
+  conferirGrupo();
 
   return out;
 }
@@ -207,11 +236,14 @@ function extractCabecalho(doc) {
 
   // CIP total (II.d "Total") e DAO (II.f "D.A.O da Fundação").
   let valor_cip = null, valor_dao = null;
-  const mCip = fullText.match(/CIP[\s\S]{0,300}?Total[\s\S]{0,60}?R?\$?\s*([\d.,]+)/i);
-  if (mCip) valor_cip = parseBRL(mCip[1]);
+  // A sigla não tem letra colada ("participantes" contém "cip"; parágrafos
+  // vêm grudados, "2026CIP", então \b não serve) e o valor começa por dígito:
+  // um ponto ou vírgula solto do texto não é valor.
+  const mCip = fullText.match(/(?<![a-zà-ÿ])CIP(?![a-zà-ÿ])[\s\S]{0,300}?Total[\s\S]{0,60}?R?\$?\s*(\d[\d.,]*)/i);
+  if (mCip) valor_cip = brl(mCip[1].replace(/[.,]$/, ''));
 
-  const mDao = fullText.match(/D\.?\s*A\.?\s*O[^\d]{0,200}?R?\$?\s*([\d.,]+)/i);
-  if (mDao) valor_dao = parseBRL(mDao[1]);
+  const mDao = fullText.match(/(?<![a-zà-ÿ])D\.?\s*A\.?\s*O(?![a-zà-ÿ])[^\d]{0,200}?R?\$?\s*(\d[\d.,]*)/i);
+  if (mDao) valor_dao = brl(mDao[1].replace(/[.,]$/, ''));
 
   // Datas "01/06/2025" (início) e "31/12/2026" (fim) — formato comum em II.c.
   // Sem confiança alta, deixa para usuário preencher se não achar.
@@ -252,8 +284,8 @@ function totalDeclarado(tabela, doc) {
     const administrativo = /^d\.?\s*a\.?\s*o\b/i.test(label);
     if (!previsao && !entrada && !final && !geral && !indiretos && !administrativo) continue;
     for (let i = cells.length - 1; i > 0; i--) {
-      if (!/\d/.test(cells[i]) || parseBRL(cells[i]) == null) continue;
-      const valor = parseBRL(cells[i]);
+      if (!/\d/.test(cells[i]) || brl(cells[i]) == null) continue;
+      const valor = brl(cells[i]);
       if (previsao) despesas = valor;
       else if (geral) totalPlano = valor;
       else if (final) total ??= valor; // não trocar o total geral pelo subtotal de CIP
@@ -284,23 +316,28 @@ export function parsePtFromHtml(html) {
     throw new PtFormatError(modelo.message, modelo.id);
   }
 
-  const rubricas = parseLinhas(tabela);
+  const grupos = [];
+  const rubricas = parseLinhas(tabela, grupos);
   const cabecalho = extractCabecalho(doc);
+  const declaracao = totalDeclarado(tabela, doc);
+  // A tabela final (II.f) vale mais que a frase de II.e, que muitas vezes
+  // vem em branco ("aplicará ......") enquanto a tabela traz o valor.
+  const cip = declaracao.cip ?? cabecalho.valor_cip;
+  const dao = declaracao.dao ?? cabecalho.valor_dao;
 
   // Total do plano = soma das rubricas previstas (sanidade).
   const valor_total_plano = rubricas.reduce((s, r) => s + (r.valor_previsto || 0), 0);
   const data = {
     ...cabecalho,
+    valor_cip: cip,
+    valor_dao: dao,
     valor_total_plano: cabecalho.valor_total_plano ?? valor_total_plano,
     rubricas,
     desembolsos: [],
   };
 
   const warnings = [];
-  const declaracao = totalDeclarado(tabela, doc);
   const declarado = declaracao.despesas ?? declaracao.total;
-  const cip = declaracao.cip ?? cabecalho.valor_cip;
-  const dao = declaracao.dao ?? cabecalho.valor_dao;
   // Só comparar com custos adicionais quando ambos foram lidos. Ausência
   // não é zero; as rubricas e o valor extraído continuam intactos.
   const comCustos = declaracao.despesas == null && cip != null && dao != null
@@ -315,6 +352,12 @@ export function parsePtFromHtml(html) {
       'Confira antes de salvar.'
     );
   }
+  for (const g of grupos) {
+    warnings.push(
+      `O grupo "${g.nome}" declara ${g.declarado.toFixed(2)}, mas os itens dele somam ` +
+      `${g.itens.toFixed(2)}. Ficou a soma dos itens; confira no documento.`
+    );
+  }
   if (rubricas.length === 0) {
     warnings.push('Tabela encontrada mas nenhuma rubrica com valor extraída — confira o documento.');
   }
@@ -326,8 +369,8 @@ export function parsePtFromHtml(html) {
       delete r._raw_name;
     }
   }
-  if (cabecalho.valor_cip == null) warnings.push('Valor CIP não detectado — preencha manualmente se aplicável.');
-  if (cabecalho.valor_dao == null) warnings.push('Valor DAO não detectado — preencha manualmente se aplicável.');
+  if (cip == null) warnings.push('Valor CIP não detectado — preencha manualmente se aplicável.');
+  if (dao == null) warnings.push('Valor DAO não detectado — preencha manualmente se aplicável.');
 
   return { data, warnings };
 }
