@@ -112,3 +112,13 @@ describe('linha CLT do plano', () => {
     expect(ex.warnings.filter(w => /fallback/.test(w))).toEqual([]);
   });
 });
+
+describe('DAO que já vem na tabela do plano', () => {
+  it('não entra duas vezes', () => {
+    const ex = parsePtFromHtml(plano(
+      linha(['a-Pessoal', '1.000,00'], true) + linha(['Bolsas', '1.000,00']) +
+      linha(['DAO', '100,00'], true),
+      '<table>' + linha(['D.A.O da Fundação', 'R$ 100,00']) + '</table>'));
+    expect(rubricas(ex).filter(r => r[0] === 'dao')).toEqual([['dao', 100, null]]);
+  });
+});

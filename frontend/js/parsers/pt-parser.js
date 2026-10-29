@@ -382,8 +382,13 @@ export function parsePtFromHtml(html) {
   // estouro no Previsto × Realizado e no saldo livre. O total do plano segue
   // sendo a soma das despesas, calculado acima, para não mudar a conferência
   // de remanejamento contra os planos já gravados.
+  // Plano que já traz a linha na própria tabela (ex.: 30.076, "DAO" dentro
+  // do quadro) não ganha uma segunda.
+  const temLinha = code => rubricas.some(r => r.rubrica_code === code);
   const { cipUfg, cipUa } = declaracao;
-  if (cipUfg != null || cipUa != null) {
+  if (temLinha('cip_ufg') || temLinha('cip_ua')) {
+    // já veio da tabela
+  } else if (cipUfg != null || cipUa != null) {
     const soma = (cipUfg || 0) + (cipUa || 0);
     if (cip != null && Math.abs(soma - cip) >= 0.01) {
       warnings.push(`O CIP declara ${cip.toFixed(2)}, mas UFG e UA/Órgão somam ${soma.toFixed(2)}. ` +
@@ -394,7 +399,7 @@ export function parsePtFromHtml(html) {
   } else if (cip) {
     warnings.push('O CIP não traz a divisão entre UFG e UA/Órgão; ficou fora das rubricas. Preencha à mão se souber.');
   }
-  if (dao) rubricas.push({ rubrica_code: 'dao', descricao_livre: null, valor_previsto: dao });
+  if (dao && !temLinha('dao')) rubricas.push({ rubrica_code: 'dao', descricao_livre: null, valor_previsto: dao });
 
   return { data, warnings };
 }
