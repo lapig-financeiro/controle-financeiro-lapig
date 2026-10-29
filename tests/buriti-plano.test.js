@@ -113,7 +113,8 @@ describe('DOCX PROAD sintético no Node', () => {
     expect(ex.data.prazo_fim).toBe('2026-12-31');
     expect(ex.data.valor_cip).toBe(100);
     expect(ex.data.valor_dao).toBe(60);
-    expect(ex.data.rubricas.map(r => r.valor_previsto)).toEqual([800, 400]);
+    // O DAO entra como rubrica; o CIP sem divisão UFG × UA fica só no cabeçalho.
+    expect(ex.data.rubricas.map(r => r.valor_previsto)).toEqual([800, 400, 60]);
     const p = montar({ extraido: ex });
     expect(p.ok).toBe(true);
     expect(JSON.stringify(p.payload)).not.toMatch(/123.456.789|equipe|participantes/i);
@@ -173,7 +174,9 @@ describe('Conferência do resumo PROAD com despesas, CIP e DAO (sintético)', ()
     '2 - Previsão de despesas do projeto'])('prioriza despesas sem confundir total geral/subtotal CIP (%s)', rotulo => {
     const ex = browserParse(layout({ rotulo }));
     expect(ex.data.valor_total_plano).toBe(512820);
-    expect(ex.data.rubricas.map(r => r.valor_previsto)).toEqual([396000, 10000, 20000, 26820, 20000, 40000]);
+    // CIP dividido (UFG, UA) e DAO entram como rubricas depois das despesas.
+    expect(ex.data.rubricas.map(r => r.valor_previsto))
+      .toEqual([396000, 10000, 20000, 26820, 20000, 40000, 55440, 55440, 69300]);
     expect(avisosDeSoma(ex)).toEqual([]);
     expect(montar({ extraido: ex }).payload.conferencias.soma_rubricas_diverge).toBe(false);
   });

@@ -25,6 +25,10 @@ const ALIAS_TO_CODE = [
   { match: ['bolsas', 'bolsa', 'bolsas de pesquisa', 'bolsa doacao', 'bolsas de doacao'], code: 'a.bolsas' },
   { match: ['colaboradores eventuais', 'colaboradores eventuais (pessoal clt)', 'pessoal clt', 'colaboradores clt'], code: 'a.colab' },
   { match: ['encargos s/ clt', 'encargos s clt', 'encargos sobre clt', 'encargos s/ clt (= 83 %)', 'encargos s/ folha'], code: 'a.enc' },
+  // "CLT" sozinho (ou "CLT + encargos") é a folha da celetista: o balancete lança
+  // salário em a.colab, e em a.outros o previsto ficava sem realizado nenhum.
+  // Depois de a.enc, para "encargos s/ clt" continuar sendo encargo.
+  { match: ['clt'], code: 'a.colab' },
   { match: ['consultorias', 'consultorias (stpf - rpa)', 'consultorias stpf-rpa', 'consultorias stpf rpa', 'consultorias (stpf - rpa) + encargos s/ servicos (20% inss s/ rpa)'], code: 'a.cons' },
   { match: ['estagiarios', 'estagiarios bolsistas'], code: 'a.estag' },
   { match: ['outros encargos', 'outros encargos sobre pessoal'], code: 'a.outros' },

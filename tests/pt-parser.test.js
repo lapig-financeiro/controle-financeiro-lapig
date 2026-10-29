@@ -69,8 +69,13 @@ describe.skipIf(!hasFixtures)('parsePtFromHtml — DOCX reais', () => {
 
     // Total do plano declarado é R$ 693.000, mas a tabela de rubricas só
     // soma a..f (g é "------"). 396000 + 10000 + 20000 + 26820 + 20000 + 40000 = 512820.
-    const total = data.rubricas.reduce((s, r) => s + r.valor_previsto, 0);
+    // CIP e DAO viram rubricas próprias (55.440 + 55.440 + 69.300 = 180.180).
+    const custos = ['cip_ufg', 'cip_ua', 'dao'];
+    const total = data.rubricas.filter(r => !custos.includes(r.rubrica_code))
+      .reduce((s, r) => s + r.valor_previsto, 0);
     expect(total).toBeCloseTo(512820, 0);
+    expect(data.rubricas.filter(r => custos.includes(r.rubrica_code)).map(r => r.valor_previsto))
+      .toEqual([55440, 55440, 69300]);
     // Mas as rubricas individuais com valor existem:
     const bolsas = data.rubricas.find(r => r.rubrica_code === 'a.bolsas');
     expect(bolsas?.valor_previsto).toBeCloseTo(396000, 2);

@@ -69,7 +69,25 @@ describe('CIP e DAO', () => {
       linha(['D.A.O da Fundação', '114.000']) + linha(['Total do plano', 'R$ 286.000,00']) + '</table>'));
     expect(ex.data.valor_dao).toBe(114000);
     expect(ex.data.valor_cip).toBe(171000);
-    expect(ex.warnings.filter(w => /DAO|CIP/.test(w))).toEqual([]);
+    expect(ex.warnings.filter(w => /DAO/.test(w))).toEqual([]);
+    // Sem a divisão UFG × UA o CIP não vira rubrica; o DAO vira.
+    expect(ex.warnings).toContain('O CIP não traz a divisão entre UFG e UA/Órgão; ficou fora das rubricas. ' +
+      'Preencha à mão se souber.');
+    expect(rubricas(ex)).toEqual([['a.bolsas', 1000, null], ['dao', 114000, null]]);
+    expect(ex.data.valor_total_plano).toBe(1000);
+  });
+  it('CIP dividido em UFG e UA/Órgão e DAO entram como rubricas, fora do total de despesas', () => {
+    const ex = parsePtFromHtml(plano(despesas,
+      '<p>IId. Valor dos Custos Indiretos do Projeto (CIP) para a UFG</p><table>' +
+      linha(['Custos indiretos para a UFG', 'R$ 33.035,71']) +
+      linha(['Custos indiretos para a UA/Órgão', 'R$ 46.250,00']) + linha(['Total', 'R$ 79.285,71']) + '</table>' +
+      '<table>' + linha(['Previsão de despesas do projeto', 'R$ 1.000,00']) +
+      linha(['Previsão de custos indiretos', 'R$ 79.285,71']) +
+      linha(['D.A.O da Fundação', 'R$ 79.285,71']) + linha(['Total do plano', 'R$ 159.571,42']) + '</table>'));
+    expect(rubricas(ex)).toEqual([['a.bolsas', 1000, null], ['cip_ufg', 33035.71, null],
+      ['cip_ua', 46250, null], ['dao', 79285.71, null]]);
+    expect(ex.data.valor_total_plano).toBe(1000);
+    expect(ex.warnings.filter(w => /CIP|DAO|soma/.test(w))).toEqual([]);
   });
   it('lê o DAO escrito na frase de II.e', () => {
     const ex = parsePtFromHtml(plano(despesas,
@@ -82,5 +100,15 @@ describe('CIP e DAO', () => {
       '<p>III.a. Participantes da UFG</p><table>' + linha(['Total', '202008137']) + '</table>'));
     expect(ex.data.valor_cip).toBeNull();
     expect(ex.warnings).toContain('Valor CIP não detectado — preencha manualmente se aplicável.');
+  });
+});
+
+describe('linha CLT do plano', () => {
+  it('"CLT" vai para Colaboradores CLT, onde o balancete lança a folha; "Encargos s/ CLT" segue encargo', () => {
+    const ex = parsePtFromHtml(plano(
+      linha(['a-Pessoal', '3.000,00'], true) + linha(['CLT', '2.000,00']) +
+      linha(['Encargos s/ CLT', '1.000,00'])));
+    expect(rubricas(ex)).toEqual([['a.colab', 2000, null], ['a.enc', 1000, null]]);
+    expect(ex.warnings.filter(w => /fallback/.test(w))).toEqual([]);
   });
 });

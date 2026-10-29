@@ -272,7 +272,7 @@ function extractCabecalho(doc) {
 // CIP e DAO. O resumo pode estar em outra tabela, fora da tabela canônica.
 function totalDeclarado(tabela, doc) {
   let despesas = null, receita = null, total = null, totalPlano = null;
-  let cip = null, dao = null;
+  let cip = null, dao = null, cipUfg = null, cipUa = null;
   for (const tr of doc.querySelectorAll('tr')) {
     const cells = Array.from(tr.children).map(textOf);
     const label = cells[0] || '';
@@ -282,7 +282,10 @@ function totalDeclarado(tabela, doc) {
     const geral = /^(?:valor\s+)?total do plano$/i.test(label);
     const indiretos = /^previs[ãa]o de custos indiretos\b/i.test(label);
     const administrativo = /^d\.?\s*a\.?\s*o\b/i.test(label);
-    if (!previsao && !entrada && !final && !geral && !indiretos && !administrativo) continue;
+    // Divisão do CIP em II.d: "Custos indiretos para a UFG" / "para a UA/Órgão".
+    const paraUfg = /^custos indiretos para a ufg\b/i.test(label);
+    const paraUa = /^custos indiretos para a (?:ua|unidade|[óo]rg)/i.test(label);
+    if (!previsao && !entrada && !final && !geral && !indiretos && !administrativo && !paraUfg && !paraUa) continue;
     for (let i = cells.length - 1; i > 0; i--) {
       if (!/\d/.test(cells[i]) || brl(cells[i]) == null) continue;
       const valor = brl(cells[i]);
@@ -291,13 +294,15 @@ function totalDeclarado(tabela, doc) {
       else if (final) total ??= valor; // não trocar o total geral pelo subtotal de CIP
       else if (indiretos) cip = valor;
       else if (administrativo) dao = valor;
+      else if (paraUfg) cipUfg ??= valor;
+      else if (paraUa) cipUa ??= valor;
       else receita = valor;
       break;
     }
   }
   const m = textOf(doc.body || doc.documentElement)
     .match(/valor total do plano\s*:?\s*r?\$?\s*([\d.,]+)/i);
-  return { despesas, total: totalPlano ?? total ?? receita ?? (m ? parseBRL(m[1]) : null), cip, dao };
+  return { despesas, total: totalPlano ?? total ?? receita ?? (m ? parseBRL(m[1]) : null), cip, dao, cipUfg, cipUa };
 }
 
 // ── Parser principal ───────────────────────────────────────
@@ -371,6 +376,25 @@ export function parsePtFromHtml(html) {
   }
   if (cip == null) warnings.push('Valor CIP não detectado — preencha manualmente se aplicável.');
   if (dao == null) warnings.push('Valor DAO não detectado — preencha manualmente se aplicável.');
+
+  // CIP e DAO viram rubricas, como no plano em PDF: o balancete lança os dois
+  // (fundo institucional, fundo local, DAO) e, sem previsto, apareciam como
+  // estouro no Previsto × Realizado e no saldo livre. O total do plano segue
+  // sendo a soma das despesas, calculado acima, para não mudar a conferência
+  // de remanejamento contra os planos já gravados.
+  const { cipUfg, cipUa } = declaracao;
+  if (cipUfg != null || cipUa != null) {
+    const soma = (cipUfg || 0) + (cipUa || 0);
+    if (cip != null && Math.abs(soma - cip) >= 0.01) {
+      warnings.push(`O CIP declara ${cip.toFixed(2)}, mas UFG e UA/Órgão somam ${soma.toFixed(2)}. ` +
+        'Ficou a divisão; confira no documento.');
+    }
+    if (cipUfg) rubricas.push({ rubrica_code: 'cip_ufg', descricao_livre: null, valor_previsto: cipUfg });
+    if (cipUa) rubricas.push({ rubrica_code: 'cip_ua', descricao_livre: null, valor_previsto: cipUa });
+  } else if (cip) {
+    warnings.push('O CIP não traz a divisão entre UFG e UA/Órgão; ficou fora das rubricas. Preencha à mão se souber.');
+  }
+  if (dao) rubricas.push({ rubrica_code: 'dao', descricao_livre: null, valor_previsto: dao });
 
   return { data, warnings };
 }
