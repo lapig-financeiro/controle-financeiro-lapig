@@ -251,7 +251,11 @@ export function parseBalanceteText(text) {
     if (deveIgnorar(conta)) continue;
 
     lancamentos.push({
-      conta_codigo:    conta,
+      // Código cortado fora da tabela: o pedaço é igual para contas
+      // diferentes ("7.1.3.05.01.0" em locação, internet, impostos…) e o
+      // banco tem uma linha por conta (uq_lancamento) — o 30.076 de 03/09
+      // não gravava. O reduzido identifica a conta e não muda o prefixo.
+      conta_codigo:    incompleta ? `${conta}#${reduzido}` : conta,
       conta_descricao: desc || null,
       valor_debito:    debito  == null ? 0 : Math.abs(debito),
       valor_credito:  credito == null ? 0 : Math.abs(credito),

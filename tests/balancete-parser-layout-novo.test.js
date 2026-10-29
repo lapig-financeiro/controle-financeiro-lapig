@@ -47,7 +47,8 @@ describe('layout 2026-09 — código reconstruído pelo reduzido', () => {
   it('nenhum código cortado sobra, exceto a conta nova', () => {
     const cortadas = r().data.lancamentos.filter(l => l.conta_incompleta);
     expect(cortadas.map(l => l.conta_reduzido)).toEqual(['2597096']);
-    expect(cortadas[0].conta_codigo).toBe('7.1.3.05.01.97');
+    // O reduzido vai junto: duas contas cortadas no mesmo pedaço não colidem no banco.
+    expect(cortadas[0].conta_codigo).toBe('7.1.3.05.01.97#2597096');
     expect(cortadas[0].saldo_atual).toBeCloseTo(1400, 2);
     expect(r().warnings.some(w => w.includes('2597096'))).toBe(true);
   });
@@ -57,6 +58,11 @@ describe('layout 2026-09 — código reconstruído pelo reduzido', () => {
     expect(new Set(l.map(x => x.conta_reduzido)).size).toBe(l.length);
     // 13 folhas sob 7.1.3.05.01.00…, todas presentes
     expect(l.filter(x => x.conta_codigo.startsWith('7.1.3.05.01.00')).length).toBe(13);
+  });
+
+  it('um código por lançamento, como o banco exige (uq_lancamento)', () => {
+    const l = r().data.lancamentos;
+    expect(new Set(l.map(x => x.conta_codigo)).size).toBe(l.length);
   });
 });
 

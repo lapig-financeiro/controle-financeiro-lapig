@@ -1760,7 +1760,7 @@ const PlanoTrabalhoPage = (() => {
           <div class="bal-pergunta__dica">${dicaDe(it)}</div>
           ${selectHTML(it, selecionada)}
           <div class="bal-pergunta__rodape">
-            <span>${escapeAttr(it.l.conta_codigo)}${it.incompleta ? '…' : ''}${it.l.conta_reduzido ? ` · red. ${escapeAttr(it.l.conta_reduzido)}` : ''}</span>
+            <span>${escapeAttr(it.l.conta_codigo.split('#')[0])}${it.incompleta ? '…' : ''}${it.l.conta_reduzido ? ` · red. ${escapeAttr(it.l.conta_reduzido)}` : ''}</span>
             ${salvar}
           </div>
         </div>`;
