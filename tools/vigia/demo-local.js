@@ -151,8 +151,33 @@ function criarScriptApp() {
   }};
 }
 
+function criarPainelFalso() {
+  const estado=[],abas={};
+  function criarAba(nome) {
+    const linhas=[];
+    function registrar(valores) {estado.push({rotina:valores[0],estado:valores[1],resumo:valores[3],detalhe:valores[4],intervalo:valores[5]});}
+    return {
+      getLastRow:()=>linhas.length,
+      getRange:(linha,coluna,nLinhas=1,nColunas=1)=>({
+        getValues:()=>Array.from({length:nLinhas},(_,i)=>Array.from({length:nColunas},(_,j)=>(linhas[linha-1+i] || [])[coluna-1+j] ?? '')),
+        setValues:valores=>valores.forEach((novos,i)=>{
+          const alvo=linhas[linha-1+i]=linhas[linha-1+i] || [];
+          novos.forEach((valor,j)=>{alvo[coluna-1+j]=valor;});
+          if(nome==='Estado' && linha+i>=2) registrar(novos);
+        })
+      }),
+      appendRow:valores=>{linhas.push(valores.slice());if(nome==='Estado') registrar(valores);}
+    };
+  }
+  return {
+    estado,
+    openById:id=>({getSheetByName:nome=>abas[nome] || null,insertSheet:nome=>(abas[nome]=criarAba(nome))})
+  };
+}
+
 function criarSandbox({env,caixa,ate,executarCurl,log = console.log}) {
-  const properties=propertiesDoAmbiente(env),mensagens=caixa.slice(0,ate),estado={rpcs:[],avisos:[]};
+  const painel=criarPainelFalso();
+  const properties=propertiesDoAmbiente(env),mensagens=caixa.slice(0,ate),estado={rpcs:[],avisos:[],painel:painel.estado};
   const ultima = mensagens.length ? Date.parse(mensagens[mensagens.length-1].recebida_em) : Date.parse(caixa[0].recebida_em);
   const referenciaReal=Date.now(),referenciaDemo=ultima+1000;
   class DataDemo extends Date {
@@ -167,6 +192,7 @@ function criarSandbox({env,caixa,ate,executarCurl,log = console.log}) {
     PropertiesService:{getScriptProperties:()=>({getProperties:()=>({...properties}),getProperty:nome=>properties[nome] || null,setProperty:(nome,valor)=>{properties[nome]=String(valor);}})},
     UrlFetchApp:criarUrlFetchApp({env,properties,executarCurl,avisar,observarRpc:r=>estado.rpcs.push(r)}),
     GmailApp:criarGmailApp(mensagens),MailApp:{sendEmail:aviso=>avisar({canal:'email',titulo:aviso.subject || 'Vigia LAPIG',texto:aviso.body || ''})},
+    SpreadsheetApp:painel,Session:{getEffectiveUser:()=>({getEmail:()=>properties.VIGIA_EMAIL || ''})},
     LockService:{getScriptLock:()=>({tryLock:()=>{if(bloqueado)return false;bloqueado=true;return true;},releaseLock:()=>{bloqueado=false;}})},
     ScriptApp:criarScriptApp(),Utilities:{getUuid:()=>crypto.randomUUID()}
   };
@@ -194,6 +220,9 @@ function textoResumo(estado,resultado,ate,total) {
   for(const p of passos) linhas.push('  '+p.tarefa_id+' / '+p.passo_id+' → '+p.estado);
   linhas.push('Avisos simulados: '+estado.avisos.length);
   for(const a of estado.avisos) linhas.push('  '+a.titulo+' ('+a.canal+')');
+  const painel=estado.painel || [];
+  linhas.push('Painel de rotinas (planilha simulada): '+painel.length+' gravação(ões)');
+  for(const p of painel) linhas.push('  '+p.rotina+': '+p.estado+(p.resumo ? ' · '+p.resumo : ''));
   linhas.push('Chamadas ao modelo: '+processadas.filter(r=>r.chamou_modelo).length);
   const erros=registros.flatMap(r=>r.entrada?.p?.execucao?.erros || []);
   linhas.push('Erros registrados: '+erros.length);
@@ -235,4 +264,4 @@ function main(argv=process.argv.slice(2)) {
 if(require.main===module) {
   try {main();} catch(erro) {console.error('Demo interrompida: '+erro.message);process.exitCode=1;}
 }
-module.exports={MARCA_STATUS,propertiesDoAmbiente,respostaCurl,requisicaoCurl,criarUrlFetchApp,carregarCaixa,criarGmailApp,criarSandbox,textoResumo,executarDemo,argumentos};
+module.exports={MARCA_STATUS,propertiesDoAmbiente,respostaCurl,requisicaoCurl,criarUrlFetchApp,carregarCaixa,criarGmailApp,criarPainelFalso,criarSandbox,textoResumo,executarDemo,argumentos};

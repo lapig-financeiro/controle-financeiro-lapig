@@ -34,12 +34,25 @@ var VigiaMain = (function () {
   }
   // Desde a 057 o banco só põe na fila o essencial: resumo diário, prazo de hoje/vencido e falha do vigia.
   var ASSUNTOS = { alerta_prazo: 'Vigia LAPIG · prazo de tarefa', saude: 'Vigia LAPIG · falha na checagem' };
+  // O painel de rotinas é uma planilha à parte, não um canal de aviso. Gravação auxiliar: nunca derruba o vigia.
+  function registrarPainel(rotina, estado, resumo, detalhe, intervaloHoras) {
+    try { return painelRegistrar_(rotina, estado, resumo, detalhe, intervaloHoras) === true; } catch (_) { return false; }
+  }
+  // Topo do resumo diário numa linha só: as contagens que o dono lê primeiro (o painel corta em 300).
+  function contagensDoResumo(texto) {
+    return String(texto || '').split('\n').filter(function (l) {
+      return /^(Tarefas abertas|Precisam de você|Mensagens para esclarecer): /.test(l);
+    }).slice(0, 3).join(' · ').slice(0, 300);
+  }
   function entregar(db, config, avisos, ctx) {
     (avisos || []).forEach(function (aviso) {
       var envio;
       if (aviso.tipo === 'resumo_diario') {
+        // O resumo diário vai para o painel de rotinas, não para o e-mail; o detalhe leva o texto inteiro.
         var texto = VigiaResumo.textoResumoDiario(Object.assign({}, ctx, { site_url: config.SITE_URL, conta_gmail: config.VICTOR_EMAIL || config.EMAIL_AVISO }), aviso.dia);
-        envio = VigiaAvisos.enviarEmail(config, texto, 'Resumo do vigia · ' + String(aviso.dia || '').split('-').reverse().slice(0, 2).join('/'));
+        var gravou = registrarPainel('Vigia LAPIG · resumo diário', /Precisam de você: [1-9]/.test(texto) ? 'AVISO' : 'OK', contagensDoResumo(texto), texto, 24);
+        // O banco só aceita ntfy/email em `canal`; o painel não é canal, então o recibo vai sem o campo.
+        envio = gravou ? { estado: 'enviado' } : { estado: 'falhou', motivo: 'envio_falhou' };
       } else {
         var tarefa = (ctx.tarefas || []).find(function (t) { return t.id === aviso.tarefa_id; }) || { titulo: 'Vigia' };
         envio = VigiaAvisos.enviar(config, VigiaResumo.textoAviso(Object.assign({}, tarefa, { tipo: aviso.tipo, site_url: config.SITE_URL, mapa: ctx.mapa })),
@@ -97,6 +110,8 @@ var VigiaMain = (function () {
       // O banco devolve a outbox pendente, incluindo avisos de execuções anteriores.
       entregar(db, config, (final || {}).avisos, ctx);
       db.rpc('vigia_expurgar');
+      // Pulsação: o painel avisa quando a checagem para de dar notícia (intervalo de 1 h).
+      if (tipo === 'checagem') registrarPainel('Vigia LAPIG · checagem', 'OK', resultados.length + ' mensagens, ' + eventos.length + ' alertas', '', 1);
       return { estado: 'ok', execucao_id: execucao, mensagens: resultados.length, erros: erros.length };
     } catch (e) {
       if (chaveErro(e) === 'execucao_falhou') console.error(diagnostico(e));
@@ -104,6 +119,8 @@ var VigiaMain = (function () {
         try { db.rpc('vigia_registrar', { p: { versao: VERSAO, execucao: { id: execucao, terminada_em: new Date().toISOString(), erros: [{ codigo: chaveErro(e) }] } } }); } catch (_) { /* O monitor externo verá execução sem fim. */ }
       }
       if (config) { try { avisarFalha(config); } catch (_) { /* Sem cache ou sem envio: a página mostra o vigia atrasado. */ } }
+      // Falha também no painel: só a chave do erro, nunca conteúdo de e-mail.
+      registrarPainel('Vigia LAPIG · checagem', 'FALHOU', chaveErro(e), '', 1);
       throw new Error(chaveErro(e));
     } finally { lock.releaseLock(); }
   }

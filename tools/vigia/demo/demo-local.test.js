@@ -146,5 +146,7 @@ test('bundle real roda rodadas --ate 3, 4, 5, 6 e repetição sem efeitos duplic
   rodar(6);assert.equal(banco.estado.mensagens.get('DEMO-M6').motivo,'demanda_nova');
   assert.equal(banco.estado.mensagens.size,6);assert.equal(banco.estado.modelo,2);
   assert.ok(logs.some(s=>s.startsWith('AVISO:')));assert.ok(logs.some(s=>s.includes('Passos sugeridos nesta rodada: 1')));
+  assert.ok(logs.some(s=>s.includes('Painel de rotinas (planilha simulada): 1')));
+  assert.ok(logs.some(s=>/Vigia LAPIG · checagem: OK · \d+ mensagens, \d+ alertas/.test(s)));
   assert.ok(logs.every(s=>!s.includes('senha-sintetica') && !s.includes('jwt-sintetico')));
 });

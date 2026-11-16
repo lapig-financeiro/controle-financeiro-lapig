@@ -20,8 +20,8 @@ var VigiaResumo = (function () {
     return titulo(evento, mapa) + centro + '\n' + (tipos[evento.tipo] || 'Revisão pendente') + '\n' + site(evento.site_url);
   }
 
-  // ---- Resumo diário (057): sai só por e-mail, da conta do Victor para ela mesma, e diz o conteúdo. ----
-  // Nome de pessoa fica (é o e-mail do próprio Victor); CPF nunca: trecho com padrão de CPF é retido.
+  // ---- Resumo diário (057): vai para o painel de rotinas (não para e-mail) e diz o conteúdo. ----
+  // Nome de pessoa fica (o painel é do próprio Victor); CPF nunca: trecho com padrão de CPF é retido.
   var SITUACOES = { em_andamento: 'Em andamento', esperando: 'Esperando alguém', travado: 'Travado', feito: 'Feito' };
   function limpo(texto, max) {
     var s = String(texto == null ? '' : texto).replace(/\s+/g, ' ').trim();

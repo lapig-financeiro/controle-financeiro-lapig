@@ -26,14 +26,16 @@ Com o link do editor que a publicação imprime, sobram para o Victor:
 2. No seletor de função da barra superior, selecione **testarConfiguracao**, clique **Executar** e leia
    o registro: as propriedades obrigatórias devem dizer `ok`. O teste mostra nomes/status, nunca valores.
 3. Selecione **checar** e clique **Executar**. Na primeira vez o Google pede autorização: autorize Gmail,
-   envio de e-mail, conexões externas e gatilhos com essa mesma conta. Confira a última execução e os
-   registros de Triagem na página Buriti.
-4. Selecione **resumoDiario** e execute uma vez: deve chegar um resumo, mesmo sem tarefas.
+   envio de e-mail, conexões externas, gatilhos e **planilhas** (o Painel de rotinas) com essa mesma conta.
+   Confira a última execução e os registros de Triagem na página Buriti.
+4. Selecione **resumoDiario** e execute uma vez: o resumo aparece no **Painel de rotinas** (planilha), na
+   rotina `Vigia LAPIG · resumo diário`, mesmo sem tarefas. Ele não vai mais por e-mail.
 5. Selecione **instalarGatilhos** e execute. Ele cria checagem a cada 30 min e resumo na faixa das 8h,
    no fuso de São Paulo (o Google pode variar os minutos). Reexecutar substitui os dois gatilhos sem
    duplicá-los.
 6. No ícone de relógio **Acionadores**, confira `checar` e `resumoDiario`. Em **Execuções** veja falhas;
-   na página confira a última checagem. O monitor da página aponta atraso após duas horas.
+   na página confira a última checagem. O monitor da página aponta atraso após duas horas. O **Painel de
+   rotinas** registra a pulsação da checagem a cada hora e acusa quando ela falha ou para de dar notícia.
 
 O login Supabase é o **mesmo do "Buriti operador"** (migração 055): papel **automacao**, registro
 `vigia` em `automacoes` e **nenhum** centro de custo em `user_projects`; atua só pelas RPCs. Não use
@@ -51,7 +53,7 @@ individualmente nem o código dos testes.
 | `VIGIA_EMAIL` | Sim | E-mail do login de automação no Supabase |
 | `VIGIA_SENHA` | Sim | Senha desse login |
 | `SITE_URL` | Sim | Link HTTPS para a página Buriti |
-| `EMAIL_AVISO` | Sim | E-mail que recebe avisos e o resumo; reserva se ntfy falhar |
+| `EMAIL_AVISO` | Sim | E-mail que recebe os avisos urgentes; reserva se ntfy falhar |
 | `VICTOR_EMAIL` | Não | Endereço do próprio Victor no Gmail; padrão `EMAIL_AVISO`. Preencha se o destinatário dos avisos for outro endereço |
 | `OLLAMA_API_KEY` | Não | Vazio = somente regras; preencher ativa o modelo Cloud |
 | `OLLAMA_MODEL` | Não | Padrão `glm-5.3-flash` |
@@ -72,8 +74,11 @@ tipo e link. Não incluem corpo, remetente ou resumo livre do modelo.
 - **Prazo requer atenção:** D-5, D-2, dia do prazo ou vencido. Se uma execução foi perdida, recupera só
   o alerta mais grave atual; alterar o prazo inicia uma nova sequência.
 - **Vigia requer atenção:** uma checagem falhou. Consulte Execuções no Apps Script e a saúde no site.
-- **Resumo diário:** tarefas abertas, contagens de atenção/triagem/rotina e saúde. Às segundas lembra
-  a auditoria da fila Rotina no site, sem reproduzir assuntos pessoais nas notificações.
+- **Resumo diário:** não é aviso urgente e não vai por e-mail. É gravado no **Painel de rotinas** (planilha
+  `PAINEL_PLANILHA_ID`, rotina `Vigia LAPIG · resumo diário`, uma vez por dia, intervalo de 24 h): tarefas
+  abertas, quantas precisam de você e mensagens para esclarecer aparecem no resumo; o texto completo fica no
+  detalhe da rotina. Às segundas lembra a auditoria da fila Rotina no site, sem reproduzir assuntos pessoais
+  nas notificações.
 
 `rotina` é fila para auditoria, não descarte. Domínio desconhecido sempre é avaliado. Resposta de férias
 fica como ausência/informativo para revisão, sem sugerir cumprimento. Anexos são contados, **não lidos**;
@@ -109,6 +114,9 @@ se o Google encerrar a execução, as capturas permanecem e a falta de fim fica 
 
 Avisos são uma outbox do banco. Falha de ntfy usa e-mail; falha dos dois é registrada e tenta novamente
 na próxima checagem. Uma interrupção depois do envio e antes de registrar o recibo pode repetir o aviso.
+O resumo diário e a pulsação da checagem vão para o painel, não para a outbox de e-mail: se a planilha não
+gravar, o resumo fica `falhou` com motivo `envio_falhou` e é reenviado na execução seguinte. Gravar no
+painel nunca derruba o vigia.
 O expurgo de assuntos/trechos após 90 dias é responsabilidade de `vigia_expurgar`.
 
 ## Desligar ou atualizar

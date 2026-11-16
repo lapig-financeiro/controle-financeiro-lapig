@@ -2,7 +2,8 @@
 
 Este executor roda **`tools/vigia/dist/Vigia.gs` real** num `vm` do Node. O Supabase recebe as chamadas reais
 de login e das quatro RPCs do [contrato v1](../CONTRATO.md). O Gmail é a caixa sintética de seis mensagens;
-e-mail e ntfy só imprimem `AVISO: ...`, sem enviar nada. Não entra em `npm test`.
+e-mail e ntfy só imprimem `AVISO: ...`, e o painel de rotinas é uma planilha em memória: nada sai da máquina.
+Não entra em `npm test`.
 
 ## Preparar
 
@@ -104,7 +105,8 @@ Repetir `--ate 4` não deve duplicar sugestões/eventos/avisos no banco. Não vo
 o cursor é monotônico. IDs fixos `DEMO-M1` a `DEMO-M6` e threads T1/T2 deixam a repetição visível.
 
 No fim há um resumo da **rodada**: capturas da janela, quantas novas o banco inseriu, filas/motivos,
-vínculos sugeridos, passos sugeridos, avisos simulados, chamadas de modelo e erros registrados.
+vínculos sugeridos, passos sugeridos, avisos simulados, gravações no painel, chamadas de modelo e erros
+registrados.
 Mensagens já capturadas não reprocessadas são identificadas; o resumo não inventa sua fila anterior.
 Avisos simulados são reconhecidos como enviados **no banco local**, para demonstrar idempotência da outbox.
 Timeout/indisponibilidade do modelo deixa captura pendente para repetir na próxima rodada. Uma mudança

@@ -8,8 +8,34 @@ const fixtures = require('./fixtures/casos.json');
 const fonte = fs.readFileSync(build(), 'utf8');
 const copiar = v => JSON.parse(JSON.stringify(v));
 
+// Planilha falsa só com o que o painelRegistrar_ usa: cabeçalho, busca da rotina e append.
+function criarPainel() {
+  const abas = {};
+  function criarAba() {
+    const linhas = [];
+    return {
+      linhas,
+      getLastRow: () => linhas.length,
+      getRange: (linha, coluna, nLinhas = 1, nColunas = 1) => ({
+        getValues: () => Array.from({ length: nLinhas }, (_, i) => Array.from({ length: nColunas }, (_, j) => (linhas[linha - 1 + i] || [])[coluna - 1 + j] ?? '')),
+        setValues: valores => valores.forEach((nova, i) => {
+          if (!linhas[linha - 1 + i]) linhas[linha - 1 + i] = [];
+          const alvo = linhas[linha - 1 + i];
+          nova.forEach((valor, j) => { alvo[coluna - 1 + j] = valor; });
+        })
+      }),
+      appendRow: valores => { linhas.push(valores.slice()); }
+    };
+  }
+  const planilha = { getSheetByName: nome => abas[nome] || null, insertSheet: nome => (abas[nome] = criarAba()) };
+  const rotinas = () => (abas.Estado ? abas.Estado.linhas.slice(1) : [])
+    .map(l => ({ rotina:l[0], estado:l[1], quando:l[2], resumo:l[3], detalhe:l[4], intervalo:l[5], conta:l[6] }));
+  return { abas, planilha, id:null, rotinas, historico:() => (abas.Historico ? abas.Historico.linhas.slice(1) : []) };
+}
+
 function sandbox(opcoes = {}) {
-  const estado = { requisicoes: [], queries: [], logs: [], emails: [], mensagens: {}, eventos: {}, capturas: [], finalizacoes: [], avisos: {}, auth:0, locks:0, releases:0, triggers:[], expurgos:0, cache:{} };
+  const estado = { requisicoes: [], queries: [], logs: [], emails: [], mensagens: {}, eventos: {}, capturas: [], finalizacoes: [], avisos: {}, acks: [], auth:0, locks:0, releases:0, triggers:[], expurgos:0, cache:{} };
+  const painel = criarPainel();
   const config = { SUPABASE_URL:'https://banco.exemplo.invalid',SUPABASE_ANON_KEY:'fake-anon-secret',VIGIA_EMAIL:'vigia@exemplo.invalid',VIGIA_SENHA:'fake-password-secret',SITE_URL:'https://site.exemplo.invalid/#buriti',EMAIL_AVISO:'aviso@exemplo.invalid',...opcoes.config };
   let mensagens = opcoes.mensagens || [fixtures.mensagens.envio, fixtures.mensagens.github];
   const ctx = { versao_esquema:1,tarefas:[copiar(fixtures.tarefa)],cursor_em:'2026-10-05T16:00:00.000Z',vinculos:[],pendentes:[],alertas_emitidos:[],esclarecer:0,rotina:0,saude:'ok',...opcoes.contexto };
@@ -31,7 +57,7 @@ function sandbox(opcoes = {}) {
       (p.eventos || []).forEach(e => { estado.eventos[e.chave] = e; });
       if (p.resumo_diario) estado.avisos[p.resumo_diario.chave] ||= {...p.resumo_diario,tipo:'resumo_diario',estado:'pendente'};
     }
-    (p.avisos_resultados || []).forEach(a => { estado.avisos[a.chave].estado = a.estado; });
+    (p.avisos_resultados || []).forEach(a => { estado.acks.push(a); if (estado.avisos[a.chave]) estado.avisos[a.chave].estado = a.estado; });
     return { avisos:Object.values(estado.avisos).filter(a=>a.estado !== 'enviado') };
   }
   class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : ['2026-10-06T16:00:00.000Z'])); } static now() { return new Date('2026-10-06T16:00:00.000Z').getTime(); } }
@@ -40,6 +66,8 @@ function sandbox(opcoes = {}) {
     PropertiesService:{getScriptProperties:()=>({getProperties:()=>({...config})})},
     LockService:{getScriptLock:()=>({tryLock:()=>{estado.locks++;return !opcoes.ocupado;},releaseLock:()=>estado.releases++})},
     MailApp:{sendEmail:email=>{if(opcoes.mailFalha) throw new Error('mail fake secret');estado.emails.push(email);}},
+    SpreadsheetApp:{openById:id=>{if(opcoes.painelFalha) throw new Error('planilha fake secret');painel.id=id;return painel.planilha;}},
+    Session:{getEffectiveUser:()=>({getEmail:()=>'vigia@exemplo.invalid'})},
     CacheService:{getScriptCache:()=>({get:k=>estado.cache[k]||null,put:(k,v)=>{estado.cache[k]=v;}})},
     GmailApp:{
       search:(q, start, max)=>{
@@ -80,13 +108,16 @@ function sandbox(opcoes = {}) {
     }}
   };
   vm.createContext(global);vm.runInContext(fonte,global);
-  return { global,estado,config,setMensagens:v=>{mensagens=v;},opcoes };
+  return { global,estado,config,painel,setMensagens:v=>{mensagens=v;},opcoes };
 }
 
 describe('Vigia.gs com serviços falsos, sem rede', () => {
   it('build determinístico, sem import/require/module; captura precede processamento e registro', () => {
     expect(fs.readFileSync(build(),'utf8')).toBe(fonte);
     expect(fonte).not.toMatch(/\brequire\(|\bmodule\.exports|^import /m);
+    expect(fonte).toMatch(/\/\/ apps-script[\\/]painel\.js/);
+    expect(fonte).toContain('function painelRegistrar_(');
+    expect(fonte).not.toContain('enviarEmail');
     const {global,estado}=sandbox();
     expect(global.checar().estado).toBe('ok');
     expect(estado.mensagens['m-envio'].fila).toBe('tarefa');
@@ -130,13 +161,52 @@ describe('Vigia.gs com serviços falsos, sem rede', () => {
     const falhas=s.estado.emails.filter(e=>e.subject==='Vigia LAPIG · falha na checagem');
     expect(falhas).toHaveLength(1);expect(falhas[0].body).not.toContain('fake');
   });
-  it('resumo diário com conteúdo sai só por e-mail, mesmo com ntfy configurado', () => {
-    const s=sandbox({mensagens:[],config:{NTFY_TOPICO:'topico-sintetico'},contexto:{tarefas:[],resumo_tarefas:[],
-      esclarecer_lista:[{gmail_thread_id:'th1',recebida_em:'2026-10-06T12:00:00Z',remetente:'[P1]',assunto:'Ofício novo',motivo:'demanda_nova'}]}});
+  it('checagem bem-sucedida registra pulsação no painel, sem detalhe', () => {
+    const s=sandbox();s.global.checar();
+    const final=s.estado.finalizacoes[0];
+    const rotina=s.painel.rotinas().find(r=>r.rotina==='Vigia LAPIG · checagem');
+    expect(rotina).toMatchObject({estado:'OK',detalhe:'',intervalo:1});
+    expect(rotina.resumo).toBe(final.resultados.length+' mensagens, '+final.execucao.alertas+' alertas');
+    expect(s.painel.historico().some(l=>l[1]==='Vigia LAPIG · checagem'&&l[2]==='OK')).toBe(true);
+  });
+  it('falha na checagem registra FALHOU no painel com a chave do erro, sem conteúdo', () => {
+    const s=sandbox({capturaFalha:true});
+    expect(()=>s.global.checar()).toThrow('rpc_vigia_capturar_http_500');
+    const rotina=s.painel.rotinas().find(r=>r.rotina==='Vigia LAPIG · checagem');
+    expect(rotina).toMatchObject({estado:'FALHOU',resumo:'rpc_vigia_capturar_http_500',detalhe:'',intervalo:1});
+    expect(rotina.resumo).not.toContain('fake');
+  });
+  it('resumo diário vai ao painel, não ao e-mail, com recibo sem canal', () => {
+    const s=sandbox({mensagens:[],config:{NTFY_TOPICO:'topico-sintetico'},contexto:{tarefas:[{status:'em_andamento'},{status:'em_andamento'}],
+      resumo_tarefas:[{titulo:'Bolsa 30.068',situacao:'em_andamento',precisa_atencao:true,motivo_atencao:'prazo vence hoje'},{titulo:'Relatório',situacao:'em_andamento'}],
+      esclarecer:1,esclarecer_lista:[{gmail_thread_id:'th1',recebida_em:'2026-10-06T12:00:00Z',remetente:'[P1]',assunto:'Ofício novo',motivo:'demanda_nova'}]}});
     s.global.resumoDiario();
     expect(s.estado.requisicoes.some(r=>r.url.startsWith('https://ntfy.sh/'))).toBe(false);
-    expect(s.estado.emails[0].subject).toBe('Resumo do vigia · 06/10');
-    expect(s.estado.emails[0].body).toContain('"Ofício novo" (assunto novo, sem tarefa)');
+    expect(s.estado.emails).toEqual([]);
+    const rotina=s.painel.rotinas().find(r=>r.rotina==='Vigia LAPIG · resumo diário');
+    expect(s.painel.id).toBe(s.global.PAINEL_PLANILHA_ID);
+    expect(rotina).toMatchObject({estado:'AVISO',intervalo:24});
+    expect(rotina.resumo).toBe('Tarefas abertas: 2 · Precisam de você: 1 · Mensagens para esclarecer: 1');
+    expect(rotina.detalhe).toContain('"Ofício novo" (assunto novo, sem tarefa)');
+    expect(rotina.detalhe).toContain('PRECISA DE VOCÊ');
+    const ack=s.estado.acks.find(a=>a.chave==='resumo:2026-10-06');
+    expect(ack).toEqual({chave:'resumo:2026-10-06',estado:'enviado'});
+    expect('canal' in ack).toBe(false);
+  });
+  it('resumo sem atenção fica OK no painel', () => {
+    const s=sandbox({mensagens:[]});s.global.resumoDiario();
+    const rotina=s.painel.rotinas().find(r=>r.rotina==='Vigia LAPIG · resumo diário');
+    expect(rotina.estado).toBe('OK');expect(rotina.resumo).toContain('Precisam de você: 0');
+  });
+  it('painel fora do ar vira falhou/envio_falhou, sem canal, e reenvia na execução seguinte', () => {
+    const s=sandbox({mensagens:[],painelFalha:true});s.global.resumoDiario();
+    expect(s.estado.emails).toEqual([]);
+    expect(s.estado.acks.find(a=>a.chave==='resumo:2026-10-06')).toEqual({chave:'resumo:2026-10-06',estado:'falhou',motivo:'envio_falhou'});
+    expect('canal' in s.estado.acks.find(a=>a.chave==='resumo:2026-10-06')).toBe(false);
+    expect(s.estado.avisos['resumo:2026-10-06'].estado).toBe('falhou');
+    s.opcoes.painelFalha=false;s.global.resumoDiario();
+    expect(s.estado.acks.filter(a=>a.chave==='resumo:2026-10-06').at(-1)).toEqual({chave:'resumo:2026-10-06',estado:'enviado'});
+    expect(s.painel.rotinas().find(r=>r.rotina==='Vigia LAPIG · resumo diário').estado).toBe('OK');
   });
   it('modelo offline deixa captura para próxima execução e depois processa', () => {
     const s=sandbox({mensagens:[fixtures.mensagens.exigencia],config:{OLLAMA_API_KEY:'fake-ollama-secret'},modeloFalha:true});
@@ -170,13 +240,16 @@ describe('Vigia.gs com serviços falsos, sem rede', () => {
     s.global.instalarGatilhos();s.global.instalarGatilhos();expect(s.estado.triggers).toHaveLength(2);
     expect(s.estado.triggers.find(t=>t.nome==='resumoDiario').inTimezone).toBe('America/Sao_Paulo');
   });
-  it('resumo diário vazio chega pela outbox, sem buscar Gmail', () => {
+  it('resumo diário vazio vai ao painel, sem buscar Gmail', () => {
     const s=sandbox({contexto:{tarefas:[]}});s.global.resumoDiario();expect(s.estado.queries).toEqual([]);
-    expect(s.estado.emails[0].body).toContain('Tarefas abertas: 0');expect(s.estado.emails[0].body).toContain('Mensagens para esclarecer: 0');
+    const rotina=s.painel.rotinas().find(r=>r.rotina==='Vigia LAPIG · resumo diário');
+    expect(rotina.resumo).toBe('Tarefas abertas: 0 · Precisam de você: 0 · Mensagens para esclarecer: 0');
+    expect(rotina.detalhe).toContain('Tarefas abertas: 0');expect(rotina.detalhe).toContain('Mensagens para esclarecer: 0');
+    expect(rotina.detalhe).toContain('Vigia · 2026-10-06');
   });
   it('resumo e aviso mascaram nomes conhecidos mesmo sem mensagens capturadas na execução', () => {
     const s=sandbox({mensagens:[]});s.global.resumoDiario();
-    expect(s.estado.emails[0].body).not.toContain('Otávio Exemplo');
+    expect(s.painel.rotinas().find(r=>r.rotina==='Vigia LAPIG · resumo diário').detalhe).not.toContain('Otávio Exemplo');
     expect(s.global.VigiaResumo.textoAviso({...fixtures.tarefa,tipo:'alerta_prazo',mapa:{}})).not.toContain('Otávio Exemplo');
   });
   it('passada no spam preserva marca; spam sem relação não chama modelo', () => {
