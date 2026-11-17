@@ -2435,3 +2435,19 @@ img { max-width: 100%; display: block; }
   .ativ__barra { margin-top: var(--sp-4); }
   .ativ__pessoa { margin-top: var(--sp-6); }
 }
+
+/* Valor que abre o documento de origem (OrigemDocumento): sublinhado pontilhado, mesma cor do texto. */
+.pt-conferir {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted var(--accent);
+  text-underline-offset: 3px;
+}
+.pt-conferir:hover,
+.pt-conferir:focus-visible {
+  color: var(--accent);
+}

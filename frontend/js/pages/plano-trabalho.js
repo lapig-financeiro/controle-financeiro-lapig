@@ -428,6 +428,103 @@ const PlanoTrabalhoPage = (() => {
    * Serviços de Terceiros por meses sem ninguém ver: número agregado não se
    * confere, número com a conta ao lado sim (ver migração 047).
    */
+  /* ── Conferência: de onde vem cada valor (OrigemDocumento) ─────────
+     Abre o documento de origem (balancete PDF ou plano PDF/DOCX) com a
+     linha do valor destacada. Nada é recalculado: as partes são as que
+     get_previsto_vs_realizado já devolveu (contas do balancete, itens do
+     plano). */
+
+  function botaoConferir(tipo, code, valor, titulo) {
+    if (typeof OrigemDocumento === 'undefined' || !Number(valor)) return formatBRL(valor);
+    const fn = tipo === 'previsto' ? 'conferirPrevisto' : 'conferirRealizado';
+    return `<button type="button" class="pt-conferir" title="${escapeAttr(titulo)}"
+      onclick="PlanoTrabalhoPage.${fn}('${escapeAttrJs(code)}')">${formatBRL(valor)}</button>`;
+  }
+
+  async function baixarArquivo(bucket, path) {
+    const { data, error } = await supabaseClient.storage.from(bucket).createSignedUrl(path, 60);
+    if (error) throw new Error(error.message);
+    const resp = await fetch(data.signedUrl);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.arrayBuffer();
+  }
+
+  async function docBalancete() {
+    if (!prevReal?.balancete_id) return null;
+    const { data } = await supabaseClient.from('balancetes')
+      .select('arquivo_storage_path, arquivo_nome').eq('id', prevReal.balancete_id).maybeSingle();
+    if (!data?.arquivo_storage_path) return null;
+    return { tipo: 'pdf', nome: data.arquivo_nome || 'balancete.pdf',
+      carregar: () => baixarArquivo(BALANCETE_STORAGE_BUCKET, data.arquivo_storage_path) };
+  }
+
+  async function docPlano() {
+    if (!viewing?.id) return null;
+    const { data } = await supabaseClient.from('planos_trabalho')
+      .select('arquivo_storage_path, arquivo_nome').eq('id', viewing.id).maybeSingle();
+    if (!data?.arquivo_storage_path) return null;
+    const nome = data.arquivo_nome || data.arquivo_storage_path;
+    return { tipo: /\.docx$/i.test(nome) ? 'docx' : 'pdf', nome,
+      carregar: () => baixarArquivo(STORAGE_BUCKET, data.arquivo_storage_path) };
+  }
+
+  function semDocumento(oque) {
+    showToast(`O arquivo ${oque} não está guardado no sistema.`, 'warning');
+  }
+
+  async function conferirRealizado(code) {
+    const r = (prevReal?.rubricas || []).find(x => x.rubrica_code === code);
+    if (!r) return;
+    const documento = await docBalancete();
+    if (!documento) { semDocumento('do balancete'); return; }
+    const contas = Array.isArray(r.contas) ? r.contas : [];
+    OrigemDocumento.abrir({
+      titulo: `Realizado de ${r.rubrica_name}`,
+      valor: Number(r.realizado),
+      documento,
+      partes: contas.map(c => ({
+        rotulo: `${c.conta_codigo} ${c.conta_descricao || ''}`.trim(),
+        valor: Number(c.realizado),
+        alvo: { conta_codigo: c.conta_codigo, valor: Number(c.realizado) },
+      })),
+      nota: contas.length > 1 ? `Realizado = soma das ${contas.length} contas do balancete de ${formatDate(prevReal.data_referencia)}.`
+        : `Conta do balancete de ${formatDate(prevReal.data_referencia)}.`,
+    });
+  }
+
+  async function conferirPrevisto(code) {
+    const r = (prevReal?.rubricas || []).find(x => x.rubrica_code === code);
+    if (!r) return;
+    const documento = await docPlano();
+    if (!documento) { semDocumento('do plano de trabalho'); return; }
+    const itens = (Array.isArray(r.detalhes) ? r.detalhes : []).filter(d => Number(d.previsto));
+    const partes = itens.length
+      ? itens.map(d => ({ rotulo: d.descricao || r.rubrica_name, valor: Number(d.previsto),
+          alvo: { valor: Number(d.previsto), texto: d.descricao || undefined } }))
+      : [{ rotulo: r.rubrica_name, valor: Number(r.previsto), alvo: { valor: Number(r.previsto) } }];
+    OrigemDocumento.abrir({
+      titulo: `Previsto de ${r.rubrica_name}`,
+      valor: Number(r.previsto),
+      documento,
+      partes,
+      nota: itens.length > 1 ? `Previsto = soma dos ${itens.length} itens do plano.` : undefined,
+    });
+  }
+
+  async function conferirSaldo() {
+    if (!prevReal) return;
+    const documento = await docBalancete();
+    if (!documento) { semDocumento('do balancete'); return; }
+    const v = Number(prevReal.saldo_disponivel);
+    OrigemDocumento.abrir({
+      titulo: 'Saldo disponível',
+      valor: v,
+      documento,
+      partes: [{ rotulo: `Saldo disponível em ${formatDate(prevReal.data_referencia)}`, valor: v,
+        alvo: { valor: v, texto: 'saldo disponivel' } }],
+    });
+  }
+
   function renderDetalheRubrica(r, detalhes, contas, temCompromisso) {
     const somaDet = detalhes.reduce((acc, d) => acc + Number(d.previsto || 0), 0);
     // O plano pode ter linha sem descrição: ela soma no total da rubrica mas
@@ -628,8 +725,8 @@ const PlanoTrabalhoPage = (() => {
       const linhaPrincipal = `
         <tr>
           <td style="${r.parent_code ? 'padding-left:24px;color:var(--text-secondary);' : 'font-weight:600;'}">${nomeCell}</td>
-          <td style="text-align:right;" class="currency">${formatBRL(r.previsto)}</td>
-          <td style="text-align:right;" class="currency">${formatBRL(r.realizado)}</td>
+          <td style="text-align:right;" class="currency">${botaoConferir('previsto', r.rubrica_code, r.previsto, `Ver ${r.rubrica_name} no plano de trabalho`)}</td>
+          <td style="text-align:right;" class="currency">${botaoConferir('realizado', r.rubrica_code, r.realizado, `Ver ${r.rubrica_name} no balancete`)}</td>
           <td style="text-align:right;color:${isOverbudget ? 'var(--danger)' : 'var(--text-primary)'};" class="currency">${saldoCell}</td>
           <td style="text-align:right;color:${percColor};font-weight:500;">${perc == null ? '—' : perc.toFixed(1) + '%'}</td>
         </tr>`;
@@ -677,7 +774,10 @@ const PlanoTrabalhoPage = (() => {
     return `
       <div style="display:flex;gap:8px;align-items:center;color:var(--text-secondary);font-size:14px;margin-bottom:16px;">
         <i data-lucide="info"></i>
-        <span>Balancete de <strong>${formatDate(prevReal.data_referencia)}</strong></span>
+        <span>Balancete de <strong>${formatDate(prevReal.data_referencia)}</strong>.
+          Clique num valor sublinhado para ver de onde ele saiu.</span>
+        <button class="btn btn--ghost btn--sm" onclick="PlanoTrabalhoPage.conferirSaldo()">
+          <i data-lucide="file-search"></i> Saldo disponível no balancete</button>
       </div>
 
       ${avisoCompromisso}
@@ -2136,7 +2236,7 @@ const PlanoTrabalhoPage = (() => {
     load, onProjectChange, switchTab, onImportClick, getImportHandlers, revisarPropostaBalancete, revisarPropostaPlano, rubricaNome,
     visualizar, ativar, excluir, baixar,
     verBalancete, excluirBalancete, baixarBalancete,
-    toggleRubrica,
+    toggleRubrica, conferirPrevisto, conferirRealizado, conferirSaldo,
     _addRubrica, _addDesembolso,
   };
 })();

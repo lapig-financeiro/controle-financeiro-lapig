@@ -22,7 +22,7 @@ const App = (() => {
     if (!initialized) {
       initialized = true;
       Router.registerGuard(async (_from, to) => {
-        if (to === 'usuarios' && !Auth.isAdmin()) {
+        if ((to === 'usuarios' || to === 'planejamento') && !Auth.isAdmin()) {
           showToast('Acesso restrito a administradores.', 'error');
           return false;
         }

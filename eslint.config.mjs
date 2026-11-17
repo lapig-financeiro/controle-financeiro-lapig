@@ -62,6 +62,9 @@ export default [
         parsePtFromPdfText: "readonly",
         mountPdfSplitView: "readonly",
         mountDocxSplitView: "readonly",
+        OrigemBusca: "readonly",
+        OrigemDocumento: "readonly",
+        PlanejamentoMotor: "readonly",
         parseBolsaSpreadsheet: "readonly",
         compareBolsaData: "readonly",
         // camada de IA (window-bridged via <script type="module">)
@@ -119,6 +122,8 @@ export default [
     files: [
       "frontend/js/pure-fns.js",
       "frontend/js/manutencao.js",
+      "frontend/js/planejamento-motor.js",
+      "frontend/js/origem-busca.js",
       "frontend/js/parsers/**/*.js",
       "frontend/js/components/**/*.js",
       "frontend/js/ai/**/*.js",

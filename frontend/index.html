@@ -181,6 +181,12 @@
               <span>Visão do Projeto</span>
             </button>
           </li>
+          <li data-admin>
+            <button class="sidebar__link" data-page="planejamento" id="nav-planejamento">
+              <i data-lucide="calendar-range"></i>
+              <span>Planejamento de bolsas</span>
+            </button>
+          </li>
           <li>
             <button class="sidebar__link" data-page="plano-trabalho" id="nav-plano-trabalho">
               <i data-lucide="file-text"></i>
@@ -286,6 +292,9 @@
   <script type="module" src="js/parsers/pt-pdf-parser.js"></script>
   <script type="module" src="js/components/pdf-split-view.js"></script>
   <script type="module" src="js/components/docx-split-view.js"></script>
+  <script type="module" src="js/origem-busca.js"></script>
+  <script type="module" src="js/components/origem-documento.js"></script>
+  <script type="module" src="js/planejamento-motor.js"></script>
   <script type="module" src="js/parsers/bolsa-parser.js"></script>
   <script type="module" src="js/parsers/bolsa-comparator.js"></script>
   <!-- Camada de IA (fase 3): tools sobre as RPCs de decisão + laço de tool calling.
@@ -315,6 +324,7 @@
   <script src="js/pages/atividades.js"></script>
   <script src="js/pages/buriti.js"></script>
   <script src="js/pages/hub.js"></script>
+  <script src="js/pages/planejamento.js"></script>
   <script src="js/pages/assistente.js"></script>
   <script src="js/pages/usuarios.js"></script>
   <script src="js/app.js"></script>
