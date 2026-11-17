@@ -21,14 +21,15 @@ update public.app_users set role='automacao' where user_id='00000000-0000-0000-0
 -- BLOCO 1 — o admin grava duas versões; a vigente é a mais recente; criado_por é ele.
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000a1',false);
 set role authenticated;
+-- A primeira tenta se datar no futuro; o banco ignora e usa o próprio relógio, então a segunda é a vigente.
 insert into public.planejamento_versoes(planejamento,premissas,nota,criado_em)
-  values('bolsas-2027','{"horizonte_ate":"2027-12"}','primeira','2026-11-17 10:00');
-insert into public.planejamento_versoes(planejamento,premissas,nota,criado_em)
-  values('bolsas-2027','{"horizonte_ate":"2027-12","fontes":{"itens":[]}}','segunda','2026-11-17 11:00');
+  values('bolsas-2027','{"horizonte_ate":"2027-12"}','primeira','2099-01-01');
+insert into public.planejamento_versoes(planejamento,premissas,nota)
+  values('bolsas-2027','{"horizonte_ate":"2027-12","fontes":{"itens":[]}}','segunda');
 select pg_temp.ok((select nota='segunda' from public.planejamento_versoes where planejamento='bolsas-2027'
   order by criado_em desc limit 1),'vigente é a mais recente');
 select pg_temp.ok((select count(*)=2 and bool_and(criado_por='00000000-0000-0000-0000-0000000000a1')
-  from public.planejamento_versoes),'duas versões, do admin');
+  and bool_and(criado_em < '2099-01-01') from public.planejamento_versoes),'duas versões, do admin, com a data do banco');
 -- Ninguém reescreve nem apaga uma versão (nem o admin).
 select pg_temp.negado($q$update public.planejamento_versoes set nota='x'$q$);
 select pg_temp.negado($q$delete from public.planejamento_versoes$q$);
@@ -68,12 +69,13 @@ begin
       insert into public.planejamento_versoes(planejamento,premissas) values('bolsas-2027','{}');
       raise exception '061 FALHOU: % gravou',u;
     exception when insufficient_privilege then null;
-      when raise_exception then if sqlerrm like '061 FALHOU%' then raise; end if;
+      -- só a recusa do gatilho do agente conta; qualquer outro erro é falha do roteiro
+      when raise_exception then if sqlerrm not like '%agente%' then raise; end if;
     end;
     reset role;
   end loop;
 end $$;
 
 -- BLOCO 4 — anon não tem nada.
-select pg_temp.ok(not has_table_privilege('anon','public.planejamento_versoes','SELECT'),'anon sem leitura');
+select pg_temp.ok(not has_table_privilege('anon','public.planejamento_versoes','SELECT,INSERT,UPDATE,DELETE'),'anon sem nenhum acesso');
 rollback;

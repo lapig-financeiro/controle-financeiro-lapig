@@ -35,6 +35,8 @@ create policy gravacao on public.planejamento_versoes for insert to authenticate
 
 -- CPF é recusado por gatilho, não por CHECK: contem_cpf não é executável por authenticated (052), e o CHECK roda
 -- com o papel de quem grava. A função do gatilho é definer só para chamar contem_cpf; não lê nem grava nada.
+-- A data da versão é sempre a do banco (clock_timestamp): quem grava não escolhe qual versão é a vigente
+-- (achado da revisão do Gemini 4 em 17/11/2026).
 create function public._planejamento_sem_cpf() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
@@ -42,6 +44,7 @@ begin
      or public.contem_cpf(new.planejamento) then
     raise exception 'Premissas com CPF não são gravadas.' using errcode = '23514';
   end if;
+  new.criado_em := clock_timestamp();
   return new;
 end $$;
 revoke all on function public._planejamento_sem_cpf() from public, anon, authenticated;
