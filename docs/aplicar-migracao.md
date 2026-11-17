@@ -87,13 +87,35 @@ gh workflow run migracao.yml -R $R --ref main -f modo=aplicar \
 
 ## Escritas automáticas (vigia) e quando disparar
 
-O vigia grava nas `vigia_*` a cada 30 min (por volta de :10 e :40, hora UTC do log do GitHub). Até 09/10/2026
-isso fazia o cofre parar ("A cópia restaurada não bate com a produção", "Os dados da produção mudaram desde a
-cópia") ou mudar o código de aprovação entre o ensaio e o aplicar. A correção está no cofre
-(`scripts/tabelas-vivas.txt`: vigia_* e audit_logs; ver o README dele): nessas tabelas a produção pode mudar
-sozinha. Se aparecer de novo um desses erros numa tabela que não está na lista, é uso real do sistema ou uma
-automação nova: entender antes de repetir; se for automação que só grava sozinha, propor a tabela na lista
-(mudança no cofre, que o Victor cola). `tarefa_eventos` fica fora de propósito: pessoas também gravam nela.
+O vigia grava nas `vigia_*` (pelo menos `vigia_execucoes` e `vigia_mensagens`) a cada 30 min. **Ele começa sempre às
+:10:47 e às :40:47 de cada hora** (UTC, a hora do log do GitHub; conferido em `vigia_execucoes.iniciada_em` em
+17/11/2026) e leva uns segundos.
+
+**Estado real em 17/11/2026: o cofre NÃO ignora essas tabelas.** Até 16/11 este documento dizia que a correção estava
+no cofre (`scripts/tabelas-vivas.txt`, com vigia_* e audit_logs). O arquivo **não existe**: conferido no cofre de
+verdade (lista de arquivos do passo "Buscar e ler a migração") e no clone local `..\cofre-lapig\`, que batem
+arquivo por arquivo. Provavelmente se perdeu na troca de PC de 16/11. A comparação de dados em `scripts/aplicar.sh`
+(linha ~33, `fotos.py efeito antes prod-antes`) compara todas as tabelas.
+
+O que acontece: se o vigia gravar entre a cópia e a conferência, o `aplicar` para com
+`Os dados da produção mudaram desde a cópia (alguém usou o sistema no meio). Nada foi aplicado` e lista as
+tabelas no fim do log (ex.: `public.vigia_execucoes|1/0/...`). Foi o que houve na primeira tentativa da 061
+(run 44155346333, cópia às 19:11 UTC, o vigia começou às 19:10:47).
+
+**Como disparar até o cofre ser corrigido:**
+1. Ver a hora UTC (`date -u +%H:%M`). O `aplicar` leva uns 5 min da partida à conferência (na 061: partida
+   19:13:53, aplicado às ~19:18).
+2. Disparar só quando houver pelo menos 8 min até o próximo :10:47 ou :40:47. Na dúvida, conferir o horário das
+   últimas execuções: `vigia_execucoes?select=iniciada_em&order=iniciada_em.desc&limit=4` (login do MCP).
+3. Se parar assim mesmo, ler as tabelas listadas no fim do log. Se forem só `vigia_*`/`audit_logs`, é o vigia:
+   o código de aprovação continua valendo (o erro vem depois da checagem do código), e é só disparar o mesmo
+   `aplicar` de novo, fora da janela, com a manutenção ainda ligada. Se for outra tabela, é uso real ou uma
+   automação nova: entender antes de repetir.
+4. Ensaiar não sofre com isso (o ensaio só olha a cópia). Mas se o banco mudar entre o ensaio e o aplicar, o
+   código de aprovação muda: aí é ensaiar de novo e pedir o ok outra vez.
+
+**Correção pendente (no cofre, que o Victor cola):** recriar a lista de tabelas que mudam sozinhas e fazer a
+comparação de dados ignorá-las. `tarefa_eventos` fica fora de propósito: pessoas também gravam nela.
 
 ## Quando dá erro
 

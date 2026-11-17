@@ -115,8 +115,44 @@ Cruzamento do plano ativo com o balancete mais recente (RPC `get_previsto_vs_rea
 - **4 KPIs** — Saldo disponível, Rendimento, Previsto total, Realizado total.
 - **Tabela por rubrica** — Previsto, Realizado, Saldo (R$), % Executado (colorido: verde ≤90%, amarelo 90-100%, vermelho >100%).
 - **Lançamentos não mapeados** — card secundário com despesas tributárias/bancárias que não bateram com nenhuma rubrica (configurável via `conta_rubrica_map`).
+- **"De onde vem este valor" (17/11/2026)** — Previsto e Realizado de cada rubrica e o botão "Saldo disponível no balancete" abrem o documento de origem com a linha destacada (`OrigemDocumento.abrir`, ver abaixo). Realizado → PDF do balancete (bucket `balancete-pdfs`), uma parte por conta de `r.contas`, achada pelo código da conta. Previsto → arquivo do plano ativo (`plano-trabalho-docs`, PDF ou DOCX), uma parte por item de `r.detalhes`, achada pelo valor (e pela descrição). Saldo → linha "SALDO DISPONÍVEL ... R$ x" do rodapé. Nada é recalculado: as partes são as que a RPC já devolveu. Sem o arquivo guardado, um aviso diz isso. Funções `conferirPrevisto`, `conferirRealizado`, `conferirSaldo` e `botaoConferir`.
 
 **Globais usadas:** `formatBRL`, `escapeAttr`, `formatDate`, `toInputDate`, `showToast`, `createModal`, `confirmAction`, `supabaseClient`, `mammoth`, `pdfjsLib`.
+
+## OrigemDocumento (`components/origem-documento.js`) e OrigemBusca (`origem-busca.js`)
+
+Janela "De onde vem este valor": à esquerda o valor conferido e a lista de partes (cada uma diz "achado pelo
+código/valor/texto" ou "não achei no documento"); à direita o documento. PDF com pdf.js, uma página por vez, faixa
+semitransparente na linha; DOCX com mammoth e `<mark>`. API: `OrigemDocumento.abrir({ titulo, valor, documento:
+{ tipo: 'pdf'|'docx', nome, carregar: async () => ArrayBuffer }, partes: [{ rotulo, valor, alvo: { conta_codigo?,
+valor?, texto? } }], nota? })`. A busca é pura e testada (`tests/origem-busca.test.js`): `linhasDaPagina` agrupa os
+itens do pdf.js com a mesma regra de `textoDaPagina`; `acharAlvo` tenta, em ordem, código inteiro, código cortado
+(`prefixo#reduzido`), valor (preferindo a linha que também tem o texto) e texto. **Valor zero nunca é alvo** (marcaria
+toda linha "0,00"). Altura da faixa = só a dos itens com altura (células vazias vêm com 0) e folga vertical de 1px:
+no balancete da FUNAPE as linhas ficam a ~8 pt e uma folga maior pegava a linha de cima (visto com PDF real em 17/11).
+Conferido no navegador só com PDF real; DOCX real ainda não (a marcação no HTML foi testada sem navegador).
+
+## PlanejamentoPage (`planejamento.js`) — admin-only (17/11/2026)
+
+Mapa das bolsas do Prof. Laerte até o horizonte: pessoa × mês, quem paga e quanto fica sem dinheiro. Rota bloqueada
+para não-admin (`app.js`) e link com `data-admin`.
+
+- **Lê do banco a cada abertura**, igual ao `refazer_mapa.py` (`NãoColocarNoGit/analise-bolsas-2027/mapa/`): `projects`,
+  `get_saldo_livre` de cada centro das premissas, `scholarships` + `scholarship_holders` dos centros do Laerte.
+- **Premissas** (o que não está no banco): última versão de `planejamento_versoes` com `planejamento = 'bolsas-2027'`
+  (mig. 061). Gravadas por `NãoColocarNoGit/analise-bolsas-2027/scripts/gravar_premissas.mjs` a partir de
+  `mapa/premissas.json` (simula por padrão; `--apply "nota"` grava uma versão nova; não grava se for igual à última).
+- **A conta** é `PlanejamentoMotor.calcular(dados, premissas)` (`planejamento-motor.js`), porte fiel do script Python,
+  travado por `tests/planejamento-motor.test.js` contra `tests/fixtures/planejamento/caso-mascarado.json` (nomes
+  trocados por P01…, gerado por `mapa/gerar_fixture_motor.py`). Se mudar a regra no Python, regerar o caso e portar.
+- **Chaves "Em discussão"** montam o cenário na hora, sem gravar: sobras do 30.099/30.118/30.111 para o
+  guarda-chuva (usa `sobras_para_gc`/`gc_sem_teto` do cenário B) e continuidade de ICS e GMH (desligada, usa
+  `encerra_com_cc` do cenário D).
+- **Dinheiro "a entrar"** (fontes com `situacao: 'a_entrar'`, ex.: US$ 80 mil, PCI) nunca se mistura ao que entrou:
+  a tela calcula dois cenários e mostra a falta "só com o que já entrou" e "contando o que vai entrar".
+- Tabelas: falta por mês, fontes (valor clicável: abre o balancete com o saldo disponível ou mostra a ressalva da
+  premissa), por grupo, pessoa a pessoa (uma cor por fonte), alertas. Botão "Ver premissas".
+- Conferida em 17/11 com os dados reais: os 5 cenários batem com o `RESULTADO.md` do script ao centavo.
 
 ## CrudPage Generic Module
 
