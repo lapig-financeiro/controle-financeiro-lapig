@@ -45,6 +45,8 @@ do $$ begin
     raise exception '061 FALHOU: CPF aceito'; exception when check_violation then null; end;
   begin insert into public.planejamento_versoes(planejamento,premissas,nota) values('bolsas-2027','{}','52998224725');
     raise exception '061 FALHOU: CPF na nota aceito'; exception when check_violation then null; end;
+  begin insert into public.planejamento_versoes(planejamento,premissas) values('52998224725','{}');
+    raise exception '061 FALHOU: CPF no nome do planejamento aceito'; exception when check_violation then null; end;
   begin insert into public.planejamento_versoes(planejamento,premissas) values('Bolsas 2027','{}');
     raise exception '061 FALHOU: nome inválido aceito'; exception when check_violation then null; end;
   begin insert into public.planejamento_versoes(planejamento,premissas) values('bolsas-2027','[]');

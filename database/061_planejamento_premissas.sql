@@ -38,7 +38,8 @@ create policy gravacao on public.planejamento_versoes for insert to authenticate
 create function public._planejamento_sem_cpf() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if public.contem_cpf(new.premissas::text) or public.contem_cpf(coalesce(new.nota, '')) then
+  if public.contem_cpf(new.premissas::text) or public.contem_cpf(coalesce(new.nota, ''))
+     or public.contem_cpf(new.planejamento) then
     raise exception 'Premissas com CPF não são gravadas.' using errcode = '23514';
   end if;
   return new;
