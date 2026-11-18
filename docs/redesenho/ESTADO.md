@@ -46,6 +46,16 @@
 4. (em curso) F1 delegada ao Neon (ver tabela). Era: escrever as tarefas da F1 (README §6 + §7b): pendências + `v_balancete_vigente`, página Projetos e do
    projeto, filtro de visão do admin; executores em worktrees fora do OneDrive.
 
+## Para uma 064 (antes da F3, quando o Buriti passar a gravar pendências)
+Revisão DeepSeek max da 063 final (18/11, sem achado alto). Médios: `contem_cpf` não pega CPF com espaço/traço
+entre os grupos nem partido entre campos (fazer um invólucro local, sem tocar `contem_cpf`); `criar_pendencia_v2`
+recusa centro inativo antes do upsert (quebra a idempotência de pendência já aberta); `project_id: ""` vira
+pendência geral (devia ser erro); a asserção final não pega uma 2ª policy SELECT nem gatilho desligado/`WHEN`.
+Baixos: gatilho de CPF revalida campos não alterados no UPDATE; índice em `resolvida_por`; `detalhe` NULL;
+`btrim` sem `
+`; erro de `p_id` nulo em `resolver_pendencia_v2`. Relatório completo no scratchpad da sessão
+de 18/11 (`rev-063-max.jsonl`); refazer a revisão se ele sumir.
+
 ## Pendências com o Victor
 - Nenhuma no momento.
 
