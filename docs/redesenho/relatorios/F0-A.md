@@ -65,3 +65,9 @@ Todos os três buckets são privados (`public = false`) e possuem RLS habilitado
   sem `bucket_id` pode abortar por policy alheia — falha segura, aparece no ensaio.
 - O MCP lê com login de usuário (anon + JWT), não com credencial que ignora RLS. O Buriti lê o PDF do disco local,
   não do bucket.
+
+## 1º ensaio no cofre (18/11, run 44404244918): falhou, nada aplicado
+A asserção "restritivas de escrita do agente (051) ausentes" disparou na cópia da produção: as policies
+restritivas do agente em `storage.objects` não estão lá (ou não com esses nomes). A 062 passou a recriar as
+quatro (três da 051 e a da 052) com o texto idêntico ao original, antes das asserções. O relatório do próximo
+ensaio dirá se elas "entraram" (estavam ausentes) ou se nada mudou.

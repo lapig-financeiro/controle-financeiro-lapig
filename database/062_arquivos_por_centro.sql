@@ -206,6 +206,33 @@ create policy bolsa_escopo_delete on storage.objects
   );
 
 -- ------------------------------------------------------------
+-- 3b. Restritivas do agente (051/052), recriadas com o texto idêntico ao original.
+--     O primeiro ensaio no cofre (18/11/2026) falhou na asserção abaixo: na produção elas não estão
+--     (ou não com estes nomes). Como a 062 abre janela permissiva por centro, elas precisam existir:
+--     o agente só escreve no bucket dele e só lê o dele e os balancetes.
+-- ------------------------------------------------------------
+drop policy if exists agente_so_no_bucket_dele_ins on storage.objects;
+create policy agente_so_no_bucket_dele_ins on storage.objects
+  as restrictive for insert to authenticated
+  with check (not public.is_agente() or bucket_id = 'propostas-agente');
+
+drop policy if exists agente_so_no_bucket_dele_upd on storage.objects;
+create policy agente_so_no_bucket_dele_upd on storage.objects
+  as restrictive for update to authenticated
+  using (not public.is_agente() or bucket_id = 'propostas-agente')
+  with check (not public.is_agente() or bucket_id = 'propostas-agente');
+
+drop policy if exists agente_so_no_bucket_dele_del on storage.objects;
+create policy agente_so_no_bucket_dele_del on storage.objects
+  as restrictive for delete to authenticated
+  using (not public.is_agente() or bucket_id = 'propostas-agente');
+
+drop policy if exists agente_le_so_buckets_sem_pii on storage.objects;
+create policy agente_le_so_buckets_sem_pii on storage.objects
+  as restrictive for select to authenticated
+  using (not public.is_agente() or bucket_id in ('propostas-agente', 'balancete-pdfs'));
+
+-- ------------------------------------------------------------
 -- 4. Asserções dentro da transação
 -- ------------------------------------------------------------
 do $$
