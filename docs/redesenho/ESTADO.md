@@ -35,7 +35,7 @@
 | Vigia | **parado** — nenhuma checagem depois das 18:10 de 18/11 (conferido no banco) |
 | F0-C — oráculo | retrato de `get_saldo_livre` dos 21 centros guardado fora do git (`oraculo-saldo-livre-2026-11-18.json`) |
 | Redirect URL `/v2/` no Supabase | feito pelo Victor (18/11) |
-| F1 | Tarefas `tarefas/F1-A-banco.md` (migração 063) e `tarefas/F1-B-telas.md`, revisadas por dois DeepSeek (correções no fim de cada uma). **Em execução pelo Neon**, em worktrees fora do OneDrive: `C:/Users/amara/dev/cf-f1-a` (branch `redesenho/f1-a-banco`) e `C:/Users/amara/dev/cf-f1-b` (branch `redesenho/f1-b-telas`). Depois: conferência do Claude, revisão de fase, juntar as branches, ensaio da 063 no cofre e ok do Victor. |
+| F1 | **Duas rodadas feitas e revisadas** (dois DeepSeek por frente, mutantes no teste da 063). Branch `redesenho/f1-a-banco` (worktree `C:/Users/amara/dev/cf-f1-a`, commits 7115e26 + 5c90495: migração 063, 41 KB, pglite verde) e `redesenho/f1-b-telas` (worktree `C:/Users/amara/dev/cf-f1-b`, 3eb05ca + 2f3ff1b: 54 testes, guarda de build sem dado de exemplo). Conferidas pelo Claude no navegador com dados de exemplo (`.claude/launch.json` → `f1b-exemplo`). **Ordem combinada:** publicar a 063 → ensaiar no cofre → ok do Victor → aplicar (manutenção) → só então juntar e publicar as telas (elas chamam as RPCs novas). |
 
 ## Próximos passos
 1. (feito) 062 aplicada e manutenção desligada em 18/11.
@@ -47,7 +47,7 @@
    projeto, filtro de visão do admin; executores em worktrees fora do OneDrive.
 
 ## Pendências com o Victor
-- Nenhuma no momento.
+- Ok para publicar a 063 no `master` e ensaiar no cofre (pedido em 18/11, noite).
 
 ## Registro
 | Data | O que aconteceu |
@@ -59,4 +59,5 @@
 | 18/11 | 4ª rodada da F0-B: Claude conferiu a 360 px; Neon corrigiu barra do topo e destaques |
 | 18/11 | Victor autorizou e o /v2/ foi publicado (dfc7bd1) |
 | 18/11 | Tarefas da F1 escritas, revisadas por dois DeepSeek e entregues a dois Neon em paralelo |
+| 18/11 | F1-A e F1-B: 1ª rodada, revisão de fase (dois DeepSeek cada) e 2ª rodada concluídas |
 | 18/11 | Victor trocou o executor: Orchestrator (Neon) no lugar do Hydrogen, a partir da F1 |
