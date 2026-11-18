@@ -41,12 +41,26 @@
   font-weight: var(--fw-semi);
 }
 
+.sino__estado-texto {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.sino__alerta {
+  color: var(--cor-atencao);
+}
+
 .sino__cabecalho {
   padding: var(--esp-2) var(--esp-3) var(--esp-1);
   font-size: var(--fs-2);
   line-height: var(--lh-2);
   font-weight: var(--fw-semi);
   color: var(--cor-texto);
+}
+
+.sino__estado {
+  padding: var(--esp-2);
 }
 
 .sino__vazio {
@@ -60,6 +74,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--esp-1);
+  max-height: calc(var(--altura-tela) - var(--altura-topo) - var(--esp-7));
+  overflow-y: auto;
 }
 
 .sino__item {
@@ -73,6 +89,8 @@
   background: transparent;
   border: 0;
   border-radius: var(--raio-1);
+  color: var(--cor-texto);
+  text-decoration: none;
   text-align: left;
   cursor: pointer;
   transition: background-color var(--rapido) var(--curva);
@@ -80,6 +98,15 @@
 
 .sino__item:hover {
   background-color: var(--cor-afundado);
+  color: var(--cor-texto);
+}
+
+.sino__item--estatico {
+  cursor: default;
+}
+
+.sino__item--estatico:hover {
+  background-color: transparent;
 }
 
 .sino__item-titulo {

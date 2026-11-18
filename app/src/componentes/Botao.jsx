@@ -3,6 +3,7 @@ import './Botao.css';
 
 /**
  * Botão padrão do sistema: `primario` (um por tela), `secundario` ou `fantasma`.
+ * Quando `href` é informado, renderiza um link `<a>` com a mesma aparência.
  */
 export function Botao({
   variante = 'secundario',
@@ -11,6 +12,8 @@ export function Botao({
   carregando = false,
   tipo = 'button',
   desabilitado = false,
+  href = null,
+  externo = false,
   onClick,
   children,
   className = '',
@@ -22,6 +25,23 @@ export function Botao({
     tamanho === 'compacto' ? 'botao--compacto' : '',
     className,
   ].filter(Boolean).join(' ');
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target={externo ? '_blank' : undefined}
+        rel={externo ? 'noopener noreferrer' : undefined}
+        class={classes}
+        aria-disabled={desabilitado ? 'true' : undefined}
+        onClick={onClick}
+        {...resto}
+      >
+        {Icone && <Icone size={16} strokeWidth={1.75} aria-hidden="true" />}
+        <span>{children}</span>
+      </a>
+    );
+  }
 
   return (
     <button

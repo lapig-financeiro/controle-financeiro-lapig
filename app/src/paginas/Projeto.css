@@ -1,0 +1,130 @@
+.projeto__nota-discreta {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.projeto__rubrica {
+  font-weight: var(--fw-medio);
+}
+
+.projeto__lista-definicao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.projeto__par-conta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+  padding-bottom: var(--esp-2);
+  border-bottom: var(--borda);
+}
+
+.projeto__par-conta:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.projeto__par {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--esp-4);
+}
+
+.projeto__lista-definicao > .projeto__par {
+  padding-bottom: var(--esp-2);
+  border-bottom: var(--borda);
+}
+
+.projeto__lista-definicao > .projeto__par:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.projeto__par dt {
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+}
+
+.projeto__par--total {
+  padding-top: var(--esp-3);
+  border-top: var(--borda-forte);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}
+
+.projeto__codigo-discreto {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.projeto__formula {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.projeto__cobertura {
+  color: var(--cor-texto-2);
+}
+
+.projeto__subrubricas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.projeto__subtitulo-painel {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}
+
+.projeto__lista-pendencias {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.projeto__pendencia-situacao {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto-3);
+}
+
+.projeto__pendencia-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.projeto__pendencia-confirmacao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  padding-top: var(--esp-2);
+  border-top: var(--borda);
+}
+
+.projeto__pendencia-pergunta {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto);
+}
+
+.projeto__subsecao-bolsas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.projeto__bolsa-encerrada {
+  color: var(--cor-texto-3);
+}

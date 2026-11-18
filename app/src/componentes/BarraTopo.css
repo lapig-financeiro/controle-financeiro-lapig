@@ -129,4 +129,13 @@
   .barra-topo__filtro-seta {
     display: none;
   }
+
+  .barra-topo .menu-suspenso {
+    position: fixed;
+    top: var(--altura-topo);
+    left: var(--esp-4);
+    right: var(--esp-4);
+    width: auto;
+    max-width: none;
+  }
 }

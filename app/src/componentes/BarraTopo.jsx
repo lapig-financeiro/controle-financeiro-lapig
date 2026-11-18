@@ -1,5 +1,7 @@
 import { useId, useRef, useState } from 'preact/hooks';
 import { ChevronDown, Filter } from 'lucide-preact';
+import { ehCliqueNavegacaoSimples } from '../roteador.js';
+import { FiltroVisao } from './FiltroVisao.jsx';
 import { MenuSuspenso, MenuSuspensoItem } from './MenuSuspenso.jsx';
 import { MenuUsuario } from './MenuUsuario.jsx';
 import { Sino } from './Sino.jsx';
@@ -19,8 +21,15 @@ export function BarraTopo({
   rotaAtiva = 'projetos',
   isAdmin = false,
   usuario = null,
+  todosCentros = null,
+  filtroSalvando = false,
+  filtroErro = null,
+  onSalvarFiltro = null,
   centrosVisiveis = null,
   pendencias = [],
+  sinoEstado = 'pronto',
+  sinoErro = null,
+  onRecarregarSino = null,
   onAlternarFiltro = null,
   onSelecionarPendencia = null,
   onSair = null,
@@ -49,7 +58,7 @@ export function BarraTopo({
     : 'Todos os centros';
 
   const irPara = (e, hash) => {
-    if (onNavegar) {
+    if (onNavegar && ehCliqueNavegacaoSimples(e)) {
       e.preventDefault();
       onNavegar(hash);
     }
@@ -91,7 +100,16 @@ export function BarraTopo({
         </div>
 
         <div class="barra-topo__direita">
-          {isAdmin && (
+          {isAdmin && Array.isArray(todosCentros) && (
+            <FiltroVisao
+              todos={todosCentros}
+              salvando={filtroSalvando}
+              erro={filtroErro}
+              onSalvar={onSalvarFiltro}
+            />
+          )}
+
+          {isAdmin && !Array.isArray(todosCentros) && onAlternarFiltro && (
             <div class="barra-topo__filtro-ancora" ref={filtroAncoraRef}>
               <button
                 ref={filtroGatilhoRef}
@@ -141,7 +159,13 @@ export function BarraTopo({
             </div>
           )}
 
-          <Sino pendencias={pendencias} onSelecionar={onSelecionarPendencia} />
+          <Sino
+            estado={sinoEstado}
+            pendencias={pendencias}
+            erro={sinoErro}
+            onTentarNovamente={onRecarregarSino}
+            onSelecionar={onSelecionarPendencia}
+          />
 
           <MenuUsuario usuario={usuario} isAdmin={isAdmin} onSair={onSair} />
         </div>
