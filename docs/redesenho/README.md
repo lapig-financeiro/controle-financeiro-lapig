@@ -139,7 +139,8 @@ correção dos achados confirmados. Só então a fase seguinte.
 
 ## 7. Como o trabalho é executado
 
-- **Executor**: Gemini 4 Hydrogen High pelo `agy` (`--mode accept-edits`), na pasta do projeto, uma tarefa
+- **Executor**: Orchestrator (Neon) pelo `agy` (`--model gemini-pro-orchestrator-neon --mode accept-edits`;
+  nunca o Argon, `gemini-pro-orchestrator-g1-pro`; até a F0 foi o Gemini 4 Hydrogen High), uma tarefa
   por vez por executor; até dois executores em paralelo só quando as listas "Arquivos" das tarefas não se
   cruzam.
 - **Acompanhamento**: o Claude lê o diff, roda lint/testes, confere no navegador o que for tela, e corrige o
