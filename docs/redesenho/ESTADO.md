@@ -35,7 +35,7 @@
 | Vigia | **parado** — nenhuma checagem depois das 18:10 de 18/11 (conferido no banco) |
 | F0-C — oráculo | retrato de `get_saldo_livre` dos 21 centros guardado fora do git (`oraculo-saldo-livre-2026-11-18.json`) |
 | Redirect URL `/v2/` no Supabase | feito pelo Victor (18/11) |
-| F1 | **Duas rodadas feitas e revisadas** (dois DeepSeek por frente, mutantes no teste da 063). Branch `redesenho/f1-a-banco` (worktree `C:/Users/amara/dev/cf-f1-a`, commits 7115e26 + 5c90495: migração 063, 41 KB, pglite verde) e `redesenho/f1-b-telas` (worktree `C:/Users/amara/dev/cf-f1-b`, 3eb05ca + 2f3ff1b: 54 testes, guarda de build sem dado de exemplo). Conferidas pelo Claude no navegador com dados de exemplo (`.claude/launch.json` → `f1b-exemplo`). **Ordem combinada:** publicar a 063 → ensaiar no cofre → ok do Victor → aplicar (manutenção) → só então juntar e publicar as telas (elas chamam as RPCs novas). |
+| F1 | **Duas rodadas feitas e revisadas** (dois DeepSeek por frente, mutantes no teste da 063). Branch `redesenho/f1-a-banco` (worktree `C:/Users/amara/dev/cf-f1-a`, commits 7115e26 + 5c90495: migração 063, 41 KB, pglite verde) e `redesenho/f1-b-telas` (worktree `C:/Users/amara/dev/cf-f1-b`, 3eb05ca + 2f3ff1b: 54 testes, guarda de build sem dado de exemplo). Conferidas pelo Claude no navegador com dados de exemplo (`.claude/launch.json` → `f1b-exemplo`). **063 aplicada em 18/11.** Próximo: juntar `redesenho/f1-b-telas` ao master e publicar as telas no /v2/. |
 
 ## Próximos passos
 1. (feito) 062 aplicada e manutenção desligada em 18/11.
@@ -47,7 +47,7 @@
    projeto, filtro de visão do admin; executores em worktrees fora do OneDrive.
 
 ## Pendências com o Victor
-- **Ok para aplicar a 063** (ensaio 44420452880 passou; commit 30330194120a3af9e293bca4b7811a7abb986760; aprovação `3829738d6c8673e0`). 1º ensaio (44419732462) falhou na ACL da view para authenticated; corrigido e o stub-063 passou a imitar os default privileges do Supabase.
+- Nenhuma no momento.
 
 ## Registro
 | Data | O que aconteceu |
@@ -59,6 +59,7 @@
 | 18/11 | 4ª rodada da F0-B: Claude conferiu a 360 px; Neon corrigiu barra do topo e destaques |
 | 18/11 | Victor autorizou e o /v2/ foi publicado (dfc7bd1) |
 | 18/11 | Tarefas da F1 escritas, revisadas por dois DeepSeek e entregues a dois Neon em paralelo |
+| 18/11 | **063 aplicada em produção** (run 44422809505, "tudo bate"); livre bate ao centavo nos 19 centros; manutenção desligada. Victor: revisões sempre com DeepSeek max |
 | 18/11 | Victor autorizou publicar a 063; 1º ensaio falhou (ACL da view), 2º passou |
 | 18/11 | F1-A e F1-B: 1ª rodada, revisão de fase (dois DeepSeek cada) e 2ª rodada concluídas |
 | 18/11 | Victor trocou o executor: Orchestrator (Neon) no lugar do Hydrogen, a partir da F1 |
