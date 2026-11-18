@@ -238,7 +238,7 @@ with (security_invoker = true) as
 comment on view public.v_balancete_vigente is
   'Balancete mais recente de cada centro de custo (security_invoker = true protege leituras diretas da view). Separada para a F2 versionar balancetes sem alterar os leitores; em RPCs definer, a guarda real de escopo é assert_project_allowed (mig. 063).';
 
-revoke all on public.v_balancete_vigente from public, anon;
+revoke all on public.v_balancete_vigente from public, anon, authenticated;
 grant select on public.v_balancete_vigente to authenticated;
 
 -- ------------------------------------------------------------

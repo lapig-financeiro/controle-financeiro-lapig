@@ -3,6 +3,13 @@
 --        -> stub-062 -> 062 -> 038 -> 048 -> stub-063 -> 063 -> test_063.
 -- NÃO faz parte do projeto. Dados puramente sintéticos, sem PII.
 
+-- Como o Supabase: objeto novo em public nasce com TODOS os privilégios para anon e authenticated
+-- (default privileges do papel postgres). Sem isto o teste local não vê o que o cofre vê
+-- (1º ensaio da 063: view nasceu com INSERT/UPDATE/DELETE para authenticated).
+alter default privileges in schema public grant all on tables to anon, authenticated;
+alter default privileges in schema public grant all on functions to anon, authenticated;
+alter default privileges in schema public grant all on sequences to anon, authenticated;
+
 alter table public.projects
   add column if not exists drive_folder_url text;
 
