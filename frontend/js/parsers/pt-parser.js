@@ -305,6 +305,90 @@ function totalDeclarado(tabela, doc) {
   return { despesas, total: totalPlano ?? total ?? receita ?? (m ? parseBRL(m[1]) : null), cip, dao, cipUfg, cipUa };
 }
 
+// ── Cronograma de desembolso (II.b) ────────────────────────
+//
+// Tabela "II.b. Cronograma de desembolso dos recursos": Parcela | Data | Valor.
+// A data pode ser dd/mm/aaaa, "Assinatura do contrato" ou uma entrega
+// ("Pré-processamento / ..."): o que não é data vai para data_texto. Valor que
+// não está no formato brasileiro ("210.00,00", erro de digitação no plano)
+// fica sem número, com o texto original e um aviso — nunca um palpite.
+// Ficou de fora quando a leitura deixou de usar IA (241d4b8) e voltou em 18/11/2026.
+
+const RE_DESEMB_TITULO = /cronograma\s+de\s+desembolso/i;
+const RE_VALOR_BR = /^-?\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?$|^-?\d+(?:,\d{1,2})?$/;
+
+const MESES_PT = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho', 'agosto',
+  'setembro', 'outubro', 'novembro', 'dezembro'];
+const iso = (a, mo, d) => {
+  const dt = new Date(Date.UTC(a, mo - 1, d));
+  if (dt.getUTCFullYear() !== a || dt.getUTCMonth() + 1 !== mo || dt.getUTCDate() !== d) return null;
+  return `${a}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+};
+const ano = s => (s.length === 2 ? 2000 + Number(s) : Number(s));
+
+// { data, exata }: "02/03/2026" e "10/04/26" são exatas; "Julho/25", "JULHO 2026" e
+// "Novembro de 2026" viram o dia 1º do mês (exata = false: o texto original fica guardado).
+function dataBr(s) {
+  const t = String(s || '').trim();
+  let m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})$/);
+  if (m) {
+    const d = iso(ano(m[3]), Number(m[2]), Number(m[1]));
+    return d ? { data: d, exata: true } : null;
+  }
+  const semAcento = t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  m = semAcento.match(/^([a-z]+)\s*(?:\/|-|\s|\s+de\s+)\s*(\d{4}|\d{2})$/);
+  const mes = m ? MESES_PT.indexOf(m[1]) + 1 : 0;
+  if (mes > 0) return { data: iso(ano(m[2]), mes, 1), exata: false };
+  return null;
+}
+
+function parseDesembolsos(doc) {
+  const avisos = [];
+  let tabela = null, inicio = null;
+  for (const c of doc.querySelectorAll('th, td')) {
+    if (!RE_DESEMB_TITULO.test(textOf(c))) continue;
+    let p = c;
+    while (p && p.tagName !== 'TABLE') p = p.parentElement;
+    if (p) { tabela = p; inicio = c.closest('tr'); break; }
+  }
+  if (!tabela) return { desembolsos: [], avisos };
+
+  const linhas = Array.from(tabela.querySelectorAll('tr'));
+  const out = [];
+  let dentro = false;
+  for (const tr of linhas.slice(linhas.indexOf(inicio) + 1)) {
+    const cells = Array.from(tr.children).map(textOf).filter(t => t !== '');
+    if (!cells.length) continue;
+    // Cabeçalho "Parcela | Data | Valor"
+    if (/^parcela$/i.test(cells[0])) { dentro = true; continue; }
+    const n = cells[0].match(/^(\d{1,2})[ªº°.)]?$/);
+    if (!n) {
+      // Mesma tabela pode seguir com receita/despesas (o Word junta): acabou o quadro.
+      if (dentro || out.length) break;
+      continue;
+    }
+    dentro = true;
+    const parcela = Number(n[1]);
+    const brutoValor = cells.length >= 3 ? cells[cells.length - 1] : (cells[1] || '');
+    const brutoData = cells.length >= 3 ? cells.slice(1, -1).join(' ') : '';
+    const semRs = brutoValor.replace(/[R$\s ]/g, '');
+    const valor = RE_VALOR_BR.test(semRs) ? brl(semRs) : null;
+    if (valor == null && /\d/.test(brutoValor)) {
+      avisos.push(`Desembolso, parcela ${parcela}: valor "${brutoValor}" fora do formato; ficou sem número. Confira no documento.`);
+    }
+    const dt = dataBr(brutoData);
+    out.push({
+      parcela,
+      data_prevista: dt ? dt.data : null,
+      data_texto: dt?.exata ? null : (brutoData || null),
+      valor,
+      valor_texto: valor == null ? (brutoValor || null) : null,
+    });
+  }
+  if (!out.length) avisos.push('Achei o quadro de desembolso, mas nenhuma parcela; confira no documento.');
+  return { desembolsos: out, avisos };
+}
+
 // ── Parser principal ───────────────────────────────────────
 
 export function parsePtFromHtml(html) {
@@ -332,16 +416,17 @@ export function parsePtFromHtml(html) {
 
   // Total do plano = soma das rubricas previstas (sanidade).
   const valor_total_plano = rubricas.reduce((s, r) => s + (r.valor_previsto || 0), 0);
+  const { desembolsos, avisos: avisosDesemb } = parseDesembolsos(doc);
   const data = {
     ...cabecalho,
     valor_cip: cip,
     valor_dao: dao,
     valor_total_plano: cabecalho.valor_total_plano ?? valor_total_plano,
     rubricas,
-    desembolsos: [],
+    desembolsos,
   };
 
-  const warnings = [];
+  const warnings = [...avisosDesemb];
   const declarado = declaracao.despesas ?? declaracao.total;
   // Só comparar com custos adicionais quando ambos foram lidos. Ausência
   // não é zero; as rubricas e o valor extraído continuam intactos.
@@ -408,6 +493,7 @@ export function parsePtFromHtml(html) {
 export const __internal = {
   findTabelaCanonica,
   parseLinhas,
+  parseDesembolsos,
   normalizeForLookup,
   TABELA_TITULO,
 };
