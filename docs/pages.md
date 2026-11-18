@@ -160,8 +160,8 @@ para não-admin (`app.js`) e link com `data-admin`.
      cenário que as tem; ICS/GMH não continuarem usa `encerra_com_cc`). Se a escolha não bate com nenhum cenário
      gravado, o rótulo vira "Ajuste próprio". O motor roda os cenários gravados + `_ESC` (a escolha) + `_ESC_SEM`.
   3. **Quem paga cada mês**: colunas empilhadas por fonte (vermelho = sem dinheiro); clicar abre o detalhe do mês.
-  4. **De onde vem o dinheiro**: fontes com valor clicável (balancete com o saldo disponível, ou a ressalva da
-     premissa), barra de uso e "vence sem uso".
+  4. **O dinheiro de cada fonte** (desde a noite de 18/11; antes "De onde vem o dinheiro"): ver "Conta pelo dinheiro"
+     abaixo. Vem logo depois dos cenários.
   5. **Pessoa a pessoa** (fechado): o valor da bolsa é clicável e lista as linhas da pessoa; linha do banco abre a
      última planilha de bolsas da FUNAPE do centro (`reconciliacoes` com `arquivo_storage_path`, bucket
      `bolsa-planilhas`) com a linha da pessoa destacada; linha das premissas diz que é prevista. Sem planilha
@@ -172,9 +172,37 @@ para não-admin (`app.js`) e link com `data-admin`.
   decisões exatas); só o "Ajuste próprio" é remontado por `cenarioDe`. Fonte `base: 'fixo'` nunca abre balancete,
   mesmo tendo `cc` (o 30.117 abria o balancete com o caixa no lugar dos R$ 20 mil). "Vencem sem uso" só conta
   fonte que acaba antes de a falta começar.
+- **Conta pelo dinheiro (18/11, pedido do Victor: "enxergar o dinheiro disponível e até quando pode ser alocado,
+  com os desembolsos, auditável")** — `planejamento-dinheiro.js`, funções puras, `tests/planejamento-dinheiro.test.js`:
+  - Por centro que é fonte, vale o **menor** entre o livre do plano (seletor por linha: "Só Pessoal" ou "Todas as
+    rubricas"; o padrão vem da `base` da premissa) e o dinheiro: caixa do último balancete **menos o rendimento
+    líquido** (a FUNAPE aplica o que entra; o rendimento não é do plano — opção "Contar o rendimento"), menos as
+    bolsas cadastradas até o fim do centro, menos (no modo Pessoal) o livre das outras rubricas. O dinheiro que chega
+    paga primeiro o que o centro já tem de pagar; o resto fica para as bolsas.
+  - **Parcelas**: o cronograma do plano ativo (`plano_desembolsos`) é somado em ordem e comparado com o que o
+    balancete diz que entrou desde o início (`raw_extraction.data.recursos`, lido de 2.1.3.01 por
+    `balancete-parser.js`): recebida / entrou em parte / nota emitida, não paga / atrasada: perguntar / venceu depois
+    do último balancete / futura / sem data / sem valor. Cada parcela que ainda vai entrar vira um pedaço da fonte a
+    partir do seu mês (atrasada, nota emitida e sem data: a partir do mês seguinte). Opções: contar atrasadas e sem
+    data (ligadas por padrão, marcadas na tela).
+  - Plano **sem valor por parcela** (GMH: "mediante cálculo de gastos p/ trimestre subsequente"): o financiador repõe
+    o gasto, então vale o livre do plano e o caixa não limita.
+  - Para o motor (que **não mudou**), `premissasPeloDinheiro` troca cada fonte de centro por fontes `fixo`, uma por
+    pedaço (`118` = em caixa, `118·p2` = parcela 2), e expande os cenários. A tela junta os pedaços de volta pelo
+    código antes do "·" (`pai`) em cores, rótulos, usado, sobra, "vence sem uso" e guarda-chuva.
+  - "Pelo livre do plano (conta antiga)" volta à conta do `refazer_mapa.py`. Com os dados reais de 18/11 as duas dão a
+    mesma falta nos 5 cenários (as sobras de 118, 099 e 111 vencem antes da falta começar); mudam o quando e o
+    quanto de cada fonte.
+  - Linha do tempo: faixa = meses em que a fonte pode pagar; pontos = parcelas (cor = situação). Os centros do Laerte
+    que não são fonte (ICS, Rede ILPF) aparecem embaixo, só para o dinheiro ficar à vista. Clicar no nome ou no valor
+    abre a conta passo a passo, a tabela das parcelas e os botões "Ver no balancete" (saldo, rendimento e contas de
+    recursos marcados) e "Ver o cronograma no plano".
+  - A tela "Desembolsos" (`funding_releases`) **não** entra: em 18/11 ela não batia com os balancetes (Acelen lançada
+    líquida, parcela lançada como recebida com a nota ainda a receber). Victor: vale o levantamento pelo balancete.
 - **Planilhas guardadas (18/11):** só há planilha da FUNAPE em `reconciliacoes` para 30.068, 30.103, 30.110 e
   30.114 (agosto); nenhuma dos centros do Laerte. Para esses, o clique na bolsa diz "nenhuma planilha guardada"
-  até que a importação de bolsas desses centros seja feita pela aba Reconciliação.
+  até que a importação de bolsas desses centros seja feita pela aba Reconciliação. (Na tarde de 18/11 as planilhas
+  de 30.099, 30.109, 30.111, 30.113 e 30.116 foram importadas e guardadas.)
 - Largura: `.main` ganhou `min-width: 0` em `style.css` (sem isso, tabela larga empurrava a página para fora da tela).
 - **Testar antes de publicar**: cópia local em `.claude/harness/planejamento.html` (fora do git), com um cliente
   falso que responde com o caso mascarado e uma planilha inventada; servir a raiz do repo (configuração

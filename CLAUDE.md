@@ -79,7 +79,7 @@ Uma linha por regra; o porquê e os incidentes de cada uma estão em **[docs/con
 - **Testes locais do banco**: `tools/replica-local/` (sintético, réplica sem PII, stack Supabase local). Dumps nunca versionados.
 - **Parsers determinísticos** em `frontend/js/parsers/` (balancete, plano DOCX/PDF, planilha de bolsas) e split-views em `frontend/js/components/`.
 - **Visão do Projeto** (`hub.js`): tela agregadora experimental, só leitura.
-- **Planejamento de bolsas** (`planejamento.js`, admin): conta em `planejamento-motor.js` (porte fiel do `refazer_mapa.py`, travado pelo caso mascarado); premissas versionadas em `planejamento_versoes` (061), só insert.
+- **Planejamento de bolsas** (`planejamento.js`, admin): conta em `planejamento-motor.js` (porte fiel do `refazer_mapa.py`, travado pelo caso mascarado); premissas versionadas em `planejamento_versoes` (061), só insert. O dinheiro de cada centro (caixa sem rendimento + parcelas do cronograma cruzadas com o balancete) sai de `planejamento-dinheiro.js` e entra no motor como fontes fixas por parcela.
 - **"De onde vem este valor"** (`components/origem-documento.js` + `origem-busca.js`): abre o PDF/DOCX de origem com a linha destacada; as partes vêm da RPC, nada é recalculado.
 - **Fila de importação** (`import-queue.js`): contrato de handler no cabeçalho do arquivo; `fallbackExt`, `rerouteTo` e `manualFallback` existem para os planos fora do padrão.
 - **Sino de alertas** é montado no boot (`app.js`), cobre os centros ativos visíveis e tem 3 estados (consultando/indisponível/contagem).

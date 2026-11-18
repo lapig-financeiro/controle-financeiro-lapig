@@ -339,13 +339,15 @@ function lerRecursos(lines) {
   for (const line of lines) {
     const m = line.match(RE_LANCAMENTO);
     if (!m) continue;
-    const [, conta, reduzido, descricao, , , , , saldo] = m;
+    const [, conta, reduzido, descricao, , debitos, creditos] = m;
     const f = conta.match(RE_FOLHA_RECURSO);
     if (!f) continue;
     const chave = /^\d+$/.test(reduzido) ? reduzido : conta;
     if (vistos.has(chave)) continue;
     vistos.add(chave);
-    const valor = parseNum(saldo) ?? 0;
+    // Conta de passivo: entra pelo crédito, sai pelo débito. A coluna Saldo de uma folha redutora vem
+    // sem parênteses (como nas despesas, ver valorNoPdf); as colunas não enganam.
+    const valor = Math.round((Math.abs(parseNum(creditos) ?? 0) - Math.abs(parseNum(debitos) ?? 0)) * 100) / 100;
     const desc = descricao.replace(/\s+/g, ' ').trim();
     let tipo = null;
     if (f[1] === '02') tipo = /RENDIMENTO/i.test(desc) ? 'rendimento_bruto' : 'recebido';

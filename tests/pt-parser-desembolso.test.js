@@ -88,3 +88,25 @@ describe('plano sem quadro de desembolso', () => {
     expect(ex.warnings.filter(w => /desembolso/i.test(w))).toEqual([]);
   });
 });
+
+describe('revisão de 18/11: formatos de tabela', () => {
+  it('célula de valor vazia não puxa a data para o lugar do valor', () => {
+    const ex = parsePtFromHtml(desembolso(linha(['4', '01/09/2026', ''])) + aplicacao);
+    expect(ex.data.desembolsos).toEqual([{ parcela: 4, data_prevista: '2026-09-01', data_texto: null, valor: null, valor_texto: null }]);
+    expect(ex.warnings.some(w => /parcela 4: sem valor/.test(w))).toBe(true);
+  });
+  it('quatro colunas (Parcela | Entrega | Data | Valor): pega a data da célula certa', () => {
+    const ex = parsePtFromHtml(desembolso(linha(['2', 'Relatório parcial', '15/03/2027', '10.000,00'])) + aplicacao);
+    expect(ex.data.desembolsos[0]).toMatchObject({ data_prevista: '2027-03-15', valor: 10000 });
+  });
+  it('título num parágrafo acima da tabela', () => {
+    const ex = parsePtFromHtml('<p>II.b. Cronograma de desembolso dos recursos</p><table>'
+      + linha(['Parcela', 'Data', 'Valor']) + linha(['1', '01/02/2027', '5.000,00']) + '</table>' + aplicacao);
+    expect(ex.data.desembolsos).toHaveLength(1);
+  });
+  it('uma célula que só cita o cronograma antes do quadro não esconde o quadro real', () => {
+    const ex = parsePtFromHtml('<table>' + linha(['Ver o cronograma de desembolso abaixo']) + '</table>'
+      + desembolso(linha(['1', '01/02/2027', '5.000,00'])) + aplicacao);
+    expect(ex.data.desembolsos).toHaveLength(1);
+  });
+});

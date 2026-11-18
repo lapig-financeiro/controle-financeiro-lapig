@@ -342,26 +342,36 @@ function dataBr(s) {
   return null;
 }
 
-function parseDesembolsos(doc) {
-  const avisos = [];
-  let tabela = null, inicio = null;
+// Tabelas candidatas: a que tem o título numa célula, ou a primeira tabela depois de um parágrafo/título com ele.
+function tabelasDeDesembolso(doc) {
+  const out = [];
+  const add = (t, linha) => { if (t && !out.some(x => x.tabela === t)) out.push({ tabela: t, inicio: linha }); };
   for (const c of doc.querySelectorAll('th, td')) {
-    if (!RE_DESEMB_TITULO.test(textOf(c))) continue;
-    let p = c;
-    while (p && p.tagName !== 'TABLE') p = p.parentElement;
-    if (p) { tabela = p; inicio = c.closest('tr'); break; }
+    if (RE_DESEMB_TITULO.test(textOf(c))) add(c.closest('table'), c.closest('tr'));
   }
-  if (!tabela) return { desembolsos: [], avisos };
+  for (const el of doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6')) {
+    if (!RE_DESEMB_TITULO.test(textOf(el))) continue;
+    let n = el.nextElementSibling;
+    while (n && n.tagName !== 'TABLE' && !(/^(P|H\d)$/.test(n.tagName) && textOf(n).length > 80)) n = n.nextElementSibling;
+    if (n && n.tagName === 'TABLE') add(n, null);
+  }
+  return out;
+}
 
+function lerTabelaDesembolso(tabela, inicio) {
+  const avisos = [];
   const linhas = Array.from(tabela.querySelectorAll('tr'));
   const out = [];
   let dentro = false;
-  for (const tr of linhas.slice(linhas.indexOf(inicio) + 1)) {
-    const cells = Array.from(tr.children).map(textOf).filter(t => t !== '');
-    if (!cells.length) continue;
+  for (const tr of linhas.slice(inicio ? linhas.indexOf(inicio) + 1 : 0)) {
+    // As células vazias ficam: uma célula de valor em branco não pode puxar a data para o lugar do valor.
+    const cells = Array.from(tr.children).map(textOf);
+    const primeira = cells.findIndex(t => t !== '');
+    if (primeira < 0) continue;
+    const resto = cells.slice(primeira);
     // Cabeçalho "Parcela | Data | Valor"
-    if (/^parcela$/i.test(cells[0])) { dentro = true; continue; }
-    const n = cells[0].match(/^(\d{1,2})[ªº°.)]?$/);
+    if (/^parcela$/i.test(resto[0])) { dentro = true; continue; }
+    const n = resto[0].match(/^(\d{1,2})[ªº°.)]?$/);
     if (!n) {
       // Mesma tabela pode seguir com receita/despesas (o Word junta): acabou o quadro.
       if (dentro || out.length) break;
@@ -369,14 +379,17 @@ function parseDesembolsos(doc) {
     }
     dentro = true;
     const parcela = Number(n[1]);
-    const brutoValor = cells.length >= 3 ? cells[cells.length - 1] : (cells[1] || '');
-    const brutoData = cells.length >= 3 ? cells.slice(1, -1).join(' ') : '';
+    const brutoValor = resto.length >= 3 ? resto[resto.length - 1] : '';
+    const meio = resto.length >= 3 ? resto.slice(1, -1) : resto.slice(1);
+    // Mais de uma coluna no meio (Entrega | Data): a célula que é data vale; sem data, o texto junto.
+    const comData = meio.map(t => ({ t, d: dataBr(t) })).find(x => x.d);
+    const brutoData = comData ? comData.t : meio.filter(Boolean).join(' / ');
     const semRs = brutoValor.replace(/[R$\s ]/g, '');
-    const valor = RE_VALOR_BR.test(semRs) ? brl(semRs) : null;
-    if (valor == null && /\d/.test(brutoValor)) {
-      avisos.push(`Desembolso, parcela ${parcela}: valor "${brutoValor}" fora do formato; ficou sem número. Confira no documento.`);
+    const valor = semRs && RE_VALOR_BR.test(semRs) ? brl(semRs) : null;
+    if (valor == null) {
+      avisos.push(`Desembolso, parcela ${parcela}: ${brutoValor ? `valor "${brutoValor}" fora do formato` : 'sem valor'}; ficou sem número. Confira no documento.`);
     }
-    const dt = dataBr(brutoData);
+    const dt = comData ? comData.d : null;
     out.push({
       parcela,
       data_prevista: dt ? dt.data : null,
@@ -385,8 +398,18 @@ function parseDesembolsos(doc) {
       valor_texto: valor == null ? (brutoValor || null) : null,
     });
   }
-  if (!out.length) avisos.push('Achei o quadro de desembolso, mas nenhuma parcela; confira no documento.');
   return { desembolsos: out, avisos };
+}
+
+function parseDesembolsos(doc) {
+  const candidatas = tabelasDeDesembolso(doc);
+  if (!candidatas.length) return { desembolsos: [], avisos: [] };
+  // Uma célula de texto pode citar "cronograma de desembolso" antes do quadro: vale a primeira tabela com parcelas.
+  for (const { tabela, inicio } of candidatas) {
+    const r = lerTabelaDesembolso(tabela, inicio);
+    if (r.desembolsos.length) return r;
+  }
+  return { desembolsos: [], avisos: ['Achei o quadro de desembolso, mas nenhuma parcela; confira no documento.'] };
 }
 
 // ── Parser principal ───────────────────────────────────────

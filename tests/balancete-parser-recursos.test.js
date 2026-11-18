@@ -59,3 +59,12 @@ describe('balancete sem a seção de recursos', () => {
     expect(parseBalanceteText(cabeca + rodape).data.recursos).toBeNull();
   });
 });
+
+describe('revisão de 18/11: sinal pelas colunas', () => {
+  it('folha redutora (débito, saldo sem parênteses) subtrai', () => {
+    const { data } = parseBalanceteText(cabeca
+      + '2.1.3.01.02.0 12002 ( + ) RECURSOS (VIA NOTA FISCAL 0,00 0,00 100.000,00 100.000,00 100.000,00\n'
+      + '2.1.3.01.02.0 12099 ( - ) DEVOLUCAO DE RECURSOS 0,00 10.000,00 0,00 10.000,00 10.000,00\n' + rodape);
+    expect(data.recursos.recebido).toBe(90000);
+  });
+});
