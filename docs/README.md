@@ -38,6 +38,11 @@ Leia o documento da área antes de mexer nela.
 | [`tutorial-novo-usuario.md`](tutorial-novo-usuario.md) | Primeiro acesso: entrar, criar o centro de custo, importar os arquivos do mês |
 | [`Tutorial-Novo-Usuario.pdf`](Tutorial-Novo-Usuario.pdf) | O mesmo tutorial em PDF, para enviar a quem não abre o repositório |
 
+## Redesenho (desde 18/11/2026)
+
+[`redesenho/`](redesenho/) tem o plano mestre do site novo (`app/`, publicado em `/v2/`), o guia de
+estética que toda tela nova segue à risca, as tarefas delegadas e os relatórios de cada uma.
+
 ## Histórico
 
 [`historico/`](historico/) guarda relatórios datados que **não** são referência

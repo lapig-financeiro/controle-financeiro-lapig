@@ -121,6 +121,11 @@ O expurgo de assuntos/trechos após 90 dias é responsabilidade de `vigia_expurg
 
 ## Desligar ou atualizar
 
+> **Pausado desde 18/11/2026** a pedido do Victor (o vigia não teve uso). A versão publicada naquele dia
+> troca `checar`/`resumoDiario` por `pausarVigia_`, que apaga os dois acionadores na primeira execução e
+> marca as rotinas como pausadas no Painel. O código deste repositório não mudou: para religar, rode
+> `node tools/vigia/publicar.js` e depois `instalarGatilhos` no editor.
+
 Para desligar tudo, abra **Acionadores**, exclua os gatilhos `checar` e `resumoDiario`; não exclua tarefas
 ou mensagens. O administrador pode revogar o login de automação. Para desligar apenas modelo/ntfy,
 apague os valores de `OLLAMA_API_KEY`/`NTFY_TOPICO` nas propriedades.
