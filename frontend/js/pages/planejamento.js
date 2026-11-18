@@ -1,38 +1,33 @@
 /* ============================================================
    Planejamento de bolsas (admin-only) — pedido do Victor em 17/11/2026,
-   redesenhada em 18/11/2026 ("o mais explicativa possível à primeira
-   vista, com detalhe e ajuste quando precisar").
+   refeita em 18/11/2026 para ser ferramenta de montar o planejamento
+   numa reunião, não uma resposta pronta ("testar e pensar").
 
-   O mapa pessoa × mês: quem paga a bolsa de cada pessoa até o horizonte
-   e quanto fica sem cobertura. A conta é o PlanejamentoMotor
-   (frontend/js/planejamento-motor.js), porte fiel do refazer_mapa.py,
-   travado por tests/planejamento-motor.test.js. Esta tela não calcula
-   nada por conta própria além de somar o que o motor devolve para
-   desenhar (colunas do mês, totais de linha).
+   A conta é o PlanejamentoMotor (frontend/js/planejamento-motor.js), porte
+   fiel do refazer_mapa.py, travado por tests/planejamento-motor.test.js; o
+   dinheiro de cada projeto sai de planejamento-dinheiro.js. Esta tela só
+   soma o que o motor devolve para desenhar.
 
-   Ordem da tela, do essencial ao detalhe:
-   1. Resposta: quanto falta no cenário escolhido, desde quando, e quanto
-      seria se o dinheiro "a entrar" não entrar.
-   2. Cenários lado a lado (os gravados nas premissas), cada um com a
-      sua falta; clicar escolhe. "Ajustar" liga e desliga fontes e as duas
-      decisões em discussão; se não bater com nenhum, vira "Ajuste próprio".
-   3. Mês a mês: quem paga cada mês (colunas empilhadas por fonte).
-      Clicar num mês abre o detalhe.
-   4. O dinheiro (desde 18/11/2026, "conta pelo dinheiro"): cada fonte numa
-      linha do tempo, com o que dá para usar hoje e o que chega com cada
-      parcela do cronograma de desembolso (planejamento-dinheiro.js). Cada
-      centro escolhe "só Pessoal" ou "todas as rubricas"; opções para contar
-      parcelas atrasadas, parcelas sem data e o rendimento. A opção "pelo
-      plano" volta à conta antiga (a do refazer_mapa.py). Clicar numa linha
-      abre a conta passo a passo, o balancete e o cronograma do plano.
-   5. Pessoa a pessoa (fechado por padrão): o valor de cada bolsa é
-      clicável e mostra de onde veio (planilha da FUNAPE ou premissa).
-   6. Alertas (fechado por padrão).
+   Ordem da tela:
+   1. Resumo: a conta inteira numa linha (bolsas do período − o que os
+      próprios projetos pagam − o que as outras fontes pagam = falta), se é
+      o ponto de partida ou uma simulação (com a lista do que mudou e
+      "voltar"), o dinheiro que ainda não entrou e a sobra que vence sem uso.
+   2. Monte a simulação: atalhos (os cenários das premissas, nomeados pelo
+      que mudam em relação ao primeiro), cada fonte numa linha com liga/
+      desliga, que rubricas usar e os meses em que pode pagar e paga, com as
+      parcelas do plano marcadas; as duas decisões em aberto; "Como o
+      dinheiro é contado" (pelo dinheiro ou pelo saldo do plano, e o que
+      entra na conta).
+   3. Quem paga cada mês: colunas empilhadas, legenda com o total do período.
+   4. Pessoa a pessoa (fechado): bolsa dividida entre fontes aparece dividida.
+   5. Avisos sobre os dados (fechado).
+   As tabelas 2, 3 e 4 usam a mesma régua de meses (colgroup igual).
+   Uma cor por fonte em toda a tela; cinza = o próprio projeto; vermelho =
+   sem dinheiro. A situação das parcelas não usa as cores das fontes.
 
-   "De onde vem este valor": balancete (PDF) para o caixa dos centros e
-   planilha de bolsas da FUNAPE (XLSX, bucket bolsa-planilhas, a última
-   reconciliação do centro) para o valor de cada bolsa — os dois pelo
-   OrigemDocumento. Fonte fixa nas premissas mostra a ressalva gravada.
+   "De onde vem este valor": balancete (PDF), cronograma do plano e planilha
+   de bolsas da FUNAPE, pelo OrigemDocumento.
 
    Segurança: rota bloqueada para não-admin (app.js), link com data-admin,
    e o RLS da 061 só deixa admin ler as premissas. Nada aqui grava.
@@ -58,9 +53,10 @@ const PlanejamentoPage = (() => {
   let escolha = null;       // { fontes: Set, sobrasGC, continua } — o cenário que a tela mostra
   let ultimo = null;        // resultado do motor da última renderização
   let filtroFalta = false;
-  const abertos = { ajustes: false, pessoas: false, alertas: false };
+  const abertos = { regras: false, pessoas: false, alertas: false };
   // Como contar o dinheiro: vale para todos os cenários (os cenários só ligam e desligam fontes).
-  let comoContar = null;    // { pelo: 'dinheiro'|'plano', modo: {codigo: 'pessoal'|'total'}, contarAtrasadas, contarSemData, contarRendimento }
+  let comoPadrao = null;    // as regras do ponto de partida (para "voltar" e para dizer o que mudou)
+  let comoContar = null;   // { pelo: 'dinheiro'|'plano', modo: {codigo: 'pessoal'|'total'}, contarAtrasadas, contarSemData, contarRendimento }
   let efetivas = null;      // premissas que o motor recebe (fontes de centro já partidas por parcela)
   let dinheiro = null;      // código da fonte (ou do centro) → saída de dinheiroDoCentro
   // "118·p2" (pedaço que chega com a parcela 2) → "118"; "→118·p2" → "→118".
@@ -83,6 +79,7 @@ const PlanejamentoPage = (() => {
       pelo: 'dinheiro', contarAtrasadas: true, contarSemData: true, contarRendimento: false,
       modo: Object.fromEntries(fontesDeCentro().map(f => [f.codigo, f.base === 'livre_pessoal' ? 'pessoal' : 'total'])),
     };
+    comoPadrao = structuredClone(comoContar);
     render();
   }
 
@@ -277,124 +274,55 @@ const PlanejamentoPage = (() => {
       lucide.createIcons({ nodes: [el] });
       return;
     }
-    const v = base.versao;
     el.innerHTML = `
       <div class="plan">
-        <p class="plan-versao"><i data-lucide="file-clock"></i>
-          <span>Premissas de <strong>${formatDate(String(v.criado_em).slice(0, 10))}</strong>${v.nota ? ` (${esc(v.nota)})` : ''}.
-          Bolsas, saldos e balancetes lidos agora do sistema. Nada nesta tela grava.</span>
-          <button class="btn btn--ghost btn--sm" data-acao="premissas"><i data-lucide="list"></i> Ver premissas</button></p>
-        ${resposta(r)}
-        ${cenarios(r)}
-        ${fontes(r)}
+        ${resumo(r)}
+        ${placar(r)}
+        ${simulacao(r)}
         ${mesAMes(r)}
         ${pessoas(r)}
         ${alertas(r)}
+        <p class="plan-rodape">Bolsas, saldos, balancetes e planos lidos agora do sistema. O que não está no sistema (dinheiro
+          combinado, bolsas previstas) vem das premissas gravadas em ${formatDate(String(base.versao.criado_em).slice(0, 10))}.
+          As simulações não ficam salvas.
+          <button class="plan-link" data-acao="premissas">Ver as premissas</button></p>
       </div>`;
     lucide.createIcons({ nodes: [el] });
     ligarEventos();
+    vigiarPlacar();
   }
 
-  // 1. A resposta, em uma frase.
-  function resposta(r) {
-    const c = r.cenarios._ESC, sem = r.cenarios._ESC_SEM;
-    const M = r.meses;
-    const primeiro = x => M.find(m => x.sem_mes[m] > 0);
-    const mensal = r.pessoas.reduce((s, p) => s + p.alvo, 0);
-    const nomeado = nomeDaEscolha();
-    // O que está "a entrar" sai do que o motor recebeu: fontes fixas a entrar e, na conta pelo dinheiro,
-    // os pedaços de centro que são parcelas ainda não recebidas.
-    const pedacosAEntrar = efetivas.fontes.itens.filter(f => f.situacao === 'a_entrar' && escolha.fontes.has(pai(f.codigo))
-      && Number(f.base === 'fixo' ? f.valor : 1) > 0);
-    const aEntrar = base.premissas.fontes.itens.filter(f => pedacosAEntrar.some(x => x.codigo === f.codigo));
-    if (pedacosAEntrar.some(x => x._pai)) aEntrar.push({ codigo: '_parcelas', nome: 'parcelas dos planos dos centros' });
-    const falta = c.total_sem;
-    const pl = aEntrar.length > 1;
-    const titulo = falta > 0
-      ? `Faltam <button class="plan-num plan-num--falta" data-acao="mes-falta">${formatBRL(falta)}</button>`
-      : 'Não falta dinheiro';
-    const sub = falta > 0
-      ? `para manter as ${r.pessoas.length} bolsas até ${rot(M[M.length - 1])}. A falta começa em <strong>${rot(primeiro(c))}</strong>.`
-      : `As ${r.pessoas.length} bolsas ficam cobertas em todos os meses, de ${rot(M[0])} a ${rot(M[M.length - 1])}.`;
-    const semLinha = aEntrar.length
-      ? (sem.total_sem > falta
-        ? `<p class="plan-resp__extra"><i data-lucide="hourglass"></i><span>Isso conta com ${aEntrar.map(f => `<strong>${esc(curto(f))}</strong>`).join(' e ')},
-          que ainda não ${pl ? 'entraram' : 'entrou'}. Se não ${pl ? 'entrarem' : 'entrar'}, a falta sobe para <strong>${formatBRL(sem.total_sem)}</strong>, a partir de ${rot(primeiro(sem))}.</span></p>`
-        : `<p class="plan-resp__extra"><i data-lucide="hourglass"></i><span>Mesmo sem ${aEntrar.map(f => esc(curto(f))).join(' e ')}, que ainda não ${pl ? 'entraram' : 'entrou'}, o resultado é o mesmo.</span></p>`)
-      : comoContar.pelo === 'plano'
-        ? '<p class="plan-resp__extra"><i data-lucide="wallet"></i><span>Conta pelo livre do plano, sem conferir o que já entrou no caixa.</span></p>'
-        : '<p class="plan-resp__extra"><i data-lucide="wallet"></i><span>Só com dinheiro que já entrou.</span></p>';
-    // Sobra que vence sem uso enquanto falta: o ponto que o cenário das sobras resolve.
-    const inicioFalta = primeiro(c);
-    const sobraPai = somaPorPai(c.sobra);
-    const vencem = base.premissas.fontes.itens.filter(f => escolha.fontes.has(f.codigo) && sobraPai[f.codigo] >= 1
-      && inicioFalta && fonteJunta(r, f.codigo).ate_hoje < inicioFalta);
-    const totVence = vencem.reduce((s, f) => s + sobraPai[f.codigo], 0);
-    const semFalta = base.premissas.cenarios.find(x => r.cenarios[x.codigo].total_sem === 0);
-    const venceLinha = falta > 0 && totVence >= 1
-      ? `<p class="plan-resp__extra"><i data-lucide="alert-circle"></i><span>Ao mesmo tempo, <strong>${formatBRL(totVence)}</strong> sobram em
-        ${vencem.map(f => esc(curto(f))).join(', ')} e vencem sem uso: essas fontes acabam antes de faltar dinheiro.
-        ${semFalta && semFalta.codigo !== nomeado?.codigo ? `<button class="plan-link" data-cenario="${esc(semFalta.codigo)}">Ver o cenário "${esc(semFalta.nome)}"</button>, em que não falta dinheiro.` : ''}</span></p>`
-      : '';
-    return `
-      <section class="card plan-resp ${falta > 0 ? 'plan-resp--falta' : 'plan-resp--ok'}">
-        <div class="plan-resp__principal">
-          <p class="plan-resp__cenario">Cenário: <strong>${nomeado ? esc(nomeado.nome) : 'Ajuste próprio'}</strong></p>
-          <h2 class="plan-resp__titulo">${titulo}</h2>
-          <p class="plan-resp__sub">${sub}</p>
-          ${semLinha}
-          ${venceLinha}
-        </div>
-        <dl class="plan-resp__fatos">
-          <div><dt>A manter por mês</dt><dd><button class="plan-num" data-acao="mensal">${formatBRL(mensal)}</button></dd></div>
-          <div><dt>Pessoas</dt><dd>${r.pessoas.length}</dd></div>
-          <div><dt>Período</dt><dd>${rot(M[0])} a ${rot(M[M.length - 1])}</dd></div>
-        </dl>
-      </section>`;
+  // Nome de uma fonte, igual em toda a tela: "30.118 WRI Brasil", "WRI GPW FY27", "Guarda-chuva".
+  const curto = f => String(f.nome).split(':')[0].trim();
+  const nomeFonte = k => { const f = base.premissas.fontes.itens.find(x => x.codigo === k); return f ? curto(f) : k; };
+  const lista = xs => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} e ${xs[xs.length - 1]}`);
+  const maiuscula = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+  // O que mudou em relação ao ponto de partida (o primeiro cenário das premissas e as regras padrão).
+  // É o nome dos atalhos e o que o resumo diz que está sendo simulado: um vocabulário só.
+  function mudancas(e, como) {
+    const A = escolhaDe(base.premissas.cenarios[0]);
+    const out = [];
+    const tirou = base.premissas.fontes.itens.map(f => f.codigo).filter(k => A.fontes.has(k) && !e.fontes.has(k));
+    const pos = base.premissas.fontes.itens.map(f => f.codigo).filter(k => !A.fontes.has(k) && e.fontes.has(k));
+    if (tirou.length) out.push('sem ' + lista(tirou.map(nomeFonte)));
+    if (pos.length) out.push('com ' + lista(pos.map(nomeFonte)));
+    if (e.sobrasGC !== A.sobrasGC) out.push(e.sobrasGC ? 'sobras para o guarda-chuva' : 'sobras ficam nos projetos');
+    if (e.continua !== A.continua) out.push(e.continua ? '30.109 ICS e 30.113 GMH continuam depois do fim' : '30.109 ICS e 30.113 GMH acabam com o projeto');
+    if (como) {
+      if (como.pelo !== comoPadrao.pelo) out.push(como.pelo === 'plano' ? 'conta pelo saldo do plano' : 'conta pelo dinheiro');
+      if (como.pelo === 'dinheiro') {
+        if (como.contarAtrasadas !== comoPadrao.contarAtrasadas) out.push(como.contarAtrasadas ? 'com parcelas atrasadas' : 'sem parcelas atrasadas');
+        if (como.contarSemData !== comoPadrao.contarSemData) out.push(como.contarSemData ? 'com parcelas sem data' : 'sem parcelas sem data');
+        if (como.contarRendimento !== comoPadrao.contarRendimento) out.push(como.contarRendimento ? 'com o rendimento' : 'sem o rendimento');
+        Object.entries(como.modo).filter(([k, v]) => v !== comoPadrao.modo[k])
+          .forEach(([k, v]) => out.push(`${nomeFonte(k)} ${v === 'total' ? 'usa todas as rubricas' : 'usa só Pessoal'}`));
+      }
+    }
+    return out;
   }
 
-  // "30.118 WRI Brasil: bolsas do plano…" → "30.118 WRI Brasil"; "US$ 80 mil (WRI…)" fica.
-  const curto = f => String(f.nome).split(':')[0];
-
-  // 2. Cenários lado a lado + ajustes.
-  function cenarios(r) {
-    const P = base.premissas;
-    const nomeado = nomeDaEscolha();
-    const cards = P.cenarios.map(c => {
-      const x = r.cenarios[c.codigo];
-      const ativo = nomeado && nomeado.codigo === c.codigo;
-      return `<button class="plan-cen ${ativo ? 'plan-cen--ativo' : ''}" data-cenario="${esc(c.codigo)}" aria-pressed="${ativo}">
-        <span class="plan-cen__nome">${esc(c.nome)}</span>
-        <span class="plan-cen__valor ${x.total_sem > 0 ? 'plan-falta' : 'plan-cen__valor--ok'}">${x.total_sem > 0 ? `falta ${K(x.total_sem)}` : 'não falta dinheiro'}</span>
-        <span class="plan-cen__explica" title="${esc(c.explica || '')}">${esc(c.explica || '')}</span>
-      </button>`;
-    }).join('');
-    const aj = P.fontes.itens.map(f => `<label class="plan-chk">
-        <input type="checkbox" data-fonte-chk="${esc(f.codigo)}" ${escolha.fontes.has(f.codigo) ? 'checked' : ''}>
-        <span>${esc(f.nome)} ${f.situacao === 'a_entrar' ? '<span class="plan-chip plan-chip--entrar">a entrar</span>' : ''}</span></label>`).join('');
-    return `
-      <section class="card">
-        <div class="card__header"><div><h3 class="card__title">Compare os cenários</h3>
-          <p class="card__subtitle">Cada cartão é um jeito de pagar as mesmas bolsas. Clique para ver o cenário no resto da página.</p></div></div>
-        <div class="plan-cens">${cards}</div>
-        <details class="plan-det" data-det="ajustes" ${abertos.ajustes ? 'open' : ''}>
-          <summary><i data-lucide="sliders-horizontal"></i> Ajustar: escolher fontes e decisões${nomeado ? '' : ' <span class="plan-chip">ajuste próprio</span>'}</summary>
-          <div class="plan-ajustes">
-            <div><h4>Fontes que entram na conta</h4>${aj}</div>
-            <div><h4>Em discussão</h4>
-              <label class="plan-chk"><input type="checkbox" data-decisao="sobrasGC" ${escolha.sobrasGC ? 'checked' : ''}>
-                <span><strong>Sobras viram bolsa no guarda-chuva.</strong> O que sobra nos centros quando eles acabam vai para o
-                guarda-chuva, sem o teto mensal. Exige mudar o plano do guarda-chuva.</span></label>
-              <label class="plan-chk"><input type="checkbox" data-decisao="continua" ${escolha.continua ? 'checked' : ''}>
-                <span><strong>Quem é do ICS e do GMH continua depois que o projeto acaba.</strong> Desligado, essa parte da bolsa
-                deixa de ser necessidade depois do fim do centro.</span></label>
-            </div>
-          </div>
-        </details>
-      </section>`;
-  }
-
-  // Soma, por mês, o que cada fonte paga no cenário escolhido (para desenhar as colunas).
+  // Soma, por mês, o que cada fonte paga no cenário escolhido. Chaves: '_proprio', '→<fonte>', 'SEM'.
   function porMes(r) {
     const c = r.cenarios._ESC;
     const out = {};
@@ -408,173 +336,338 @@ const PlanejamentoPage = (() => {
     return out;
   }
 
-  // 3. Mês a mês: colunas empilhadas, uma cor por fonte, vermelho = sem dinheiro.
-  function mesAMes(r) {
-    const pm = porMes(r);
+  const somaChave = (pm, k) => Object.values(pm).reduce((s, x) => s + (x[k] || 0), 0);
+
+  // 1. A conta inteira em uma linha: custo − o que os projetos pagam − o que as outras fontes pagam = falta.
+  function resumo(r) {
+    const c = r.cenarios._ESC, sem = r.cenarios._ESC_SEM;
     const M = r.meses;
-    const tot = m => Object.values(pm[m]).reduce((s, x) => s + x, 0);
-    const max = Math.max(...M.map(tot), 1);
-    const ordem = ['_proprio', ...base.premissas.fontes.itens.map(f => '→' + f.codigo), 'SEM'];
-    const col = m => {
-      const partes = ordem.filter(k => pm[m][k] > 0).map(k =>
-        `<i style="height:${(pm[m][k] / max) * 100}%;background:${corDe(k)}"></i>`).join('');
-      const f = pm[m].SEM || 0;
-      return `<button class="plan-mes" data-mes="${m}" title="Ver o detalhe de ${rot(m)}">
-        <span class="plan-mes__barra">${partes}</span>
-        <span class="plan-mes__falta ${f > 0 ? 'plan-falta' : ''}">${f > 0 ? (f >= 1000 ? `${Math.round(f / 1000).toLocaleString('pt-BR')} mil` : formatBRL(f)) : ''}</span>
-        <span class="plan-mes__rot">${rot(m)}</span></button>`;
-    };
-    const usadas = ordem.filter(k => M.some(m => pm[m][k] > 0));
+    const pm = porMes(r);
+    const custo = M.reduce((s, m) => s + Object.values(pm[m]).reduce((a, b) => a + b, 0), 0);
+    const proprio = somaChave(pm, '_proprio');
+    const outras = M.reduce((s, m) => s + Object.entries(pm[m]).filter(([k]) => k.startsWith('→')).reduce((a, [, v]) => a + v, 0), 0);
+    const falta = c.total_sem;
+    const mensal = r.pessoas.reduce((s, p) => s + p.alvo, 0);
+    const inicioFalta = M.find(m => c.sem_mes[m] > 0);
+    const ultimoPago = inicioFalta ? M[M.indexOf(inicioFalta) - 1] : null;
+    const mud = mudancas(escolha, comoContar);
+
+    // Dinheiro que ainda não entrou e foi usado: fontes "a entrar" e parcelas futuras dos planos.
+    const aEntrar = efetivas.fontes.itens.filter(f => f.situacao === 'a_entrar' && escolha.fontes.has(pai(f.codigo)));
+    const usadoAEntrar = aEntrar.reduce((s, f) => s + Number(c.usado[f.codigo] || 0), 0);
+    const nomesAEntrar = [...new Set(aEntrar.map(f => (f._pai ? 'parcelas previstas nos planos' : nomeFonte(f.codigo))))];
+    const notaEntrar = usadoAEntrar >= 1 && sem.total_sem > falta
+      ? `<li><i data-lucide="hourglass"></i><span>Esta conta usa ${formatBRL(usadoAEntrar)} que ainda não entrou (${esc(lista(nomesAEntrar))}).
+          Se esse dinheiro não vier, a falta sobe para <strong>${formatBRL(sem.total_sem)}</strong>.</span></li>` : '';
+
+    // Sobra que vence sem uso enquanto falta dinheiro depois.
+    const sobraPai = somaPorPai(c.sobra);
+    const vencem = base.premissas.fontes.itens.filter(f => escolha.fontes.has(f.codigo) && sobraPai[f.codigo] >= 1
+      && inicioFalta && fonteJunta(r, f.codigo).ate_hoje < inicioFalta);
+    const totVence = vencem.reduce((s, f) => s + sobraPai[f.codigo], 0);
+    const temSobrasGC = base.premissas.cenarios.some(x => x.sobras_para_gc && x.sobras_para_gc.length);
+    const notaVence = falta > 0 && totVence >= 1
+      ? `<li><i data-lucide="alert-circle"></i><span>${formatBRL(totVence)} sobram sem uso em ${esc(lista(vencem.map(curto)))}:
+          esses projetos acabam antes de ${rot(inicioFalta)}.
+          ${temSobrasGC && !escolha.sobrasGC ? '<button class="plan-link" data-liga="sobrasGC">Testar com as sobras indo para o guarda-chuva</button>' : ''}</span></li>` : '';
+
+    const item = (rot1, valor, sub, extra = '') => `<div class="plan-conta__item ${extra}"><span class="plan-conta__rot">${rot1}</span>
+      <span class="plan-conta__valor">${valor}</span><span class="plan-conta__sub">${sub}</span></div>`;
     return `
-      <section class="card">
-        <div class="card__header"><div><h3 class="card__title">Quem paga cada mês</h3>
-          <p class="card__subtitle">Cada coluna é o total das bolsas no mês; as cores mostram de onde sai o dinheiro.
-            Em vermelho, o que fica sem dinheiro. Clique num mês para o detalhe.</p></div></div>
-        <div class="plan-legenda">${usadas.map(k => `<span><i style="background:${corDe(k)}"></i>${esc(rotuloFonte(k))}</span>`).join('')}</div>
-        <div class="plan-meses" style="grid-template-columns:repeat(${M.length},minmax(0,1fr))">${M.map(col).join('')}</div>
+      <section class="card plan-resumo">
+        <div class="plan-resumo__estado">
+          ${mud.length
+            ? `<span class="plan-estado plan-estado--sim">Sua simulação</span><span class="plan-resumo__mud">${esc(maiuscula(mud.join('; ')))}</span>
+               <button class="btn btn--ghost btn--sm" data-acao="voltar"><i data-lucide="rotate-ccw"></i> Voltar ao ponto de partida</button>`
+            : '<span class="plan-estado">Ponto de partida</span><span class="plan-resumo__mud">Todo o dinheiro previsto, cada projeto pagando até acabar. Mude o que quiser abaixo.</span>'}
+        </div>
+        <div class="plan-conta">
+          ${item(`Bolsas de ${rot(M[0])} a ${rot(M[M.length - 1])}`, `<button class="plan-num" data-acao="mensal">${formatBRL(custo)}</button>`,
+            `${r.pessoas.length} pessoas, ${formatBRL(mensal)} por mês hoje`)}
+          <span class="plan-conta__op" aria-hidden="true">−</span>
+          ${item('Pagam os próprios projetos', formatBRL(proprio), 'com o dinheiro de cada um')}
+          <span class="plan-conta__op" aria-hidden="true">−</span>
+          ${item('Pagam outras fontes', formatBRL(outras), 'as fontes ligadas abaixo')}
+          <span class="plan-conta__op" aria-hidden="true">=</span>
+          ${falta > 0
+            ? item('Falta', `<button class="plan-num" data-acao="mes-falta">${formatBRL(falta)}</button>`, `o dinheiro cobre até ${rot(ultimoPago || M[0])}`, 'plan-conta__item--falta')
+            : item('Falta', formatBRL(0), `todas pagas até ${rot(M[M.length - 1])}`, 'plan-conta__item--ok')}
+        </div>
+        ${notaEntrar || notaVence ? `<ul class="plan-resumo__notas">${notaEntrar}${notaVence}</ul>` : ''}
       </section>`;
   }
 
-  function rotuloFonte(k) {
-    if (k === 'SEM') return 'sem dinheiro';
-    if (k === '_proprio') return 'o próprio centro paga';
-    if (!k.startsWith('→')) return `${k} (o próprio centro)`;
-    const f = base.premissas.fontes.itens.find(x => x.codigo === pai(k.slice(1)));
-    const pedaco = efetivas?.fontes.itens.find(x => x.codigo === k.slice(1))?._pedaco;
-    const nome = f ? curto(f) : pai(k.slice(1));
-    return pedaco && pedaco.chave !== 'hoje' ? `${nome}, ${pedaco.rotulo}` : nome;
+  // Placar fixo no alto enquanto se mexe na simulação (quando o resumo sai da vista): estado, falta e até quando.
+  function placar(r) {
+    const c = r.cenarios._ESC, M = r.meses;
+    const ini = M.find(m => c.sem_mes[m] > 0);
+    const mud = mudancas(escolha, comoContar).length;
+    return `<div class="plan-placar" aria-hidden="true"><div class="plan-placar__barra">
+      <span class="plan-estado ${mud ? 'plan-estado--sim' : ''}">${mud ? `Sua simulação (${mud} ${mud > 1 ? 'mudanças' : 'mudança'})` : 'Ponto de partida'}</span>
+      ${c.total_sem > 0
+        ? `<span>Falta <strong class="plan-falta">${formatBRL(c.total_sem)}</strong></span><span>o dinheiro cobre até <strong>${rot(M[M.indexOf(ini) - 1] || M[0])}</strong></span>`
+        : `<span class="plan-ok">Não falta dinheiro até ${rot(M[M.length - 1])}</span>`}
+    </div></div>`;
   }
 
-  // 4. O dinheiro: cada fonte numa linha do tempo. A faixa são os meses em que o dinheiro pode pagar bolsa;
-  // os pontos, as parcelas do plano que ainda vão entrar (cor = situação no balancete).
-  const COR_SIT = { em_caixa: 'var(--success)', nota_emitida: 'var(--warning)', atrasada: 'var(--danger)', confirmar: 'var(--danger)',
-    parcial: 'var(--warning)', futura: 'var(--info, #4a7fd4)', sem_data: 'var(--text-muted)', sem_balancete: 'var(--text-muted)' };
-  const SIT_LEGENDA = [['em_caixa', 'já em caixa'], ['nota_emitida', 'nota emitida, não paga'], ['atrasada', 'atrasada: perguntar'],
-    ['futura', 'parcela futura'], ['sem_data', 'sem data']];
-
-  function linhaDoTempo(M, de, ate, marcos) {
-    return M.map(m => {
-      const dentro = de && m >= de && m <= ate;
-      const aqui = marcos.filter(t => t.de === m);
-      const pontos = aqui.map(t => `<i class="plan-ponto" style="background:${COR_SIT[t.situacao] || 'var(--accent)'}" title="${esc(`${rot(m)}: ${t.rotulo}, ${formatBRL(t.valor)}`)}"></i>`).join('');
-      return `<span class="plan-tempo__mes ${dentro ? 'plan-tempo__mes--on' : ''} ${m === ate ? 'plan-tempo__mes--fim' : ''}">${pontos}</span>`;
-    }).join('');
+  // Mostra o placar quando o resumo passa por baixo da barra do topo. Um ouvinte só, ligado na primeira vez;
+  // ele procura os elementos de agora a cada rolagem (a tela é redesenhada a cada mudança).
+  let vigiando = false;
+  function acertarPlacar() {
+    const resumoEl = el && el.querySelector('.plan-resumo'), p = el && el.querySelector('.plan-placar');
+    if (!resumoEl || !p || !p.isConnected) return;
+    const topo = document.querySelector('.topbar')?.offsetHeight || 0;
+    p.style.top = topo + 'px';
+    p.classList.toggle('plan-placar--on', resumoEl.getBoundingClientRect().bottom < topo + 8);
+  }
+  function vigiarPlacar() {
+    if (!vigiando) {
+      vigiando = true;
+      window.addEventListener('scroll', acertarPlacar, { passive: true, capture: true });
+      window.addEventListener('resize', acertarPlacar, { passive: true });
+    }
+    acertarPlacar();
   }
 
-  function fontes(r) {
+  // A mesma régua de meses nas três tabelas (fontes, gráfico, pessoas): coluna de rótulo, um mês por coluna, coluna de valor.
+  const regua = M => `<colgroup><col class="plan-col-rot">${M.map(() => '<col>').join('')}<col class="plan-col-val"></colgroup>`;
+  const cabMeses = (M, esq, dir) => `<thead><tr><th class="plan-esq">${esq}</th>${M.map(m =>
+    `<th class="plan-m ${m.endsWith('-01') && m !== M[0] ? 'plan-m--ano' : ''}">${rot(m)}</th>`).join('')}<th class="plan-dir">${dir}</th></tr></thead>`;
+  const grade = (M, miolo) => `<p class="plan-rolar">Arraste a tabela para o lado para ver todos os meses.</p>
+    <div class="plan-rolagem"><table class="plan-grade" style="--meses:${M.length}">${regua(M)}${miolo}</table></div>`;
+
+  // Parcela que pede conferência (atrasada, nota não paga, vencida depois do balancete, sem balancete).
+  const PENDENTE = new Set(['atrasada', 'confirmar', 'nota_emitida', 'parcial', 'sem_balancete']);
+  const COR_SIT = { em_caixa: 'var(--success)', recebida: 'var(--success)', nota_emitida: 'var(--warning)', atrasada: 'var(--danger)', confirmar: 'var(--danger)',
+    parcial: 'var(--warning)', futura: 'var(--text-muted)', sem_data: 'var(--text-muted)', sem_balancete: 'var(--text-muted)', sem_valor: 'var(--danger)' };
+
+  // Texto curto que diz o que é cada fonte, sem jargão.
+  function descricao(fi, d) {
+    if (d) return d.ate < base.premissas.horizonte_ate ? `Saldo do projeto, que acaba em ${rot(d.ate)}` : 'Saldo do projeto';
+    const resto = String(fi.nome).split(':').slice(1).join(':').trim();
+    const usd = /US\$\s*([\d.,]+)\s*mil/.exec(fi.nome);
+    const partes = [];
+    if (usd && fi.valor) {
+      const dolares = Number(usd[1].replace(/\./g, '').replace(',', '.')) * 1000;
+      partes.push(`US$ ${Math.round(dolares / 1000)} mil ≈ ${formatBRL(fi.valor)} (R$ ${(fi.valor / dolares).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} por dólar)`);
+    } else {
+      if (resto) partes.push(maiuscula(resto));
+      if (fi.valor) partes.push(formatBRL(fi.valor));
+    }
+    if (fi.teto_mes) partes.push(`até ${formatBRL(fi.teto_mes)} por mês`);
+    return partes.join(', ');
+  }
+
+  // 2. A simulação: cada dinheiro numa linha, com liga/desliga, o que entra na conta e os meses em que paga.
+  function simulacao(r) {
     const c = r.cenarios._ESC;
     const M = r.meses;
+    const pm = porMes(r);
     const usadoPai = somaPorPai(c.usado), sobraPai = somaPorPai(c.sobra);
     const pelo = comoContar.pelo;
-    const grid = `grid-template-columns:repeat(${M.length},minmax(0,1fr))`;
-    const linhas = base.premissas.fontes.itens.map(fi => {
+    const P = base.premissas;
+
+    const atalhos = P.cenarios.map((x, i) => {
+      const ativo = mesmaEscolha(escolhaDe(x), escolha);
+      const nome = i === 0 ? 'Ponto de partida' : maiuscula(mudancas(escolhaDe(x)).join('; ') || x.nome);
+      const f = r.cenarios[x.codigo].total_sem;
+      return `<button class="plan-atalho ${ativo ? 'plan-atalho--ativo' : ''}" data-cenario="${esc(x.codigo)}" aria-pressed="${ativo}" title="${esc(x.explica || '')}">
+        <span>${esc(nome)}</span><span class="${f > 0 ? 'plan-falta' : 'plan-ok'}">${f > 0 ? `falta ${K(f)}` : 'não falta'}</span></button>`;
+    }).join('');
+
+    const linhas = P.fontes.itens.map(fi => {
       const k = fi.codigo, f = fonteJunta(r, k);
       const d = dinheiro[k];
       const fora = !escolha.fontes.has(k);
       const usado = usadoPai[k] || 0, sobra = sobraPai[k] || 0;
       const vence = !fora && sobra >= 1 && f.ate_hoje < M[M.length - 1];
       const marcos = pelo === 'dinheiro' && d ? d.tranches.filter(t => t.chave !== 'hoje') : [];
+      const cor = corDe('→' + k);
       const conta = d
-        ? `<select class="plan-sel" data-modo="${esc(k)}" aria-label="Que dinheiro do ${esc(fi.cc)} entra na conta">
-            <option value="pessoal" ${comoContar.modo[k] === 'pessoal' ? 'selected' : ''}>Só Pessoal</option>
-            <option value="total" ${comoContar.modo[k] === 'total' ? 'selected' : ''}>Todas as rubricas</option></select>`
-        : `<span class="plan-chip ${fi.situacao === 'a_entrar' ? 'plan-chip--entrar' : ''}">${fi.situacao === 'a_entrar' ? 'a entrar' : 'valor fixo'}</span>`;
-      const detalhe = d && pelo === 'dinheiro' && d.hoje < d.total
-        ? `<div class="plan-miudo">${formatBRL(d.hoje)} já + ${formatBRL(d.total - d.hoje)} em parcelas</div>`
-        : (f.teto_mes ? `<div class="plan-miudo">até ${formatBRL(f.teto_mes)}/mês</div>` : '');
-      return `<tr class="${fora ? 'plan-fora' : ''}">
-        <th><button class="plan-fonte" data-fonte="${esc(k)}" title="Ver a conta e os documentos">
-          <span class="plan-cor" style="background:${corDe('→' + k)}"></span>${esc(curto(fi))}</button>
-          <div class="plan-miudo">certeza ${esc({ alta: 'alta', media: 'média', baixa: 'baixa' }[fi.certeza] || fi.certeza || '—')}${fora ? ' · fora deste cenário' : ''}</div></th>
-        <td class="plan-din__conta">${conta}</td>
-        <td class="plan-din__tempo"><div class="plan-tempo" style="${grid}">${linhaDoTempo(M, f.de_hoje, f.ate_hoje, marcos)}</div>
-          <div class="plan-miudo plan-din__janela">${f.valor_hoje > 0 ? `${rot(f.de_hoje)} a ${rot(f.ate_hoje)}` : 'nada a usar'}</div></td>
-        <td><button class="plan-num" data-fonte="${esc(k)}" title="Ver a conta">${formatBRL(f.valor_hoje)}</button>${detalhe}</td>
-        <td>${fora ? '—' : formatBRL(usado)}</td>
-        <td>${fora ? '—' : formatBRL(sobra)}${vence ? '<div class="plan-miudo plan-vence">vence sem uso</div>' : ''}</td></tr>`;
+        ? `<label class="plan-usar">Usar <select class="plan-sel" data-modo="${esc(k)}" ${pelo === 'plano' ? 'disabled title="Só vale na conta pelo dinheiro"' : ''}>
+            <option value="pessoal" ${comoContar.modo[k] === 'pessoal' ? 'selected' : ''}>só a rubrica Pessoal</option>
+            <option value="total" ${comoContar.modo[k] === 'total' ? 'selected' : ''}>todas as rubricas</option></select></label>`
+        : (fi.situacao === 'a_entrar' ? '<span class="plan-chip plan-chip--entrar">ainda não entrou</span>' : '');
+      const celula = m => {
+        const dentro = f.valor_hoje > 0 && m >= f.de_hoje && m <= f.ate_hoje;
+        const uso = fora ? 0 : (pm[m]['→' + k] || 0);
+        const aqui = marcos.filter(t => t.de === m);
+        const dica = [`${rot(m)}: ${uso ? `paga ${formatBRL(uso)}` : dentro ? 'pode pagar, sem uso' : 'não paga'}`,
+          ...aqui.map(t => `chega ${formatBRL(t.valor)} (${t.rotulo}${t.situacao && PENDENTE.has(t.situacao) ? ', conferir' : ''})`)].join('; ');
+        const marco = aqui.length ? `<i class="plan-marco ${aqui.some(t => PENDENTE.has(t.situacao)) ? 'plan-marco--conferir' : ''}"></i>` : '';
+        return `<td class="plan-t ${m.endsWith('-01') && m !== M[0] ? 'plan-m--ano' : ''}" title="${esc(dica)}">
+          <span class="plan-t__faixa ${dentro ? 'plan-t__faixa--pode' : ''} ${uso ? 'plan-t__faixa--usa' : ''}" style="--cor:${cor}"></span>${marco}</td>`;
+      };
+      return `<tr class="${fora ? 'plan-desligada' : ''}">
+        <th class="plan-esq">
+          <div class="plan-fonte-topo">
+            <label class="plan-sw" title="${fora ? 'Ligar' : 'Desligar'} este dinheiro na simulação">
+              <input type="checkbox" data-fonte-chk="${esc(k)}" ${fora ? '' : 'checked'} aria-label="Usar ${esc(curto(fi))}"><span></span></label>
+            <button class="plan-fonte" data-fonte="${esc(k)}" title="Ver a conta e os documentos"><i class="plan-cor" style="background:${cor}"></i>${esc(curto(fi))}</button>
+          </div>
+          <div class="plan-miudo">${esc(descricao(fi, d))}</div>
+          ${conta ? `<div class="plan-fonte-conta">${conta}</div>` : ''}
+        </th>
+        ${M.map(celula).join('')}
+        <td class="plan-dir">
+          <button class="plan-num" data-fonte="${esc(k)}" title="Ver a conta">${formatBRL(f.valor_hoje)}</button>
+          ${fora ? '<div class="plan-miudo">desligada</div>' : `<div class="plan-miudo">usa ${formatBRL(usado)}</div>
+          ${sobra >= 1 ? `<div class="plan-miudo ${vence ? 'plan-vence' : ''}">sobra ${formatBRL(sobra)}${vence ? ' sem uso' : ''}</div>` : ''}`}
+        </td></tr>`;
     }).join('');
-    // Centros do Laerte que não são fonte: pagam as próprias bolsas. Aparecem para o dinheiro ficar à vista.
-    const outros = Object.entries(dinheiro).filter(([k]) => !base.premissas.fontes.itens.some(f => f.codigo === k) && dinheiro[k])
-      .map(([cc, d]) => `<tr class="plan-din__outro">
-        <th><button class="plan-fonte" data-centro="${esc(cc)}" title="Ver a conta e os documentos">${esc(cc)} ${esc(base.dados.centros[cc]?.nome || '')}</button>
-          <div class="plan-miudo">paga as próprias bolsas; não entra como fonte</div></th>
-        <td class="plan-din__conta"><span class="plan-miudo">só Pessoal</span></td>
-        <td class="plan-din__tempo"><div class="plan-tempo" style="${grid}">${linhaDoTempo(M, pelo === 'plano' ? base.dados.ref : (d.tranches[0]?.de || null), d.ate, pelo === 'plano' ? [] : d.tranches.filter(t => t.chave !== 'hoje'))}</div>
-          <div class="plan-miudo plan-din__janela">até ${rot(d.ate)}</div></td>
-        <td><button class="plan-num" data-centro="${esc(cc)}" title="Ver a conta">${formatBRL(pelo === 'plano' ? d.teto : d.total)}</button><div class="plan-miudo">${pelo === 'plano' ? 'livre de Pessoal no plano' : 'livre depois das próprias bolsas'}</div></td>
-        <td>—</td><td>—</td></tr>`).join('');
+
+    // Projetos do Laerte que não são fonte: pagam só as próprias bolsas (cinza no gráfico).
+    const proprios = Object.entries(dinheiro).filter(([k, d]) => d && !P.fontes.itens.some(f => f.codigo === k))
+      .map(([cc, d]) => `<button class="plan-link" data-centro="${esc(cc)}">${esc(cc)} ${esc(base.dados.centros[cc]?.nome || '')}</button> até ${rot(d.ate)}`);
+    const comFim = P.cenarios.find(x => x.encerra_com_cc && x.encerra_com_cc.length);
+    const comSobras = P.cenarios.find(x => x.sobras_para_gc && x.sobras_para_gc.length);
+    const chk = (chave, texto) => `<label class="plan-chk"><input type="checkbox" data-como="${chave}" ${comoContar[chave] ? 'checked' : ''} ${pelo === 'plano' ? 'disabled' : ''}> <span>${texto}</span></label>`;
     const gc = c.para_gc && Object.entries(somaPorPai(c.para_gc)).filter(([, x]) => x > 0);
-    const chk = (chave, texto, dica) => `<label class="plan-chk plan-chk--linha" title="${esc(dica)}"><input type="checkbox" data-como="${chave}" ${comoContar[chave] ? 'checked' : ''} ${pelo === 'plano' ? 'disabled' : ''}> ${texto}</label>`;
+
     return `
       <section class="card">
-        <div class="card__header"><div><h3 class="card__title">O dinheiro de cada fonte</h3>
-          <p class="card__subtitle">Quanto cada fonte pode pagar e em que meses. A faixa vai de quando o dinheiro pode ser usado até o fim do centro;
-            os pontos são parcelas do plano que ainda vão entrar. Clique no nome ou no valor para ver a conta e os documentos.</p></div></div>
-        <div class="plan-opcoes">
-          <div class="plan-seg" role="group" aria-label="Como contar o dinheiro">
-            <button data-pelo="dinheiro" aria-pressed="${pelo === 'dinheiro'}">Pelo dinheiro que entrou e vai entrar</button>
-            <button data-pelo="plano" aria-pressed="${pelo === 'plano'}">Pelo livre do plano (conta antiga)</button>
-          </div>
-          ${chk('contarAtrasadas', 'Contar parcelas atrasadas', 'Parcelas que já venceram e o balancete não mostra: contam a partir do mês que vem.')}
-          ${chk('contarSemData', 'Contar parcelas sem data', 'Parcelas por entrega, sem data no plano: contam a partir do mês que vem.')}
-          ${chk('contarRendimento', 'Contar o rendimento da aplicação', 'O caixa do balancete inclui o rendimento; ele não é dinheiro do plano.')}
+        <div class="card__header"><div><h3 class="card__title">Monte a simulação</h3>
+          <p class="card__subtitle">Ligue ou desligue cada dinheiro e veja o efeito na conta acima e no resto da página.
+            Clique no nome ou no valor para ver de onde ele vem.</p></div></div>
+        <div class="plan-atalhos"><span class="plan-atalhos__rot">Comece por</span>${atalhos}</div>
+        <div class="plan-legenda">
+          <span><i class="plan-amostra plan-amostra--pode"></i>pode pagar neste mês</span>
+          <span><i class="plan-amostra plan-amostra--usa"></i>está pagando</span>
+          ${pelo === 'dinheiro' ? `<span><i class="plan-marco plan-marco--solto"></i>parcela do plano que vai entrar</span>
+          <span><i class="plan-marco plan-marco--solto plan-marco--conferir"></i>parcela atrasada ou com nota não paga: conferir</span>` : ''}
         </div>
-        ${pelo === 'dinheiro' ? `<div class="plan-legenda">${SIT_LEGENDA.map(([s, t]) => `<span><i style="background:${COR_SIT[s]};border-radius:50%"></i>${t}</span>`).join('')}</div>` : ''}
-        <div class="plan-rolagem"><table class="plan-tab plan-din">
-          <colgroup><col style="width:21%"><col style="width:118px"><col><col style="width:124px"><col style="width:92px"><col style="width:104px"></colgroup>
-          <thead><tr><th>Fonte</th><th>Conta</th><th><div class="plan-tempo plan-tempo--rotulos" style="${grid}">${M.map(m => `<span>${m.endsWith('-01') || m === M[0] ? rot(m) : ROTM[Number(m.slice(5, 7)) - 1].slice(0, 1)}</span>`).join('')}</div></th>
-            <th>Pode pagar</th><th>Usado</th><th>Sobra</th></tr></thead>
-          <tbody>${linhas}${outros ? `<tr><th colspan="6" class="plan-din__sep">Centros que só pagam as próprias bolsas</th></tr>${outros}` : ''}</tbody></table></div>
-        ${gc && gc.length ? `<p class="plan-nota">Foram ao guarda-chuva: ${gc.map(([k, x]) => `${esc(rotuloFonte('→' + k))} ${K(x)}`).join(', ')}.</p>` : ''}
+        ${grade(M, `${cabMeses(M, 'De onde vem o dinheiro', 'Pode pagar')}<tbody>${linhas}</tbody>`)}
+        ${gc && gc.length ? `<p class="plan-nota">Foram para o guarda-chuva: ${gc.map(([k, x]) => `${esc(nomeFonte(k))}, ${formatBRL(x)}`).join('; ')}.</p>` : ''}
+        ${proprios.length ? `<p class="plan-nota">Pagam só as próprias bolsas (cinza no gráfico): ${proprios.join('; ')}.</p>` : ''}
+
+        <div class="plan-decisoes">
+          <h4>Decisões em aberto</h4>
+          ${comSobras ? `<label class="plan-chk"><input type="checkbox" data-decisao="sobrasGC" ${escolha.sobrasGC ? 'checked' : ''}>
+            <span><strong>Quando um projeto acaba, a sobra dele paga bolsas pelo guarda-chuva</strong>
+            <span class="plan-miudo">Sem o limite mensal do guarda-chuva. Exige mudar o plano dele.</span></span></label>` : ''}
+          ${comFim ? `<label class="plan-chk"><input type="checkbox" data-decisao="continua" ${escolha.continua ? 'checked' : ''}>
+            <span><strong>Bolsistas do 30.109 ICS e do 30.113 GMH continuam depois que esses projetos acabam</strong>
+            <span class="plan-miudo">Desmarcado, a parte da bolsa paga por esses projetos termina com eles.</span></span></label>` : ''}
+        </div>
+
+        <details class="plan-det" data-det="regras" ${abertos.regras ? 'open' : ''}>
+          <summary><i data-lucide="calculator"></i> Como o dinheiro é contado</summary>
+          <div class="plan-regras">
+            <div class="plan-seg" role="group" aria-label="Como contar o dinheiro dos projetos">
+              <button data-pelo="dinheiro" aria-pressed="${pelo === 'dinheiro'}">Pelo dinheiro: o que entrou e as parcelas previstas</button>
+              <button data-pelo="plano" aria-pressed="${pelo === 'plano'}">Pelo saldo do plano, sem olhar o caixa</button>
+            </div>
+            <p class="plan-nota">${pelo === 'dinheiro'
+              ? 'Cada projeto paga com o caixa do último balancete (sem o rendimento da aplicação) e com cada parcela do plano a partir do mês em que ela entra, nunca mais que o saldo do plano.'
+              : 'Cada projeto paga com o saldo livre do plano, como se todo o dinheiro já estivesse em caixa.'}</p>
+            ${chk('contarAtrasadas', 'Contar parcelas atrasadas (venceram e não aparecem no balancete)')}
+            ${chk('contarSemData', 'Contar parcelas sem data (pagas por entrega)')}
+            ${chk('contarRendimento', 'Contar o rendimento da aplicação')}
+          </div>
+        </details>
       </section>`;
   }
 
-  // 5. Pessoa a pessoa.
+  function rotuloFonte(k) {
+    if (k === 'SEM') return 'sem dinheiro';
+    if (k === '_proprio') return 'próprios projetos';
+    if (!k.startsWith('→')) return `o próprio projeto (${k})`;
+    return nomeFonte(pai(k.slice(1)));
+  }
+
+  // 3. Quem paga cada mês: colunas empilhadas na mesma régua, legenda com o total do período ao lado.
+  function mesAMes(r) {
+    const pm = porMes(r);
+    const M = r.meses;
+    const tot = m => Object.values(pm[m]).reduce((s, x) => s + x, 0);
+    const max = Math.max(...M.map(tot), 1);
+    const ordem = ['_proprio', ...base.premissas.fontes.itens.map(f => '→' + f.codigo), 'SEM'];
+    const usadas = ordem.filter(k => M.some(m => pm[m][k] > 0));
+    const barra = m => `<td class="plan-b ${m.endsWith('-01') && m !== M[0] ? 'plan-m--ano' : ''}">
+      <button class="plan-mes" data-mes="${m}" title="${esc(`${rot(m)}: ${formatBRL(tot(m))}. Clique para o detalhe.`)}">
+        ${ordem.filter(k => pm[m][k] > 0).map(k => `<i style="height:${(pm[m][k] / max) * 100}%;background:${corDe(k)}"></i>`).join('')}</button></td>`;
+    const falta = m => { const f = pm[m].SEM || 0; return `<td class="plan-b__falta ${m.endsWith('-01') && m !== M[0] ? 'plan-m--ano' : ''}">${f > 0 ? `${Math.round(f / 1000).toLocaleString('pt-BR')} mil` : ''}</td>`; };
+    const legenda = usadas.map(k => `<li><i style="background:${corDe(k)}"></i><span>${esc(maiuscula(rotuloFonte(k)))}</span>
+      <span class="${k === 'SEM' ? 'plan-falta' : ''}" title="${esc(formatBRL(somaChave(pm, k)))}">${K(somaChave(pm, k))}</span></li>`).join('');
+    return `
+      <section class="card">
+        <div class="card__header"><div><h3 class="card__title">Quem paga cada mês</h3>
+          <p class="card__subtitle">A altura é o total das bolsas no mês; as cores, de onde sai o dinheiro. Clique num mês para o detalhe.</p></div></div>
+        ${grade(M, `${cabMeses(M, '', 'No período')}<tbody>
+          <tr><th class="plan-esq plan-eixo"><span>${K(max)}</span><span>R$ 0</span></th>${M.map(barra).join('')}
+            <td class="plan-dir plan-legenda-lado"><ul>${legenda}</ul></td></tr>
+          <tr><th class="plan-esq plan-falta">Sem dinheiro (R$)</th>${M.map(falta).join('')}<td class="plan-dir"></td></tr></tbody>`)}
+      </section>`;
+  }
+
+  // Legenda de cores usada logo acima da tabela de pessoas (para não depender do gráfico lá em cima).
+  function legendaFontes(r) {
+    const pm = porMes(r);
+    const ordem = ['_proprio', ...base.premissas.fontes.itens.map(f => '→' + f.codigo), 'SEM'];
+    return ordem.filter(k => r.meses.some(m => pm[m][k] > 0))
+      .map(k => `<span><i style="background:${corDe(k)}"></i>${esc(maiuscula(rotuloFonte(k)))}</span>`).join('');
+  }
+
+  // 4. Pessoa a pessoa, na mesma régua. Bolsa paga por mais de uma fonte no mês aparece dividida.
   function pessoas(r) {
     const c = r.cenarios._ESC;
     const M = r.meses;
-    const lista = r.pessoas.filter(p => !filtroFalta || M.some(m => (c.mapa[`${p.nome}|${m}`] || []).some(([k]) => k === 'SEM')));
-    const semNenhum = r.pessoas.filter(p => M.some(m => (c.mapa[`${p.nome}|${m}`] || []).some(([k]) => k === 'SEM'))).length;
+    const faltaDe = p => M.reduce((s, m) => s + (c.mapa[`${p.nome}|${m}`] || []).filter(([k]) => k === 'SEM').reduce((a, [, v]) => a + v, 0), 0);
+    const lista_ = r.pessoas.filter(p => !filtroFalta || faltaDe(p) > 0);
+    const semNenhum = r.pessoas.filter(p => faltaDe(p) > 0).length;
     const cel = (p, m) => {
+      const ano = m.endsWith('-01') && m !== M[0] ? 'plan-m--ano' : '';
       const x = c.mapa[`${p.nome}|${m}`] || [];
-      if (!x.length) return '<td></td>';
-      const dica = x.map(([k, val]) => `${rotuloFonte(k)}: ${formatBRL(val)}`).join(' + ');
-      const k = x.some(([q]) => q === 'SEM') ? 'SEM' : pai(x[x.length - 1][0]);
-      return `<td class="plan-cel" title="${esc(rot(m) + ' — ' + dica)}"><i style="background:${corDe(k)}"></i></td>`;
+      if (!x.length) return `<td class="plan-c ${ano}"></td>`;
+      const grupos = {};
+      x.forEach(([k, v]) => { const g = k === 'SEM' ? 'SEM' : k.startsWith('→') ? pai(k) : '_proprio'; grupos[g] = (grupos[g] || 0) + v; });
+      const tot = Object.values(grupos).reduce((s, v) => s + v, 0);
+      const dica = `${rot(m)}, ${formatBRL(tot)}: ` + Object.entries(grupos).map(([g, v]) =>
+        `${g === '_proprio' ? 'o próprio projeto' : rotuloFonte(g)} ${formatBRL(v)}`).join(' + ');
+      let acum = 0;
+      const fundo = Object.keys(grupos).length === 1 ? corDe(Object.keys(grupos)[0])
+        : `linear-gradient(to top, ${Object.entries(grupos).map(([g, v]) => { const a = acum; acum += v / tot * 100; return `${corDe(g)} ${a}% ${acum}%`; }).join(', ')})`;
+      return `<td class="plan-c ${ano}" title="${esc(dica)}"><i style="background:${fundo}"></i></td>`;
     };
-    const linhas = lista.map(p => `<tr><th title="${esc(p.nome)}">${esc(p.nome)}</th><td>${esc(p.grupo)}</td>
-      <td><button class="plan-num" data-pessoa="${esc(p.nome)}" title="De onde vem este valor">${formatBRL(p.alvo)}</button></td>
-      ${M.map(m => cel(p, m)).join('')}</tr>`).join('');
+    const linhas = lista_.map(p => {
+      const f = faltaDe(p);
+      return `<tr><th class="plan-esq"><div class="plan-pessoa"><strong title="${esc(p.nome)}">${esc(p.nome)}</strong>
+          <button class="plan-num" data-pessoa="${esc(p.nome)}" title="De onde vem este valor">${formatBRL(p.alvo)}/mês</button></div>
+          <div class="plan-miudo" title="${esc(String(p.grupo).split(' + ').map(cc => `${cc} ${base.dados.centros[cc]?.nome || ''}`).join(' + '))}">${esc(p.grupo)}</div></th>
+        ${M.map(m => cel(p, m)).join('')}
+        <td class="plan-dir">${f > 0 ? `<span class="plan-falta">${formatBRL(f)}</span>` : '<span class="plan-miudo">—</span>'}</td></tr>`;
+    }).join('');
     return `
       <details class="card plan-det plan-det--card" data-det="pessoas" ${abertos.pessoas ? 'open' : ''}>
         <summary><span><strong>Pessoa a pessoa</strong> · ${r.pessoas.length} pessoas${semNenhum ? `, <span class="plan-falta">${semNenhum} ficam sem dinheiro em algum mês</span>` : ''}</span></summary>
         <div class="plan-det__corpo">
           <div class="plan-pessoas-topo">
-            <p class="plan-nota">Clique no valor da bolsa para ver de onde ele veio. Quem fica sem dinheiro depende da ordem
-              da lista; o total, não. Isto não é proposta de quem sai.</p>
+            <p class="plan-nota">Quem fica sem dinheiro depende da ordem da lista; o total do mês, não. Isto não é proposta de quem sai.</p>
             <label class="plan-chk plan-chk--linha"><input type="checkbox" data-acao="filtro" ${filtroFalta ? 'checked' : ''}> Só quem fica sem dinheiro</label>
           </div>
-          <div class="plan-rolagem"><table class="plan-tab plan-tab--pessoas">
-            <thead><tr><th>Pessoa</th><th>Centro</th><th>Bolsa/mês</th>${M.map(m => `<th>${rot(m)}</th>`).join('')}</tr></thead>
-            <tbody>${linhas}</tbody></table></div>
+          <div class="plan-legenda">${legendaFontes(r)}</div>
+          ${grade(M, `${cabMeses(M, 'Pessoa e projeto', 'Sem dinheiro')}<tbody>${linhas}</tbody>`)}
         </div>
       </details>`;
   }
 
+  // Datas dos avisos no formato da tela (2026-10-01 → 01/10/2026).
+  const dataBr = s => String(s).replace(/(\d{4})-(\d{2})-(\d{2})/g, '$3/$2/$1');
+
   function alertas(r) {
     if (!r.alertas.length) return '';
     return `<details class="card plan-det plan-det--card" data-det="alertas" ${abertos.alertas ? 'open' : ''}>
-      <summary><span><i data-lucide="alert-triangle"></i> <strong>Avisos da conta</strong> · ${r.alertas.length}</span></summary>
-      <div class="plan-det__corpo"><ul class="plan-lista">${r.alertas.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div></details>`;
+      <summary><span><i data-lucide="alert-triangle"></i> <strong>Avisos sobre os dados</strong> · ${r.alertas.length}</span></summary>
+      <div class="plan-det__corpo"><ul class="plan-lista">${r.alertas.map(a => `<li>${esc(dataBr(a))}</li>`).join('')}</ul></div></details>`;
   }
 
-  // Uma cor por fonte, na ordem das premissas. Cinza = o próprio centro paga.
+  // Uma cor por fonte, na ordem das premissas, a mesma em toda a tela. Cinza = o próprio projeto paga.
   const PALETA = ['#8b6fd6', '#e08a3c', '#2a9d8f', '#d4a72c', '#4a7fd4', '#d4609b', '#3fa34d', '#5bb5d9'];
   function corDe(k) {
     if (k === 'SEM') return 'var(--danger)';
-    if (!k.startsWith('→')) return '#9aa39d';
+    if (!k.startsWith('→')) return '#a9b1ab';
     const i = base.premissas.fontes.itens.findIndex(f => f.codigo === pai(k.slice(1)));
-    return i < 0 ? '#9aa39d' : PALETA[i % PALETA.length];
+    return i < 0 ? '#a9b1ab' : PALETA[i % PALETA.length];
   }
 
   /* ── Eventos ─────────────────────────────────────────────── */
@@ -593,6 +686,12 @@ const PlanejamentoPage = (() => {
       escolha[i.dataset.decisao] = i.checked;
       render();
     }));
+    el.querySelectorAll('[data-liga]').forEach(b => b.addEventListener('click', () => { escolha[b.dataset.liga] = true; render(); }));
+    el.querySelector('[data-acao="voltar"]')?.addEventListener('click', () => {
+      escolha = escolhaDe(base.premissas.cenarios[0]);
+      comoContar = structuredClone(comoPadrao);
+      render();
+    });
     el.querySelectorAll('details[data-det]').forEach(d => d.addEventListener('toggle', () => { abertos[d.dataset.det] = d.open; }));
     el.querySelector('[data-acao="filtro"]')?.addEventListener('change', e => { filtroFalta = e.target.checked; render(); });
     el.querySelector('[data-acao="premissas"]')?.addEventListener('click', verPremissas);
@@ -824,111 +923,174 @@ const PlanejamentoPage = (() => {
     const s = document.createElement('style');
     s.id = 'planejamento-css';
     s.textContent = `
-      .plan { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; max-width: 1280px; }
+      .plan { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; max-width: 1320px; }
       .plan > * { min-width: 0; }
-      .plan-versao { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); color: var(--text-secondary); font-size: 13px; margin: 0; }
-      .plan-versao > i { width: 16px; height: 16px; }
-      .plan-versao .btn { margin-left: auto; }
+      .plan-placar { position: sticky; z-index: 5; height: 0; margin-top: calc(-1 * var(--sp-5)); }
+      .plan-placar__barra { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); padding: 8px var(--sp-4); font-size: 14px;
+        background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-md); box-shadow: 0 4px 14px rgba(0,0,0,.08);
+        opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .15s, transform .15s; }
+      .plan-placar--on .plan-placar__barra { opacity: 1; transform: none; }
+      @media (prefers-reduced-motion: reduce) { .plan-placar__barra { transition: none; } }
+      .plan-rodape { font-size: 12px; color: var(--text-muted); margin: 0; max-width: 90ch; }
 
-      .plan-resp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-6); align-items: center; border-left: 4px solid var(--success); }
-      .plan-resp--falta { border-left-color: var(--danger); }
-      .plan-resp__cenario { margin: 0 0 var(--sp-1); font-size: 13px; color: var(--text-secondary); }
-      .plan-resp__titulo { margin: 0; font-family: var(--font-heading); font-size: clamp(26px, 3vw, 36px); line-height: 1.15; font-weight: 700; }
-      .plan-resp--ok .plan-resp__titulo { color: var(--success); }
-      .plan-resp__sub { margin: var(--sp-2) 0 0; font-size: 15px; color: var(--text-primary); max-width: 62ch; }
-      .plan-resp__extra { display: flex; gap: var(--sp-2); align-items: flex-start; margin: var(--sp-3) 0 0; font-size: 14px; color: var(--text-secondary); max-width: 70ch; }
-      .plan-resp__extra i { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; }
-      .plan-resp__fatos { display: grid; gap: var(--sp-3); margin: 0; padding-left: var(--sp-6); border-left: 1px solid var(--border-subtle); }
-      .plan-resp__fatos dt { font-size: 12px; color: var(--text-secondary); }
-      .plan-resp__fatos dd { margin: 0; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-      @media (max-width: 900px) { .plan-resp { grid-template-columns: 1fr; } .plan-resp__fatos { padding-left: 0; border-left: 0; grid-template-columns: repeat(3, auto); } }
+      /* Resumo: a conta inteira numa linha */
+      .plan-resumo { display: flex; flex-direction: column; gap: var(--sp-4); }
+      .plan-resumo__estado { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); font-size: 14px; color: var(--text-secondary); }
+      .plan-resumo__estado .btn { margin-left: auto; }
+      .plan-estado { font-weight: 600; color: var(--text-primary); padding: 2px 10px; border-radius: var(--radius-full); background: var(--bg-secondary); font-size: 13px; }
+      .plan-estado--sim { background: color-mix(in srgb, var(--warning) 22%, transparent); }
+      .plan-conta { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1.15fr; align-items: stretch; gap: var(--sp-3); }
+      .plan-conta__item { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); background: var(--bg-secondary); min-width: 0; }
+      .plan-conta__rot { font-size: 13px; color: var(--text-secondary); }
+      .plan-conta__valor { font-family: var(--font-heading); font-size: clamp(18px, 1.9vw, 24px); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); white-space: nowrap; }
+      .plan-conta__sub { font-size: 12px; color: var(--text-muted); }
+      .plan-conta__op { align-self: center; font-size: 22px; color: var(--text-muted); font-weight: 300; }
+      .plan-conta__item--falta { background: color-mix(in srgb, var(--danger) 12%, var(--bg-surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); }
+      .plan-conta__item--falta .plan-conta__valor, .plan-conta__item--falta .plan-conta__rot { color: var(--danger); }
+      .plan-conta__item--ok .plan-conta__valor { color: var(--success); }
+      .plan-resumo__notas { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); font-size: 14px; color: var(--text-secondary); }
+      .plan-resumo__notas li { display: flex; gap: var(--sp-2); align-items: flex-start; }
+      .plan-resumo__notas i { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; }
+      @media (max-width: 1000px) {
+        .plan-conta { grid-template-columns: 1fr 1fr; }
+        .plan-conta__item { padding: var(--sp-3); }
+        .plan-conta__valor { font-size: 17px; }
+        .plan-conta__op { display: none; }
+        .plan-conta__item--falta, .plan-conta__item--ok { grid-column: 1 / -1; }
+      }
 
-      .plan-num { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-decoration-color: var(--accent); text-underline-offset: 4px; }
-      .plan-num:hover, .plan-num:focus-visible { color: var(--accent); }
-      .plan-num--falta { color: var(--danger); }
-      .plan-link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; font-weight: 600; }
+      .plan-num { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; border-bottom: 1px dashed var(--text-muted); }
+      .plan-num:hover, .plan-num:focus-visible { color: var(--accent); border-bottom-color: var(--accent); }
+      .plan-link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+      .plan-falta { color: var(--danger); font-weight: 600; }
+      .plan-ok { color: var(--success); font-weight: 600; }
+      .plan-nota { color: var(--text-secondary); font-size: 13px; margin: var(--sp-3) 0 0; }
+      .plan-miudo { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 2px; line-height: 1.35; }
+      .plan-vence { color: var(--warning); font-weight: 600; }
+      .plan-chip { display: inline-block; padding: 1px 8px; border-radius: var(--radius-full); font-size: 11px; background: var(--bg-secondary); color: var(--text-secondary); }
+      .plan-chip--entrar { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--text-primary); }
 
-      .plan-cens { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-3); }
-      .plan-cen { display: flex; flex-direction: column; gap: var(--sp-1); text-align: left; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-default);
-        border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text-primary); font: inherit; cursor: pointer; }
-      .plan-cen:hover { border-color: var(--accent); }
-      .plan-cen--ativo { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-muted, var(--bg-secondary)); }
-      .plan-cen__nome { font-weight: 600; font-size: 14px; }
-      .plan-cen__valor { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-      .plan-cen__valor--ok { color: var(--success); }
-      .plan-cen__explica { font-size: 12px; color: var(--text-secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      /* Atalhos */
+      .plan-atalhos { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+      .plan-atalhos__rot { font-size: 13px; color: var(--text-secondary); margin-right: var(--sp-1); }
+      .plan-atalho { display: inline-flex; gap: var(--sp-2); align-items: baseline; padding: 5px 12px; border: 1px solid var(--border-default); border-radius: var(--radius-full);
+        background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+      .plan-atalho:hover { border-color: var(--accent); }
+      .plan-atalho span:last-child { font-size: 12px; white-space: nowrap; }
+      .plan-atalho--ativo { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface)); }
+
+      /* Legenda */
+      .plan-legenda { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); font-size: 12px; color: var(--text-secondary); margin-bottom: var(--sp-3); }
+      .plan-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+      .plan-legenda > span > i:not(.plan-marco), .plan-cor { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+      .plan-cor { margin-right: 8px; vertical-align: -1px; }
+      .plan-amostra { width: 18px !important; height: 10px !important; border-radius: 2px !important; }
+      .plan-amostra--pode { background: color-mix(in srgb, var(--text-muted) 28%, transparent); }
+      .plan-amostra--usa { background: var(--text-muted); }
+
+      /* A régua comum: rótulo | um mês por coluna | valor */
+      .plan-rolagem { overflow-x: auto; max-width: 100%; }
+      .plan-grade { border-collapse: collapse; table-layout: fixed; width: 100%; min-width: calc(250px + var(--meses) * 40px + 200px); font-size: 13px; font-variant-numeric: tabular-nums; }
+      .plan-col-rot { width: 250px; }
+      .plan-col-val { width: 200px; }
+      .plan-grade th, .plan-grade td { border-bottom: 1px solid var(--border-subtle); padding: 0; }
+      .plan-grade thead th { font-size: 12px; font-weight: 500; color: var(--text-secondary); padding: 6px 0; white-space: nowrap; }
+      .plan-grade .plan-m { text-align: center; }
+      .plan-grade .plan-m--ano { border-left: 1px solid var(--border-default); }
+      .plan-grade .plan-esq { text-align: left; padding: 10px 12px 10px 0; position: sticky; left: 0; background: var(--bg-surface); z-index: 1; font-weight: 400; vertical-align: middle; }
+      .plan-grade .plan-dir { text-align: right; padding: 10px 0 10px 12px; vertical-align: middle; }
+      .plan-rolar { display: none; font-size: 12px; color: var(--text-muted); margin: 0 0 var(--sp-2); }
+      @media (max-width: 900px) {
+        .plan-col-rot { width: 150px; }
+        .plan-grade { min-width: calc(150px + var(--meses) * 44px + 150px); }
+        .plan-col-val { width: 150px; }
+        .plan-rolar { display: block; }
+      }
+
+      /* Linhas das fontes */
+      .plan-fonte-topo { display: flex; align-items: center; gap: var(--sp-2); }
+      .plan-fonte { background: none; border: 0; padding: 0; font: inherit; color: var(--text-primary); cursor: pointer; text-align: left; font-weight: 600; font-size: 14px; }
+      .plan-fonte:hover, .plan-fonte:focus-visible { color: var(--accent); }
+      .plan-fonte-conta { margin-top: 6px; }
+      .plan-usar { font-size: 12px; color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; }
+      .plan-sel { font: inherit; font-size: 12px; padding: 2px 4px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); }
+      .plan-sw { position: relative; display: inline-block; width: 30px; height: 18px; flex-shrink: 0; cursor: pointer; }
+      .plan-sw input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+      .plan-sw span { position: absolute; inset: 0; border-radius: 9px; background: var(--border-default); transition: background .15s; pointer-events: none; }
+      .plan-sw span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+      .plan-sw input:checked + span { background: var(--accent); }
+      .plan-sw input:checked + span::after { transform: translateX(12px); }
+      .plan-sw input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .plan-desligada .plan-t__faixa, .plan-desligada .plan-cor, .plan-desligada .plan-marco { opacity: .35; }
+      .plan-desligada .plan-fonte, .plan-desligada .plan-dir { color: var(--text-muted); }
+      .plan-t { position: relative; height: 44px; }
+      .plan-t__faixa { position: absolute; left: 1px; right: 1px; top: 50%; height: 14px; transform: translateY(-50%); }
+      .plan-t__faixa--pode { background: color-mix(in srgb, var(--cor) 26%, transparent); }
+      .plan-t__faixa--usa { background: var(--cor); }
+      .plan-marco { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 9px; height: 9px; border-radius: 50%;
+        background: var(--bg-surface); border: 2px solid var(--text-primary); z-index: 1; }
+      .plan-marco--conferir { border-color: var(--danger); background: var(--danger); }
+      .plan-marco--solto { position: static; transform: none; display: inline-block; }
+      @media (prefers-reduced-motion: reduce) { .plan-sw span, .plan-sw span::after { transition: none; } }
+
+      .plan-decisoes { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--border-subtle); display: grid; gap: var(--sp-2); }
+      .plan-decisoes h4, .plan-regras h4 { margin: 0 0 var(--sp-1); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+      .plan-chk { display: flex; gap: var(--sp-2); align-items: flex-start; font-size: 14px; line-height: 1.45; cursor: pointer; }
+      .plan-chk > input { margin-top: 3px; accent-color: var(--accent); }
+      .plan-chk .plan-miudo { display: block; }
+      .plan-chk--linha { align-items: center; white-space: nowrap; font-size: 13px; color: var(--text-secondary); }
+      .plan-chk--linha input { margin-top: 0; }
 
       .plan-det { margin-top: var(--sp-4); }
       .plan-det > summary { cursor: pointer; font-size: 14px; color: var(--text-secondary); display: flex; align-items: center; gap: var(--sp-2); list-style: none; }
       .plan-det > summary::-webkit-details-marker { display: none; }
-      .plan-det > summary::before { content: '▸'; color: var(--text-muted); }
-      .plan-det[open] > summary::before { content: '▾'; }
+      .plan-det > summary::before { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); margin: 0 4px 0 2px; transition: transform .15s; }
+      .plan-det[open] > summary::before { transform: rotate(45deg); }
       .plan-det > summary i { width: 16px; height: 16px; }
       .plan-det--card { margin-top: 0; }
       .plan-det--card > summary { color: var(--text-primary); font-size: 15px; }
       .plan-det__corpo { margin-top: var(--sp-4); }
-      .plan-ajustes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--sp-6); margin-top: var(--sp-4); }
-      .plan-ajustes h4 { margin: 0 0 var(--sp-2); font-size: 13px; color: var(--text-secondary); font-weight: 600; }
-      .plan-chk { display: flex; gap: var(--sp-2); align-items: flex-start; font-size: 14px; line-height: 1.45; cursor: pointer; margin-bottom: var(--sp-2); }
-      .plan-chk input { margin-top: 3px; accent-color: var(--accent); }
-      .plan-chk--linha { align-items: center; margin: 0; white-space: nowrap; font-size: 13px; color: var(--text-secondary); }
-      .plan-chk--linha input { margin-top: 0; }
+      .plan-regras { display: grid; gap: var(--sp-2); margin-top: var(--sp-3); max-width: 80ch; }
+      .plan-regras .plan-nota { margin: 0 0 var(--sp-2); }
+      .plan-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; justify-self: start; }
+      .plan-seg button { background: var(--bg-surface); color: var(--text-secondary); border: 0; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+      .plan-seg button + button { border-left: 1px solid var(--border-default); }
+      .plan-seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--bg-surface)); color: var(--text-primary); font-weight: 600; }
+      .plan-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-      .plan-legenda { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); font-size: 12px; color: var(--text-secondary); margin-bottom: var(--sp-4); }
-      .plan-legenda span { display: inline-flex; align-items: center; gap: 6px; }
-      .plan-legenda i, .plan-cel i, .plan-cor { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
-      .plan-cor { margin-right: 8px; vertical-align: -1px; }
-      .plan-meses { display: grid; gap: 4px; align-items: end; }
-      .plan-mes { display: flex; flex-direction: column; align-items: stretch; gap: 4px; background: none; border: 0; padding: 4px 0; cursor: pointer; font: inherit; color: inherit; border-radius: var(--radius-sm); min-width: 0; }
-      .plan-mes:hover, .plan-mes:focus-visible { background: var(--bg-secondary); }
-      .plan-mes__barra { height: 150px; display: flex; flex-direction: column-reverse; margin: 0 15%; border-radius: 3px; overflow: hidden; }
-      .plan-mes__barra i { display: block; }
-      .plan-mes__falta { font-size: 11px; height: 14px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .plan-mes__rot { font-size: 11px; color: var(--text-secondary); text-align: center; white-space: nowrap; }
+      /* Gráfico na régua */
+      .plan-eixo { vertical-align: top !important; height: 170px; }
+      .plan-eixo span { display: block; font-size: 11px; color: var(--text-muted); text-align: right; padding-right: 4px; }
+      .plan-eixo span:first-child { margin-top: 14px; }
+      .plan-eixo span:last-child { margin-top: 130px; }
+      .plan-b { vertical-align: bottom; padding: 8px 0 0 !important; height: 170px; }
+      .plan-mes { display: flex; flex-direction: column-reverse; width: 70%; margin: 0 auto; height: 150px; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 3px; overflow: hidden; }
+      .plan-mes i { display: block; flex-shrink: 0; }
+      .plan-mes:hover, .plan-mes:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .plan-b__falta { text-align: center; font-size: 11px; color: var(--danger); font-weight: 600; padding: 6px 0 !important; white-space: nowrap; }
+      .plan-legenda-lado { vertical-align: top !important; }
+      .plan-legenda-lado ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 12px; text-align: left; }
+      .plan-legenda-lado li { display: grid; grid-template-columns: 12px 1fr auto; column-gap: 6px; align-items: center; }
+      .plan-legenda-lado li i { width: 10px; height: 10px; border-radius: 2px; }
+      .plan-legenda-lado li span:nth-child(2) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .plan-legenda-lado li span:last-child { color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-      .plan-rolagem { overflow-x: auto; max-width: 100%; }
+      /* Pessoas na régua */
+      .plan-pessoas-topo { display: flex; justify-content: space-between; gap: var(--sp-4); align-items: flex-start; flex-wrap: wrap; margin-bottom: var(--sp-3); }
+      .plan-pessoas-topo .plan-nota { margin: 0; max-width: 70ch; }
+      .plan-pessoa { display: flex; justify-content: space-between; gap: var(--sp-2); align-items: baseline; }
+      .plan-pessoa strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .plan-pessoa .plan-num { font-size: 12px; white-space: nowrap; }
+      .plan-grade tbody tr:has(.plan-pessoa) .plan-esq { padding-top: 6px; padding-bottom: 6px; }
+      .plan-c { text-align: center; }
+      .plan-c i { display: inline-block; width: 16px; height: 16px; border-radius: 3px; vertical-align: middle; }
+
+      /* Janelas de detalhe */
       .plan-tab { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
       .plan-tab th, .plan-tab td { padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); text-align: right; vertical-align: top; }
       .plan-tab tbody th, .plan-tab thead th:first-child { text-align: left; font-weight: 500; }
       .plan-tab thead th { color: var(--text-secondary); font-weight: 500; font-size: 12px; }
-      .plan-tab--pessoas th, .plan-tab--pessoas td { padding: 5px 6px; white-space: nowrap; }
-      .plan-tab--pessoas thead th:first-child { position: sticky; left: 0; background: var(--bg-surface); z-index: 2; }
-      .plan-tab--pessoas tbody th { position: sticky; left: 0; background: var(--bg-surface); z-index: 1; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-      .plan-tab--pessoas td.plan-cel { text-align: center; }
-      .plan-fora { opacity: 0.5; }
-      .plan-miudo { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-top: 2px; }
-      .plan-vence { color: var(--warning); }
-      .plan-uso { height: 6px; background: var(--bg-secondary); border-radius: 3px; overflow: hidden; margin: 4px 0 4px auto; max-width: 140px; }
-      .plan-uso i { display: block; height: 100%; background: var(--accent); }
-      .plan-falta { color: var(--danger); font-weight: 600; }
-      .plan-chip { display: inline-block; padding: 1px 8px; border-radius: var(--radius-full); font-size: 11px; background: var(--success-muted); color: var(--success); }
-      .plan-chip--entrar { background: var(--warning-muted); color: var(--warning); }
-      .plan-nota { color: var(--text-secondary); font-size: 13px; }
-      .plan-pessoas-topo { display: flex; justify-content: space-between; gap: var(--sp-4); align-items: flex-start; flex-wrap: wrap; margin-bottom: var(--sp-3); }
-      .plan-pessoas-topo .plan-nota { margin: 0; max-width: 70ch; }
       .plan-lista { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; }
-
-      .plan-opcoes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-5); margin-bottom: var(--sp-4); }
-      .plan-seg { display: inline-flex; border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; }
-      .plan-seg button { background: var(--bg-surface); color: var(--text-secondary); border: 0; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
-      .plan-seg button + button { border-left: 1px solid var(--border-default); }
-      .plan-seg button[aria-pressed="true"] { background: var(--accent-muted, var(--bg-secondary)); color: var(--text-primary); font-weight: 600; }
-      .plan-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-      .plan-sel { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); max-width: 100%; }
-      .plan-fonte { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; font-weight: 500; }
-      .plan-fonte:hover, .plan-fonte:focus-visible { color: var(--accent); text-decoration: underline; }
-      .plan-din td, .plan-din th { vertical-align: middle; }
-      .plan-din__conta { text-align: left !important; }
-      .plan-din__tempo { min-width: 210px; }
-      .plan-din__janela { text-align: left; }
-      .plan-din__sep { text-align: left !important; font-size: 12px; color: var(--text-secondary); font-weight: 600 !important; padding-top: var(--sp-4) !important; }
-      .plan-din__outro { opacity: 0.8; }
-      .plan-tempo { display: grid; gap: 2px; align-items: center; }
-      .plan-tempo--rotulos span { font-size: 10px; color: var(--text-muted); text-align: center; font-weight: 400; white-space: nowrap; overflow: hidden; }
-      .plan-tempo__mes { position: relative; height: 14px; border-radius: 2px; display: flex; align-items: center; justify-content: center; }
-      .plan-tempo__mes--on { background: color-mix(in srgb, var(--success) 22%, transparent); }
-      .plan-tempo__mes--fim { box-shadow: inset -2px 0 0 var(--text-muted); }
-      .plan-ponto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--bg-surface); }
       .plan-sit { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
       .plan-sit::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--cor); }
       .plan-passos th { font-weight: 400 !important; }

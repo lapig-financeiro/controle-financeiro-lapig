@@ -150,31 +150,43 @@ para não-admin (`app.js`) e link com `data-admin`.
 - **A conta** é `PlanejamentoMotor.calcular(dados, premissas)` (`planejamento-motor.js`), porte fiel do script Python,
   travado por `tests/planejamento-motor.test.js` contra `tests/fixtures/planejamento/caso-mascarado.json` (nomes
   trocados por P01…, gerado por `mapa/gerar_fixture_motor.py`). Se mudar a regra no Python, regerar o caso e portar.
-- **Redesenho de 18/11** (pedido do Victor: "simples à primeira vista, detalhe e ajuste quando precisar"; a de 17/11
-  saía da tela e não deixava achar o cenário sem falta). Do essencial ao detalhe:
-  1. **Resposta**: "Faltam R$ X" (ou "Não falta dinheiro") no cenário escolhido, desde quando; quanto seria se o
-     dinheiro "a entrar" não entrar (o mesmo cenário sem as fontes `situacao: 'a_entrar'`); e, havendo falta, quanto
-     sobra e vence sem uso em fontes que acabam antes, com link para o cenário gravado sem falta.
-  2. **Cenários lado a lado**: um cartão por cenário das premissas com a sua falta; clicar escolhe. "Ajustar" liga e
-     desliga fontes e as duas decisões em discussão (sobras → guarda-chuva usa `sobras_para_gc`/`gc_sem_teto` do
-     cenário que as tem; ICS/GMH não continuarem usa `encerra_com_cc`). Se a escolha não bate com nenhum cenário
-     gravado, o rótulo vira "Ajuste próprio". O motor roda os cenários gravados + `_ESC` (a escolha) + `_ESC_SEM`.
-  3. **Quem paga cada mês**: colunas empilhadas por fonte (vermelho = sem dinheiro); clicar abre o detalhe do mês.
-  4. **O dinheiro de cada fonte** (desde a noite de 18/11; antes "De onde vem o dinheiro"): ver "Conta pelo dinheiro"
-     abaixo. Vem logo depois dos cenários.
-  5. **Pessoa a pessoa** (fechado): o valor da bolsa é clicável e lista as linhas da pessoa; linha do banco abre a
-     última planilha de bolsas da FUNAPE do centro (`reconciliacoes` com `arquivo_storage_path`, bucket
-     `bolsa-planilhas`) com a linha da pessoa destacada; linha das premissas diz que é prevista. Sem planilha
-     guardada, avisa que a bolsa foi cadastrada à mão. **Atenção:** a planilha real tem CPF; a janela mostra a
-     planilha inteira (só admin chega aqui).
-  6. **Avisos da conta** (fechado).
+- **Tela refeita em 18/11 (noite)** — o Victor achou a versão anterior feia, com jargão e com cara de resposta pronta
+  ("quando eu for sentar com as pessoas, teremos que testar e pensar"); o Gemini 4 Hydrogen, lendo a tela sem contexto,
+  disse o mesmo. A conta não mudou; mudou a apresentação. Do topo para baixo:
+  1. **Resumo**: a conta inteira numa linha — bolsas do período − pagam os próprios projetos − pagam outras fontes =
+     falta (somas por mês do que o motor devolve no `_ESC`) — e "o dinheiro cobre até". Em cima, "Ponto de partida"
+     ou "Sua simulação" com a lista do que mudou (`mudancas()`) e o botão "Voltar ao ponto de partida" (primeiro
+     cenário + `comoPadrao`). Notas: quanto do usado ainda não entrou (pedaços `a_entrar` no `_ESC`) e quanto seria a
+     falta sem ele (`_ESC_SEM`); sobra que vence sem uso, com o botão que liga as sobras para o guarda-chuva.
+  2. **Monte a simulação**: atalhos = os cenários gravados, **nomeados pelo que mudam em relação ao primeiro** (o mesmo
+     vocabulário do resumo; o `explica` gravado fica na dica). Uma linha por fonte: liga/desliga, cor, nome único
+     (`curto`: o nome até os dois-pontos), descrição sem jargão (`descricao()`; dólar mostra o câmbio implícito),
+     "Usar só a rubrica Pessoal / todas as rubricas" nos projetos, os meses (tom claro = pode pagar, cheio = está
+     pagando, ponto = parcela do plano; ponto vermelho = conferir) e, à direita, pode pagar / usa / sobra. Depois, as
+     duas decisões em aberto e "Como o dinheiro é contado" (pelo dinheiro ou pelo saldo do plano; parcelas atrasadas,
+     sem data, rendimento). Os projetos que só pagam as próprias bolsas viram uma nota com link para a conta deles.
+  3. **Quem paga cada mês**: colunas empilhadas; legenda à direita com o total do período; linha "Sem dinheiro".
+  4. **Pessoa a pessoa** (fechado): legenda própria; bolsa paga por mais de uma fonte no mês aparece dividida
+     (gradiente); à direita, quanto fica sem dinheiro no período. O valor da bolsa é clicável e lista as linhas da
+     pessoa; linha do banco abre a última planilha de bolsas da FUNAPE do centro (`reconciliacoes` com
+     `arquivo_storage_path`, bucket `bolsa-planilhas`) com a linha destacada. **Atenção:** a planilha real tem CPF; a
+     janela mostra a planilha inteira (só admin chega aqui).
+  5. **Avisos sobre os dados** (fechado; datas no formato dd/mm/aaaa).
+  - **Placar** (`placar()` + `vigiarPlacar()`): quando o resumo passa por baixo da barra do topo, uma faixa fixa mostra
+    o estado, a falta e até quando o dinheiro cobre, para ver o efeito de cada chave sem subir a página. É um ouvinte
+    de rolagem (não `IntersectionObserver`, que não disparou no painel do app em 18/11).
+  - As tabelas 2, 3 e 4 têm **a mesma régua** (`regua()`: colgroup igual, rótulo 250px, um mês por coluna, valor
+    200px): os meses ficam alinhados de cima a baixo. No celular a primeira coluna fica fixa e aparece "Arraste a tabela
+    para o lado".
+  - **Uma cor por fonte em toda a tela** (`PALETA`, ordem das premissas); cinza = o próprio projeto; vermelho = sem
+    dinheiro. A situação das parcelas não usa essas cores (ponto vazado ou vermelho).
 - Cenário escolhido igual a um gravado: o motor recebe **o próprio objeto gravado** (ordem das fontes e listas das
   decisões exatas); só o "Ajuste próprio" é remontado por `cenarioDe`. Fonte `base: 'fixo'` nunca abre balancete,
   mesmo tendo `cc` (o 30.117 abria o balancete com o caixa no lugar dos R$ 20 mil). "Vencem sem uso" só conta
   fonte que acaba antes de a falta começar.
 - **Conta pelo dinheiro (18/11, pedido do Victor: "enxergar o dinheiro disponível e até quando pode ser alocado,
   com os desembolsos, auditável")** — `planejamento-dinheiro.js`, funções puras, `tests/planejamento-dinheiro.test.js`:
-  - Por centro que é fonte, vale o **menor** entre o livre do plano (seletor por linha: "Só Pessoal" ou "Todas as
+  - Por centro que é fonte, vale o **menor** entre o livre do plano (seletor por linha: "só a rubrica Pessoal" ou "todas as
     rubricas"; o padrão vem da `base` da premissa) e o dinheiro: caixa do último balancete **menos o rendimento
     líquido** (a FUNAPE aplica o que entra; o rendimento não é do plano — opção "Contar o rendimento"), menos as
     bolsas cadastradas até o fim do centro, menos (no modo Pessoal) o livre das outras rubricas. O dinheiro que chega
