@@ -337,6 +337,8 @@ const PlanejamentoPage = (() => {
   }
 
   const somaChave = (pm, k) => Object.values(pm).reduce((s, x) => s + (x[k] || 0), 0);
+  // O que fica nas fontes no fim do período (depois do que passou ao guarda-chuva): dinheiro que não foi usado.
+  const sobraTotal = cen => Object.values(cen.sobra || {}).reduce((s, v) => s + Math.max(0, Number(v) || 0), 0);
 
   // 1. A conta inteira em uma linha: custo − o que os projetos pagam − o que as outras fontes pagam = falta.
   function resumo(r) {
@@ -391,7 +393,9 @@ const PlanejamentoPage = (() => {
           <span class="plan-conta__op" aria-hidden="true">=</span>
           ${falta > 0
             ? item('Falta', `<button class="plan-num" data-acao="mes-falta">${formatBRL(falta)}</button>`, `o dinheiro cobre até ${rot(ultimoPago || M[0])}`, 'plan-conta__item--falta')
-            : item('Falta', formatBRL(0), `todas pagas até ${rot(M[M.length - 1])}`, 'plan-conta__item--ok')}
+            : item('Falta', formatBRL(0), sobraTotal(c) >= 1
+              ? `<span class="plan-conta__sobra">e sobram <strong>${formatBRL(sobraTotal(c))}</strong></span> nas fontes no fim de ${rot(M[M.length - 1])}`
+              : `todas pagas até ${rot(M[M.length - 1])}`, 'plan-conta__item--ok')}
         </div>
         ${notaEntrar || notaVence ? `<ul class="plan-resumo__notas">${notaEntrar}${notaVence}</ul>` : ''}
       </section>`;
@@ -406,7 +410,7 @@ const PlanejamentoPage = (() => {
       <span class="plan-estado ${mud ? 'plan-estado--sim' : ''}">${mud ? `Sua simulação (${mud} ${mud > 1 ? 'mudanças' : 'mudança'})` : 'Ponto de partida'}</span>
       ${c.total_sem > 0
         ? `<span>Falta <strong class="plan-falta">${formatBRL(c.total_sem)}</strong></span><span>o dinheiro cobre até <strong>${rot(M[M.indexOf(ini) - 1] || M[0])}</strong></span>`
-        : `<span class="plan-ok">Não falta dinheiro até ${rot(M[M.length - 1])}</span>`}
+        : `<span class="plan-ok">Não falta dinheiro até ${rot(M[M.length - 1])}</span>${sobraTotal(c) >= 1 ? `<span>sobram <strong>${formatBRL(sobraTotal(c))}</strong></span>` : ''}`}
     </div></div>`;
   }
 
@@ -472,7 +476,7 @@ const PlanejamentoPage = (() => {
       const nome = i === 0 ? 'Ponto de partida' : maiuscula(mudancas(escolhaDe(x)).join('; ') || x.nome);
       const f = r.cenarios[x.codigo].total_sem;
       return `<button class="plan-atalho ${ativo ? 'plan-atalho--ativo' : ''}" data-cenario="${esc(x.codigo)}" aria-pressed="${ativo}" title="${esc(x.explica || '')}">
-        <span>${esc(nome)}</span><span class="${f > 0 ? 'plan-falta' : 'plan-ok'}">${f > 0 ? `falta ${K(f)}` : 'não falta'}</span></button>`;
+        <span>${esc(nome)}</span><span class="${f > 0 ? 'plan-falta' : 'plan-ok'}">${f > 0 ? `falta ${K(f)}` : sobraTotal(r.cenarios[x.codigo]) >= 1 ? `sobra ${K(sobraTotal(r.cenarios[x.codigo]))}` : 'não falta'}</span></button>`;
     }).join('');
 
     const linhas = P.fontes.itens.map(fi => {
@@ -948,6 +952,8 @@ const PlanejamentoPage = (() => {
       .plan-conta__item--falta { background: color-mix(in srgb, var(--danger) 12%, var(--bg-surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); }
       .plan-conta__item--falta .plan-conta__valor, .plan-conta__item--falta .plan-conta__rot { color: var(--danger); }
       .plan-conta__item--ok .plan-conta__valor { color: var(--success); }
+      .plan-conta__sobra { font-size: 14px; color: var(--text-primary); }
+      .plan-conta__sobra strong { color: var(--success); }
       .plan-resumo__notas { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); font-size: 14px; color: var(--text-secondary); }
       .plan-resumo__notas li { display: flex; gap: var(--sp-2); align-items: flex-start; }
       .plan-resumo__notas i { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; }
