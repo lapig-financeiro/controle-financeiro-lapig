@@ -29,21 +29,21 @@
 | Item | Situação |
 |---|---|
 | Plano, estética, tarefas F0-A/F0-B | escritos e revisados por dois DeepSeek (correções em README §7b) |
-| F0-A — migração 062 (arquivos por centro) | pronta, teste PGlite verde, revisada por dois DeepSeek; **Victor autorizou publicar (18/11)** → ensaiar no cofre → pedir ok para aplicar |
-| F0-B — esqueleto `app/` | 1ª entrega feita (77 KB gz na abertura); **rodada de correções em curso** (conversa agy `0883799a-f793-4445-b301-a9c368df404c`) contra a estética revisada |
+| F0-A — migração 062 (arquivos por centro) | **aplicada em produção em 18/11** (run 44406913645, "tudo bate"); manutenção desligada; admin segue vendo os 3 buckets. Falta só um teste real com login de professor quando houver um à mão. |
+| F0-B — esqueleto `app/` | 3 rodadas feitas (81 KB gz na abertura; 31 testes do app; sem estouro a 360 px); revisão de fase feita (dois DeepSeek + leitura visual do Hydrogen; decisões em `estetica.md` §6b). **Falta:** o Claude conferir as telas da 3ª rodada (prévia: `.claude/launch.json` → `app-v2`, abrir `/controle-financeiro-lapig/v2/#/componentes`), mostrar ao Victor e pedir ok para publicar `app/` + workflows (ainda **sem commit**, no working tree). Conversa agy do executor: `0883799a-f793-4445-b301-a9c368df404c` |
+| Vigia | **parado** — nenhuma checagem depois das 18:10 de 18/11 (conferido no banco) |
 | F0-C — oráculo | retrato de `get_saldo_livre` dos 21 centros guardado fora do git (`oraculo-saldo-livre-2026-11-18.json`) |
-| Vigia | versão que se autodesliga publicada às 18:12 (18/11); conferir que parou depois das 18:40 |
 | Redirect URL `/v2/` no Supabase | feito pelo Victor (18/11) |
 
 ## Próximos passos
-1. Publicar 062 no master → ensaiar no cofre → resumo ao Victor → ok → manutenção → aplicar → conferir.
-2. Terminar F0-B: fotos (1280 e 390 px), leitura "primeira vez" pelo Gemini, revisão de fase por dois DeepSeek.
+1. (feito) 062 aplicada e manutenção desligada em 18/11.
+2. F0-B: conferir as telas da 3ª rodada e mostrar ao Victor; com o ok, commit de `app/`, workflows, eslint,
+   `.gitignore`, `package.json` e `.claude/launch.json` (entrada `app-v2`).
 3. Commit de `app/` + workflows (com ok do Victor para publicar, porque muda o deploy).
 4. Escrever as tarefas da F1 (README §6 + §7b): pendências + `v_balancete_vigente`, página Projetos e do
    projeto, filtro de visão do admin; executores em worktrees fora do OneDrive.
 
 ## Pendências com o Victor
-- Ok para **aplicar** a 062 (depois do ensaio).
 - Ok para publicar `app/` e a mudança do deploy (quando a F0 fechar).
 
 ## Registro
@@ -52,3 +52,4 @@
 | 18/11 | Três rodadas de análise (Claude, Hydrogen, DeepSeek); decisões acima |
 | 18/11 | Vigia pausado; plano e estética escritos e revisados; F0-A e F0-B executadas; oráculo guardado |
 | 18/11 | Victor autorizou publicar a 062 e configurou a Redirect URL do `/v2/` |
+| 18/11 | 062 aplicada em produção; vigia confirmado parado; F0-B na 3ª rodada concluída |
