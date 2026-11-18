@@ -1,8 +1,10 @@
 /* ============================================================
    origem-documento.js
    Janela "De onde vem este valor?": mostra o documento de origem
-   (PDF do balancete ou plano de trabalho PDF/DOCX) na página certa,
-   com a linha do valor destacada.
+   (PDF do balancete, plano de trabalho PDF/DOCX ou planilha XLSX de
+   bolsas da FUNAPE) na página certa, com a linha do valor destacada.
+   A planilha vira HTML pelo SheetJS (global XLSX) e segue o caminho do
+   DOCX; a linha (<tr>) que contém o termo achado fica destacada.
 
    Uso (quem chama é a tela do plano de trabalho):
      OrigemDocumento.abrir({
@@ -385,6 +387,7 @@ const STYLES = `
   color: var(--text-primary);
 }
 .odoc-docx img { max-width: 100%; height: auto; }
+.odoc-docx tr:has(mark.origem-mark) td { background: var(--warning-muted); }
 .odoc-docx mark.origem-mark {
   padding: 0 1px;
   color: inherit;
@@ -794,7 +797,7 @@ export function abrir(opcoes = {}) {
       if (!vivo()) return;
       const buffer = await paraArrayBuffer(bruto);
       if (!vivo()) return;
-      if (estado.tipo === 'docx') await montarDocx(buffer);
+      if (estado.tipo === 'docx' || estado.tipo === 'xlsx') await montarDocx(buffer);
       else await montarPdf(buffer);
     } catch (erro) {
       if (!vivo()) return;
@@ -1125,17 +1128,20 @@ export function abrir(opcoes = {}) {
   // ── DOCX ─────────────────────────────────────────────────
 
   async function montarDocx(buffer) {
-    if (typeof mammoth === 'undefined') {
-      throw new Error('o leitor de DOCX (mammoth) não está carregado');
+    if (estado.tipo === 'xlsx') {
+      estado.htmlBruto = htmlDaPlanilha(buffer);
+    } else {
+      if (typeof mammoth === 'undefined') {
+        throw new Error('o leitor de DOCX (mammoth) não está carregado');
+      }
+      const resultado = await mammoth.convertToHtml({ arrayBuffer: buffer });
+      if (!vivo()) return;
+      estado.htmlBruto = resultado && typeof resultado.value === 'string'
+        ? resultado.value
+        : '';
     }
-    const resultado = await mammoth.convertToHtml({ arrayBuffer: buffer });
-    if (!vivo()) return;
-
-    estado.htmlBruto = resultado && typeof resultado.value === 'string'
-      ? resultado.value
-      : '';
     if (!estado.htmlBruto.trim()) {
-      throw new Error('o DOCX não tem texto que eu consiga mostrar');
+      throw new Error('o documento não tem texto que eu consiga mostrar');
     }
     ferramentas.innerHTML = '';
 
@@ -1151,7 +1157,10 @@ export function abrir(opcoes = {}) {
   function prepararPartesDocx() {
     const html = estado.htmlBruto;
     estado.partes.forEach((parte) => {
-      const termos = parte.termos.todos;
+      // Na planilha cada linha é uma pessoa: com texto (o nome), marca só ele. O valor
+      // marcaria também as outras pessoas com a mesma bolsa.
+      const soTexto = estado.tipo === 'xlsx' && parte.termos.texto.length > 0;
+      const termos = soTexto ? parte.termos.texto : parte.termos.todos;
       const marcado = marcarNoHtml(html, termos);
       parte.htmlDocx = marcado.html;
 
@@ -1172,7 +1181,8 @@ export function abrir(opcoes = {}) {
         (termo) => marcarNoHtml(html, [termo]).total > 0,
       );
 
-      parte.motivo = achouCodigo ? 'codigo'
+      parte.motivo = soTexto ? (achouTexto ? 'texto' : null)
+        : achouCodigo ? 'codigo'
         : achouValor ? 'valor'
           : achouTexto ? 'texto' : null;
       parte.estado = parte.motivo ? 'ok' : 'nao';
@@ -1213,7 +1223,7 @@ export function abrir(opcoes = {}) {
     if (estado.busca) await estado.busca;
     if (!vivo() || estado.selecionada !== indice) return;
 
-    if (estado.tipo === 'docx') {
+    if (estado.tipo === 'docx' || estado.tipo === 'xlsx') {
       mostrarDocxDaParte(indice);
       return;
     }
@@ -1331,8 +1341,21 @@ export function abrir(opcoes = {}) {
 
 function tipoDoDocumento(documento) {
   const informado = String((documento && documento.tipo) || '').toLowerCase().trim();
-  if (informado === 'docx' || informado === 'pdf') return informado;
-  return /\.docx$/i.test(String((documento && documento.nome) || '')) ? 'docx' : 'pdf';
+  if (informado === 'docx' || informado === 'pdf' || informado === 'xlsx') return informado;
+  const nome = String((documento && documento.nome) || '');
+  if (/\.xlsx?$/i.test(nome)) return 'xlsx';
+  return /\.docx$/i.test(nome) ? 'docx' : 'pdf';
+}
+
+// Planilha → HTML, uma tabela por aba. O SheetJS escapa o texto das células
+// (sheet_to_html); o nome da aba passa por escapeAttr.
+function htmlDaPlanilha(buffer) {
+  if (typeof XLSX === 'undefined') throw new Error('o leitor de planilhas (XLSX) não está carregado');
+  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+  return wb.SheetNames.map((nome) => {
+    const tabela = XLSX.utils.sheet_to_html(wb.Sheets[nome], { header: '', footer: '' });
+    return `${wb.SheetNames.length > 1 ? `<h4>${escapeAttr(nome)}</h4>` : ''}${tabela}`;
+  }).join('');
 }
 
 // ── Browser bridge ─────────────────────────────────────────

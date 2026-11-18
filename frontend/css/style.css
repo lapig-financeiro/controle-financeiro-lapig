@@ -650,6 +650,7 @@ img { max-width: 100%; display: block; }
 
 .main {
   flex: 1;
+  min-width: 0; /* sem isto, tabela larga empurra a página para fora da tela (planejamento, 18/11/2026) */
   margin-left: var(--sidebar-width);
   display: flex;
   flex-direction: column;

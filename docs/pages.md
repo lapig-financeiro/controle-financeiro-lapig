@@ -123,8 +123,10 @@ Cruzamento do plano ativo com o balancete mais recente (RPC `get_previsto_vs_rea
 
 Janela "De onde vem este valor": à esquerda o valor conferido e a lista de partes (cada uma diz "achado pelo
 código/valor/texto" ou "não achei no documento"); à direita o documento. PDF com pdf.js, uma página por vez, faixa
-semitransparente na linha; DOCX com mammoth e `<mark>`. API: `OrigemDocumento.abrir({ titulo, valor, documento:
-{ tipo: 'pdf'|'docx', nome, carregar: async () => ArrayBuffer }, partes: [{ rotulo, valor, alvo: { conta_codigo?,
+semitransparente na linha; DOCX com mammoth e `<mark>`; **XLSX (18/11)** com SheetJS (`sheet_to_html`), mesmo caminho do
+DOCX, e a linha `<tr>` com a marca fica destacada. Na planilha, se a parte tem `alvo.texto` (o nome da pessoa), só ele é
+marcado: o valor marcaria também quem tem bolsa igual. API: `OrigemDocumento.abrir({ titulo, valor, documento:
+{ tipo: 'pdf'|'docx'|'xlsx', nome, carregar: async () => ArrayBuffer }, partes: [{ rotulo, valor, alvo: { conta_codigo?,
 valor?, texto? } }], nota? })`. A busca é pura e testada (`tests/origem-busca.test.js`): `linhasDaPagina` agrupa os
 itens do pdf.js com a mesma regra de `textoDaPagina`; `acharAlvo` tenta, em ordem, código inteiro, código cortado
 (`prefixo#reduzido`), valor (preferindo a linha que também tem o texto) e texto. **Valor zero nunca é alvo** (marcaria
@@ -145,14 +147,30 @@ para não-admin (`app.js`) e link com `data-admin`.
 - **A conta** é `PlanejamentoMotor.calcular(dados, premissas)` (`planejamento-motor.js`), porte fiel do script Python,
   travado por `tests/planejamento-motor.test.js` contra `tests/fixtures/planejamento/caso-mascarado.json` (nomes
   trocados por P01…, gerado por `mapa/gerar_fixture_motor.py`). Se mudar a regra no Python, regerar o caso e portar.
-- **Chaves "Em discussão"** montam o cenário na hora, sem gravar: sobras do 30.099/30.118/30.111 para o
-  guarda-chuva (usa `sobras_para_gc`/`gc_sem_teto` do cenário B) e continuidade de ICS e GMH (desligada, usa
-  `encerra_com_cc` do cenário D).
-- **Dinheiro "a entrar"** (fontes com `situacao: 'a_entrar'`, ex.: US$ 80 mil, PCI) nunca se mistura ao que entrou:
-  a tela calcula dois cenários e mostra a falta "só com o que já entrou" e "contando o que vai entrar".
-- Tabelas: falta por mês, fontes (valor clicável: abre o balancete com o saldo disponível ou mostra a ressalva da
-  premissa), por grupo, pessoa a pessoa (uma cor por fonte), alertas. Botão "Ver premissas".
-- Conferida em 17/11 com os dados reais: os 5 cenários batem com o `RESULTADO.md` do script ao centavo.
+- **Redesenho de 18/11** (pedido do Victor: "simples à primeira vista, detalhe e ajuste quando precisar"; a de 17/11
+  saía da tela e não deixava achar o cenário sem falta). Do essencial ao detalhe:
+  1. **Resposta**: "Faltam R$ X" (ou "Não falta dinheiro") no cenário escolhido, desde quando; quanto seria se o
+     dinheiro "a entrar" não entrar (o mesmo cenário sem as fontes `situacao: 'a_entrar'`); e, havendo falta, quanto
+     sobra e vence sem uso em fontes que acabam antes, com link para o cenário gravado sem falta.
+  2. **Cenários lado a lado**: um cartão por cenário das premissas com a sua falta; clicar escolhe. "Ajustar" liga e
+     desliga fontes e as duas decisões em discussão (sobras → guarda-chuva usa `sobras_para_gc`/`gc_sem_teto` do
+     cenário que as tem; ICS/GMH não continuarem usa `encerra_com_cc`). Se a escolha não bate com nenhum cenário
+     gravado, o rótulo vira "Ajuste próprio". O motor roda os cenários gravados + `_ESC` (a escolha) + `_ESC_SEM`.
+  3. **Quem paga cada mês**: colunas empilhadas por fonte (vermelho = sem dinheiro); clicar abre o detalhe do mês.
+  4. **De onde vem o dinheiro**: fontes com valor clicável (balancete com o saldo disponível, ou a ressalva da
+     premissa), barra de uso e "vence sem uso".
+  5. **Pessoa a pessoa** (fechado): o valor da bolsa é clicável e lista as linhas da pessoa; linha do banco abre a
+     última planilha de bolsas da FUNAPE do centro (`reconciliacoes` com `arquivo_storage_path`, bucket
+     `bolsa-planilhas`) com a linha da pessoa destacada; linha das premissas diz que é prevista. Sem planilha
+     guardada, avisa que a bolsa foi cadastrada à mão. **Atenção:** a planilha real tem CPF; a janela mostra a
+     planilha inteira (só admin chega aqui).
+  6. **Avisos da conta** (fechado).
+- Largura: `.main` ganhou `min-width: 0` em `style.css` (sem isso, tabela larga empurrava a página para fora da tela).
+- **Testar antes de publicar**: cópia local em `.claude/harness/planejamento.html` (fora do git), com um cliente
+  falso que responde com o caso mascarado e uma planilha inventada; servir a raiz do repo (configuração
+  `planejamento-bolsas` do `.claude/launch.json`, porta 8766). Não toca o Supabase.
+- Conferida em 17/11 com os dados reais: os 5 cenários batem com o `RESULTADO.md` do script ao centavo. Em 18/11, a
+  versão nova bate com os mesmos 5 números no caso mascarado.
 
 ## CrudPage Generic Module
 
