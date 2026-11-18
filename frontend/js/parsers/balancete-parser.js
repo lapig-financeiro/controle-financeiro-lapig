@@ -269,6 +269,8 @@ export function parseBalanceteText(text) {
     warnings.push(`Código de conta cortado no PDF e fora da tabela da FUNAPE: ${desconhecidas.join('; ')}. A rubrica dessas linhas é conferida na revisão.`);
   }
 
+  const recursos = lerRecursos(lines);
+
   // ── Sanity checks → warnings ─────────────────────────────
   if (!data_referencia) {
     warnings.push('Data de referência não detectada — preencha manualmente.');
@@ -312,9 +314,48 @@ export function parseBalanceteText(text) {
       total_debitos,
       total_creditos,
       lancamentos,
+      recursos,
     },
     warnings,
   };
+}
+
+// ── Recursos que entraram (passivo 2.1.3.01) ──────────────
+// O balancete é acumulado desde o início do projeto. Em "( + ) RECURSOS
+// CONVENIOS E CONTRATOS" (2.1.3.01) ficam, nas contas-folha:
+//   • 2.1.3.01.02.* — o que o financiador pagou (via nota fiscal, depósito,
+//     exterior) e o RENDIMENTO BRUTO da aplicação, separado aqui;
+//   • 2.1.3.01.03.* — doações (ex.: 74 mil do 30.117 para o 30.118);
+//   • 2.1.3.01.05.* — nota fiscal emitida e ainda não paga ("a receber").
+// "( - ) APROPRIAÇÃO DE RECEITA" (2.1.3.01.99) é ajuste contábil, não entrada.
+// Serve para cruzar com o cronograma de desembolso do plano: quanto já entrou
+// até a data do balancete, sem o rendimento (a FUNAPE aplica o que entra).
+// null quando o balancete não traz a seção (extrato parcial): ausência ≠ zero.
+const RE_FOLHA_RECURSO = /^2\.1\.3\.01\.(\d{2})\.\d+$/;
+
+function lerRecursos(lines) {
+  const out = { recebido: 0, rendimento_bruto: 0, doacoes: 0, a_receber: 0, contas: [] };
+  const vistos = new Set();
+  for (const line of lines) {
+    const m = line.match(RE_LANCAMENTO);
+    if (!m) continue;
+    const [, conta, reduzido, descricao, , , , , saldo] = m;
+    const f = conta.match(RE_FOLHA_RECURSO);
+    if (!f) continue;
+    const chave = /^\d+$/.test(reduzido) ? reduzido : conta;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    const valor = parseNum(saldo) ?? 0;
+    const desc = descricao.replace(/\s+/g, ' ').trim();
+    let tipo = null;
+    if (f[1] === '02') tipo = /RENDIMENTO/i.test(desc) ? 'rendimento_bruto' : 'recebido';
+    else if (f[1] === '03') tipo = 'doacoes';
+    else if (f[1] === '05') tipo = 'a_receber';
+    if (!tipo) continue;
+    out[tipo] = Math.round((out[tipo] + valor) * 100) / 100;
+    out.contas.push({ conta, reduzido, descricao: desc, tipo, valor });
+  }
+  return out.contas.length ? out : null;
 }
 
 function emptyData() {
@@ -328,6 +369,7 @@ function emptyData() {
     total_debitos: null,
     total_creditos: null,
     lancamentos: [],
+    recursos: null,
   };
 }
 
