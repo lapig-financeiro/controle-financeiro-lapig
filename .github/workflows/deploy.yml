@@ -5,7 +5,8 @@
 #   2. ANTES de tornar o repositório público, cumprir o checklist de
 #      docs/seguranca-publicacao.md (em especial: desativar signup no Supabase).
 #
-# O app é 100% estático (sem build) — o artefato é a pasta frontend/ como está.
+# O app antigo é estático (sem build) e o novo (app/) é compilado para /v2/.
+# Os dois são montados juntos numa pasta temporária antes do upload.
 
 name: Deploy (GitHub Pages)
 
@@ -32,11 +33,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar e compilar v2 (app/)
+        id: build-v2
+        continue-on-error: true
+        run: |
+          npm --prefix app ci
+          npm --prefix app run build
+
+      - name: Montar artefato (frontend/ + v2 ou aviso de indisponibilidade)
+        run: |
+          mkdir -p _site/v2
+          cp -a frontend/. _site/
+          if [ "${{ steps.build-v2.outcome }}" = "success" ]; then
+            cp -a app/dist/. _site/v2/
+          else
+            echo "::warning::Build de app/ falhou; publicando página de aviso em v2/."
+            cat > _site/v2/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="pt-BR">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Controle Financeiro — Versão nova indisponível</title>
+          </head>
+          <body>
+            <main>
+              <h1>A versão nova está temporariamente indisponível</h1>
+              <p>O sistema principal continua funcionando normalmente.</p>
+              <p><a href="../">Voltar para o Controle Financeiro</a></p>
+            </main>
+          </body>
+          </html>
+          EOF
+          fi
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: frontend
+          path: _site
 
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -1,0 +1,72 @@
+.seletor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+}
+
+.seletor__rotulo {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto);
+}
+
+.seletor__controle {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.seletor__entrada {
+  width: 100%;
+  height: var(--altura-controle);
+  padding: 0 var(--esp-6) 0 var(--esp-3);
+  appearance: none;
+  background-color: var(--cor-superficie);
+  border: var(--borda-controle);
+  border-radius: var(--raio-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto);
+  cursor: pointer;
+  transition: border-color var(--rapido) var(--curva), box-shadow var(--rapido) var(--curva);
+}
+
+.seletor__entrada:hover:not(:disabled) {
+  border-color: var(--cor-texto-2);
+}
+
+.seletor__entrada:focus {
+  outline: none;
+  border-color: var(--cor-acento);
+  box-shadow: var(--anel-foco);
+}
+
+.seletor__entrada:disabled {
+  background-color: var(--cor-afundado);
+  color: var(--cor-texto-3);
+  cursor: not-allowed;
+}
+
+.seletor--com-erro .seletor__entrada {
+  border-color: var(--cor-problema);
+}
+
+.seletor__seta {
+  position: absolute;
+  right: var(--esp-3);
+  color: var(--cor-texto-2);
+  pointer-events: none;
+}
+
+.seletor__erro {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-problema);
+}
+
+.seletor__ajuda {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}

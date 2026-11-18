@@ -1,0 +1,111 @@
+:root {
+  /* Cores */
+  --cor-fundo: #F5F5F2;
+  --cor-superficie: #FFFFFF;
+  --cor-afundado: #F0F0EC;
+  --cor-borda: #DCDAD3;
+  --cor-borda-forte: #C9C7BF;
+  --cor-borda-controle: #8C8F88;
+  --cor-texto: #1D1F1C;
+  --cor-texto-2: #545750;
+  --cor-texto-3: #696C65;
+  --cor-acento: #2E7D3B;
+  --cor-acento-hover: #256632;
+  --cor-acento-suave: #E8F2EA;
+  --cor-marca: #429B4D;
+  --cor-atencao: #A15C07;
+  --cor-atencao-suave: #FDF4E3;
+  --cor-problema: #B42318;
+  --cor-problema-suave: #FDECEA;
+  --cor-veu: rgba(29, 31, 28, 0.24);
+
+  /* Gráficos */
+  --grafico-1: #2E7D3B;
+  --grafico-2: #9CC9A2;
+  --grafico-3: #A87F1E;
+  --grafico-4: #6F726B;
+
+  /* Tipografia */
+  --fonte-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --fw-normal: 400;
+  --fw-medio: 500;
+  --fw-semi: 600;
+
+  --fs-1: 12px;
+  --lh-1: 16px;
+  --fs-2: 14px;
+  --lh-2: 20px;
+  --fs-3: 16px;
+  --lh-3: 24px;
+  --fs-4: 20px;
+  --lh-4: 28px;
+  --fs-5: 28px;
+  --lh-5: 34px;
+  --fs-6: 40px;
+  --lh-6: 44px;
+
+  /* Espaçamento */
+  --esp-1: 4px;
+  --esp-2: 8px;
+  --esp-3: 12px;
+  --esp-4: 16px;
+  --esp-5: 24px;
+  --esp-6: 32px;
+  --esp-7: 48px;
+  --esp-8: 64px;
+
+  /* Forma */
+  --raio-1: 6px;
+  --raio-2: 10px;
+  --raio-3: 14px;
+  --raio-circulo: 50%;
+  --borda: 1px solid var(--cor-borda);
+  --borda-forte: 1px solid var(--cor-borda-forte);
+  --borda-controle: 1px solid var(--cor-borda-controle);
+  --sombra-sobreposta: 0 12px 32px rgba(29, 31, 28, 0.12);
+
+  /* Movimento e foco */
+  --rapido: 150ms;
+  --medio: 200ms;
+  --giro: 900ms;
+  --pulso: 1200ms;
+  --curva: cubic-bezier(0.2, 0, 0, 1);
+  --anel-foco: 0 0 0 2px var(--cor-superficie), 0 0 0 4px var(--cor-acento);
+  --anel-foco-interno: inset 0 0 0 2px var(--cor-acento);
+
+  /* Dimensões e pontos de quebra */
+  --altura-topo: 56px;
+  --altura-chip: 28px;
+  --altura-controle: 36px;
+  --altura-controle-compacto: 32px;
+  --altura-linha: 44px;
+  --largura-conteudo: 1120px;
+  --largura-painel: 480px;
+  --largura-documento: min(1100px, 94vw);
+  --altura-documento: 90vh;
+  --altura-tela: 100vh;
+  --largura-login: 360px;
+  --largura-menu: 320px;
+  --col-codigo: 96px;
+  --col-valor: 220px;
+  --col-situacao: 132px;
+  --quebra-1: 640px;
+  --quebra-2: 1024px;
+  --avatar: 28px;
+  --ponto: 6px;
+  --icone-1: 16px;
+  --icone-2: 20px;
+  --traco-icone: 1.75;
+  --logo: 24px;
+  --sublinhado-ativo: 2px;
+  --medida-texto: 72ch;
+
+  /* Camadas */
+  --z-base: 1;
+  --z-topo: 10;
+  --z-veu: 40;
+  --z-painel: 50;
+  --z-documento: 60;
+  --z-menu: 70;
+  --z-aviso: 80;
+}

@@ -1,0 +1,26 @@
+{
+  "name": "controle-financeiro-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Interface v2 do Controle Financeiro (LAPIG / UFG) em Preact + Vite",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/verificar-estilo.mjs && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "verificar-estilo": "node scripts/verificar-estilo.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "@supabase/supabase-js": "^2.49.8",
+    "lucide-preact": "^0.475.0",
+    "preact": "^10.26.4"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.2",
+    "happy-dom": "^20.9.0",
+    "vite": "^6.2.0",
+    "vitest": "^4.1.5"
+  }
+}

@@ -1,0 +1,30 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esp-2);
+  height: var(--altura-chip);
+  padding: 0 var(--esp-3);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--rapido) var(--curva), border-color var(--rapido) var(--curva);
+}
+
+.chip:hover {
+  background-color: var(--cor-afundado);
+  border-color: var(--cor-borda-forte);
+  color: var(--cor-texto);
+}
+
+.chip--ativo,
+.chip--ativo:hover {
+  background-color: var(--cor-acento-suave);
+  border-color: var(--cor-borda-forte);
+  color: var(--cor-texto);
+}

@@ -229,6 +229,29 @@ a lista de centros agrupada por professor responsável, caixas de seleção, ata
 - Dinheiro: `formatBRL`; nunca "R$ 0,00" por falta de dado.
 - Toda ressalva que muda a decisão aparece junto do número, numa linha curta ("sem balancete desde ago/26").
 
+## 6b. Decisões da revisão da F0 (18/11) — valem por cima do resto
+- `--cor-texto-3` passa a `#696C65` (4,6:1 também sobre `--cor-afundado`).
+- Foco dentro de contêiner com rolagem (linha de lista, linha de tabela, aba) usa
+  `--anel-foco-interno: inset 0 0 0 2px var(--cor-acento)`, para não ser cortado; o resto usa o anel normal.
+- Valor com origem: no hover muda **só** a cor do sublinhado. O texto nunca muda de cor.
+- LinhaDeLista: `<ul><li><a>`, grade CSS com colunas fixas que a página declara (ex.: nome 1fr · código
+  `--col-codigo` · valor `--col-valor` · situação `--col-situacao`, todos tokens), altura `--altura-linha`.
+- Tabela: linha clicável pelo padrão "link esticado" (um `<button>` na primeira célula cobre a linha), sem
+  `role` na `<tr>`; cabeçalho fixo em relação à página (sem rolagem horizontal no desktop); no celular o
+  `thead` fica visualmente oculto, não removido.
+- Menus (filtro, sino, usuário) seguem o padrão de **divulgação** (botão com `aria-expanded` + lista de links
+  ou botões), não `role="menu"`; ao abrir, foco no primeiro item; Esc fecha e devolve o foco ao botão.
+- Abas: `tablist`/`tab`/`tabpanel` completos, setas e tabindex itinerante; rolagem horizontal no celular.
+- Os quatro destaques da página do projeto ficam numa grade de cartões (1 grande + 3 menores); no celular,
+  2 colunas para os menores.
+- Barra do topo abaixo de 640 px: o chip do filtro mostra só o ícone (com o número de ocultos), espaços
+  menores; nada pode sair da tela a 360 px.
+- `@media` só com 640 px e 1024 px (tokens `--quebra-1`/`--quebra-2` documentados; a guarda confere).
+- CSP só no build (o modo dev do Vite injeta script). Catálogo `#/componentes`: livre em dev, só para admin
+  logado em produção.
+- Manutenção: igual ao site antigo; a tela não aparece antes da primeira consulta ao `manutencao.json`
+  responder; caminho via `import.meta.env.BASE_URL` (`../manutencao.json`).
+
 ## 7. Proibido
 
 Gradiente; brilho/glow; vidro fosco; sombra em cartão; fundo colorido de cartão; mais de uma cor de acento;

@@ -1,0 +1,33 @@
+.situacao {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esp-2);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-normal);
+  white-space: nowrap;
+}
+
+.situacao__ponto {
+  width: var(--ponto);
+  height: var(--ponto);
+  border-radius: var(--raio-circulo);
+  flex-shrink: 0;
+  background-color: currentColor;
+}
+
+.situacao--acento {
+  color: var(--cor-acento);
+}
+
+.situacao--atencao {
+  color: var(--cor-atencao);
+}
+
+.situacao--problema {
+  color: var(--cor-problema);
+}
+
+.situacao--neutro {
+  color: var(--cor-texto-3);
+}

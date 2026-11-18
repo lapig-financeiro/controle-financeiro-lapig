@@ -1,0 +1,49 @@
+.menu-usuario {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.menu-usuario__avatar {
+  width: var(--avatar);
+  height: var(--avatar);
+  padding: 0;
+  border: var(--borda);
+  border-radius: var(--raio-circulo);
+  background-color: var(--cor-afundado);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  font-weight: var(--fw-semi);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color var(--rapido) var(--curva), color var(--rapido) var(--curva);
+}
+
+.menu-usuario__avatar:hover {
+  border-color: var(--cor-borda-forte);
+  color: var(--cor-texto);
+}
+
+.menu-usuario__info {
+  padding: var(--esp-2) var(--esp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+}
+
+.menu-usuario__nome {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}
+
+.menu-usuario__email,
+.menu-usuario__papel {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-2);
+}

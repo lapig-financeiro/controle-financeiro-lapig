@@ -1,0 +1,33 @@
+.aviso-falha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-4);
+  flex-wrap: wrap;
+  padding: var(--esp-3) var(--esp-4);
+  background-color: var(--cor-atencao-suave);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-2);
+  color: var(--cor-texto);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+}
+
+.aviso-falha--grave {
+  background-color: var(--cor-problema-suave);
+}
+
+.aviso-falha__texto {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+}
+
+.aviso-falha__icone {
+  flex-shrink: 0;
+  color: var(--cor-atencao);
+}
+
+.aviso-falha--grave .aviso-falha__icone {
+  color: var(--cor-problema);
+}

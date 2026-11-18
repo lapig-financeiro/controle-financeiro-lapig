@@ -1,0 +1,47 @@
+.manutencao {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-aviso);
+  min-height: var(--altura-tela);
+  background-color: var(--cor-fundo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--esp-5);
+}
+
+.manutencao__cartao {
+  width: 100%;
+  max-width: var(--largura-login);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+  padding: var(--esp-6);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--esp-4);
+}
+
+.manutencao__logo {
+  height: var(--logo);
+  width: auto;
+}
+
+.manutencao__titulo {
+  font-size: var(--fs-4);
+  line-height: var(--lh-4);
+  font-weight: var(--fw-semi);
+  letter-spacing: -0.01em;
+  color: var(--cor-texto);
+}
+
+.manutencao__mensagem {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
+.manutencao__acao {
+  margin-top: var(--esp-2);
+}

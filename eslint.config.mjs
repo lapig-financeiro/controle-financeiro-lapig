@@ -1,6 +1,32 @@
 import globals from "globals";
 
+// Equivalente mínimo a react/jsx-uses-vars para ESLint 10 (eslint-plugin-react@7
+// declara peer <=9.x e quebra npm ci no root). Marca componentes JSX como usados.
+const jsxUsesVarsPlugin = {
+  rules: {
+    "jsx-uses-vars": {
+      meta: { type: "problem" },
+      create(context) {
+        return {
+          JSXOpeningElement(node) {
+            let alvo = node.name;
+            while (alvo && alvo.type === "JSXMemberExpression") {
+              alvo = alvo.object;
+            }
+            if (alvo && alvo.type === "JSXIdentifier") {
+              context.sourceCode.markVariableAsUsed(alvo.name, node);
+            }
+          },
+        };
+      },
+    },
+  },
+};
+
 export default [
+  {
+    ignores: ["app/node_modules/**", "app/dist/**"],
+  },
   {
     files: ["frontend/js/**/*.js"],
     languageOptions: {
@@ -137,6 +163,36 @@ export default [
       // ambos usados em js/ai/.
       ecmaVersion: 2022,
       sourceType: "module",
+    },
+  },
+  {
+    files: ["app/**/*.{js,jsx}"],
+    plugins: { react: jsxUsesVarsPlugin },
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+      globals: { ...globals.browser },
+    },
+    rules: {
+      "react/jsx-uses-vars": "error",
+      "no-undef": "error",
+      "no-unused-vars": ["warn", { args: "none", varsIgnorePattern: "^_" }],
+      "no-dupe-keys": "error",
+      "no-dupe-args": "error",
+      "no-duplicate-case": "error",
+      "no-unreachable": "error",
+      "no-async-promise-executor": "error",
+      "no-unsafe-negation": "error",
+      eqeqeq: ["warn", "smart"],
+    },
+  },
+  {
+    files: ["app/scripts/**/*.mjs", "app/tests/**/*.js", "app/*.config.js"],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
 ];

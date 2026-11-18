@@ -1,0 +1,135 @@
+.tabela-envoltorio {
+  width: 100%;
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.tabela__th {
+  position: sticky;
+  top: var(--altura-topo);
+  z-index: var(--z-base);
+  background-color: var(--cor-superficie);
+  padding: var(--esp-3) var(--esp-4);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto-2);
+  border-bottom: var(--borda-forte);
+  white-space: nowrap;
+}
+
+.tabela__th--direita {
+  text-align: right;
+}
+
+.tabela__linha {
+  height: var(--altura-linha);
+  border-bottom: var(--borda);
+  transition: background-color var(--rapido) var(--curva);
+}
+
+.tabela__linha:last-child {
+  border-bottom: 0;
+}
+
+.tabela__linha:hover {
+  background-color: var(--cor-afundado);
+}
+
+.tabela__linha--clicavel {
+  position: relative;
+  transform: translateX(0);
+}
+
+.tabela__linha--clicavel:has(.tabela__gatilho:focus-visible) {
+  box-shadow: var(--anel-foco-interno);
+}
+
+.tabela__gatilho {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.tabela__gatilho:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.tabela__gatilho::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.tabela__td {
+  padding: var(--esp-2) var(--esp-4);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto);
+  vertical-align: middle;
+}
+
+.tabela__td--direita {
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .tabela__cabecalho {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .tabela,
+  .tabela__corpo,
+  .tabela__linha,
+  .tabela__td {
+    display: block;
+    width: 100%;
+  }
+
+  .tabela__linha {
+    height: auto;
+    padding: var(--esp-3) var(--esp-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--esp-2);
+  }
+
+  .tabela__td {
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--esp-3);
+    text-align: right;
+  }
+
+  .tabela__td::before {
+    content: attr(data-rotulo);
+    font-size: var(--fs-1);
+    line-height: var(--lh-1);
+    font-weight: var(--fw-medio);
+    color: var(--cor-texto-2);
+    text-align: left;
+  }
+}

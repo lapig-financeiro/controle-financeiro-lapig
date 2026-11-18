@@ -1,0 +1,101 @@
+.painel-lateral__veu {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-veu);
+  background-color: var(--cor-veu);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.painel-lateral {
+  position: relative;
+  z-index: var(--z-painel);
+  width: var(--largura-painel);
+  max-width: 100%;
+  height: 100%;
+  background-color: var(--cor-superficie);
+  border-left: var(--borda);
+  box-shadow: var(--sombra-sobreposta);
+  display: flex;
+  flex-direction: column;
+  animation: painel-entrar var(--medio) var(--curva);
+}
+
+.painel-lateral:focus {
+  outline: none;
+}
+
+.painel-lateral__cabecalho {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--esp-4);
+  padding: var(--esp-5);
+  border-bottom: var(--borda);
+}
+
+.painel-lateral__titulos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+}
+
+.painel-lateral__titulo {
+  font-size: var(--fs-4);
+  line-height: var(--lh-4);
+  font-weight: var(--fw-semi);
+  letter-spacing: -0.01em;
+  color: var(--cor-texto);
+}
+
+.painel-lateral__subtitulo {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
+.painel-lateral__fechar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--altura-controle-compacto);
+  height: var(--altura-controle-compacto);
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--raio-1);
+  color: var(--cor-texto-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--rapido) var(--curva), color var(--rapido) var(--curva);
+}
+
+.painel-lateral__fechar:hover {
+  background-color: var(--cor-afundado);
+  color: var(--cor-texto);
+}
+
+.painel-lateral__corpo {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--esp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+}
+
+@keyframes painel-entrar {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .painel-lateral {
+    width: 100%;
+    border-left: 0;
+  }
+}

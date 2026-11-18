@@ -1,0 +1,127 @@
+.componentes__secao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-5);
+}
+
+.componentes__rotulo-secao {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto-3);
+  padding-bottom: var(--esp-2);
+  border-bottom: var(--borda);
+}
+
+.componentes__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.componentes__lista-nome {
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto);
+}
+
+.componentes__lista-codigo {
+  color: var(--cor-texto-2);
+}
+
+.componentes__lista-saldo {
+  color: var(--cor-texto);
+}
+
+.componentes__nota-discreta {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.componentes__filtros {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, var(--largura-menu)));
+  gap: var(--esp-4);
+}
+
+.componentes__rubrica {
+  font-weight: var(--fw-medio);
+}
+
+.componentes__grade-dupla {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--esp-6);
+}
+
+.componentes__lista-definicao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.componentes__par {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--esp-4);
+  padding-bottom: var(--esp-2);
+  border-bottom: var(--borda);
+}
+
+.componentes__par:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.componentes__par dt {
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+}
+
+.componentes__situacoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-3) var(--esp-5);
+}
+
+.componentes__botoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-3);
+}
+
+.componentes__menus-amostra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-3);
+}
+
+.componentes__ancora {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.componentes__esqueletos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--esp-4);
+}
+
+.componentes__painel-bloco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+}
+
+@media (max-width: 640px) {
+  .componentes__filtros,
+  .componentes__grade-dupla,
+  .componentes__esqueletos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

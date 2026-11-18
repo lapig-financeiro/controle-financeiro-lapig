@@ -1,0 +1,78 @@
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+}
+
+.campo__rotulo {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto);
+}
+
+.campo__controle {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.campo__entrada {
+  width: 100%;
+  height: var(--altura-controle);
+  padding: 0 var(--esp-3);
+  background-color: var(--cor-superficie);
+  border: var(--borda-controle);
+  border-radius: var(--raio-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto);
+  transition: border-color var(--rapido) var(--curva), box-shadow var(--rapido) var(--curva);
+}
+
+.campo__entrada--com-sufixo {
+  padding-right: var(--esp-7);
+}
+
+.campo__entrada::placeholder {
+  color: var(--cor-texto-3);
+}
+
+.campo__entrada:hover:not(:disabled) {
+  border-color: var(--cor-texto-2);
+}
+
+.campo__entrada:focus {
+  outline: none;
+  border-color: var(--cor-acento);
+  box-shadow: var(--anel-foco);
+}
+
+.campo__entrada:disabled {
+  background-color: var(--cor-afundado);
+  color: var(--cor-texto-3);
+  cursor: not-allowed;
+}
+
+.campo--com-erro .campo__entrada {
+  border-color: var(--cor-problema);
+}
+
+.campo__sufixo {
+  position: absolute;
+  right: var(--esp-1);
+  display: flex;
+  align-items: center;
+}
+
+.campo__erro {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-problema);
+}
+
+.campo__ajuda {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}

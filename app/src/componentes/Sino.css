@@ -1,0 +1,96 @@
+.sino {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sino__botao {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--esp-1);
+  height: var(--altura-controle-compacto);
+  min-width: var(--altura-controle-compacto);
+  padding: 0 var(--esp-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--raio-1);
+  color: var(--cor-texto-2);
+  cursor: pointer;
+  transition: background-color var(--rapido) var(--curva), color var(--rapido) var(--curva);
+}
+
+.sino__botao:hover {
+  background-color: var(--cor-afundado);
+  color: var(--cor-texto);
+}
+
+.sino__contagem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--icone-2);
+  height: var(--icone-2);
+  padding: 0 var(--esp-1);
+  border-radius: var(--raio-circulo);
+  background-color: var(--cor-texto);
+  color: var(--cor-superficie);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  font-weight: var(--fw-semi);
+}
+
+.sino__cabecalho {
+  padding: var(--esp-2) var(--esp-3) var(--esp-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}
+
+.sino__vazio {
+  padding: var(--esp-2) var(--esp-3) var(--esp-3);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
+.sino__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+}
+
+.sino__item {
+  width: 100%;
+  min-height: var(--altura-controle);
+  padding: var(--esp-2) var(--esp-3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--esp-1);
+  background: transparent;
+  border: 0;
+  border-radius: var(--raio-1);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--rapido) var(--curva);
+}
+
+.sino__item:hover {
+  background-color: var(--cor-afundado);
+}
+
+.sino__item-titulo {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto);
+}
+
+.sino__item-meta {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}

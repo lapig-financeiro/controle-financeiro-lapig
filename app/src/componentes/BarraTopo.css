@@ -1,0 +1,132 @@
+.barra-topo {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-topo);
+  background-color: var(--cor-superficie);
+  border-bottom: var(--borda);
+}
+
+.barra-topo__interior {
+  max-width: var(--largura-conteudo);
+  height: var(--altura-topo);
+  margin: 0 auto;
+  padding: 0 var(--esp-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-4);
+}
+
+.barra-topo__esquerda {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-6);
+  min-width: 0;
+}
+
+.barra-topo__marca {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: var(--raio-1);
+}
+
+.barra-topo__logo {
+  height: var(--logo);
+  width: auto;
+  display: block;
+}
+
+.barra-topo__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-5);
+  height: var(--altura-topo);
+}
+
+.barra-topo__link {
+  display: inline-flex;
+  align-items: center;
+  height: var(--altura-topo);
+  border-bottom: var(--sublinhado-ativo) solid transparent;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-normal);
+  color: var(--cor-texto-2);
+  white-space: nowrap;
+  transition: color var(--rapido) var(--curva), border-color var(--rapido) var(--curva);
+}
+
+.barra-topo__link:hover {
+  color: var(--cor-texto);
+}
+
+.barra-topo__link--ativo {
+  color: var(--cor-texto);
+  font-weight: var(--fw-medio);
+  border-bottom-color: var(--cor-acento);
+}
+
+.barra-topo__direita {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-3);
+  flex-shrink: 0;
+}
+
+.barra-topo__filtro-ancora {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.barra-topo__filtro-ocultos {
+  display: none;
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  font-weight: var(--fw-semi);
+}
+
+@media (max-width: 640px) {
+  .barra-topo__interior {
+    padding: 0 var(--esp-2);
+    gap: var(--esp-1);
+  }
+
+  .barra-topo__esquerda {
+    gap: var(--esp-2);
+  }
+
+  .barra-topo__logo {
+    height: var(--icone-1);
+  }
+
+  .barra-topo__nav {
+    gap: var(--esp-2);
+  }
+
+  .barra-topo__link {
+    font-size: var(--fs-1);
+    line-height: var(--lh-1);
+  }
+
+  .barra-topo__direita {
+    gap: var(--esp-1);
+  }
+
+  .barra-topo__filtro {
+    min-width: var(--altura-chip);
+    justify-content: center;
+    padding: 0 var(--esp-1);
+    gap: var(--esp-1);
+  }
+
+  .barra-topo__filtro-ocultos {
+    display: inline;
+  }
+
+  .barra-topo__filtro-texto,
+  .barra-topo__filtro-seta {
+    display: none;
+  }
+}

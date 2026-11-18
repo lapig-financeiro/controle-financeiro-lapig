@@ -1,0 +1,72 @@
+.botao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--esp-2);
+  height: var(--altura-controle);
+  padding: 0 var(--esp-4);
+  border-radius: var(--raio-2);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-medio);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--rapido) var(--curva),
+    border-color var(--rapido) var(--curva),
+    color var(--rapido) var(--curva);
+}
+
+.botao--compacto {
+  height: var(--altura-controle-compacto);
+  padding: 0 var(--esp-3);
+}
+
+.botao:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.botao--primario {
+  background-color: var(--cor-acento);
+  color: var(--cor-superficie);
+  border: 1px solid var(--cor-acento);
+}
+
+.botao--primario:hover:not(:disabled) {
+  background-color: var(--cor-acento-hover);
+  border-color: var(--cor-acento-hover);
+}
+
+.botao--secundario {
+  background-color: var(--cor-superficie);
+  color: var(--cor-texto);
+  border: var(--borda);
+}
+
+.botao--secundario:hover:not(:disabled) {
+  background-color: var(--cor-afundado);
+  border-color: var(--cor-borda-forte);
+}
+
+.botao--fantasma {
+  background-color: transparent;
+  color: var(--cor-acento);
+  border: 1px solid transparent;
+}
+
+.botao--fantasma:hover:not(:disabled) {
+  background-color: var(--cor-acento-suave);
+}
+
+.botao__girador {
+  animation: botao-girar var(--giro) linear infinite;
+}
+
+@keyframes botao-girar {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

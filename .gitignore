@@ -52,6 +52,8 @@ NãoColocarNoGit/
 # ── Node (caso frontend evolua para bundler) ──────────────────
 node_modules/
 dist/
+app/node_modules/
+app/dist/
 .cache/
 .parcel-cache/
 
