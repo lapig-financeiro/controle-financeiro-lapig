@@ -180,6 +180,31 @@ para não-admin (`app.js`) e link com `data-admin`.
     para o lado".
   - **Uma cor por fonte em toda a tela** (`PALETA`, ordem das premissas); cinza = o próprio projeto; vermelho = sem
     dinheiro. A situação das parcelas não usa essas cores (ponto vazado ou vermelho).
+- **Planejar por continuações (18/11, noite; pedido do Victor: "não seria o melhor implementar bolsa com duração só de
+  1 mês"; "fica difícil decidir quem deve ir pra onde (e até quem deve continuar)"; escolher o período; ver o dinheiro
+  de cada CC)** — `planejamento-continuacoes.js`, funções puras, `tests/planejamento-continuacoes.test.js`. É a conta
+  padrão da tela; a conta mês a mês do motor fica para comparar (nota no resumo) e como opção "Permitir trocar de fonte
+  todo mês" em "Como o dinheiro é contado". O motor e o `refazer_mapa.py` não mudaram.
+  - A conta mês a mês trocava a fonte de 19 de 38 pessoas no caminho e fazia 25 pedaços de 1–2 meses (caso de 17/11).
+  - **Continuação** = os meses do período em que a bolsa atual não cobre `alvoNoMes` (valor em degraus para quem está
+    em dois projetos). Destino: pedaços em sequência, cada um com pelo menos N meses (padrão 3, ajustável; o último
+    pode ser menor só se fecha a continuação), complemento fixo por mês de outra fonte (só manual), "não continua"
+    (só manual) ou nada. Cobertura pode ser parcial.
+  - **Razão** (`razao`): por fonte e mês, entra/usa/saldo, com estouro por saldo negativo, pagamento fora da janela ou
+    acima do teto; sobra de fonte em `sobras_para_gc` passa ao guarda-chuva no mês seguinte ao fim (regra do motor).
+  - **Sugestão** (`distribuir`): decisões manuais primeiro (fonte que elas estouram fica fora da sugestão); depois
+    rodadas em blocos de N meses na ordem de quem precisa primeiro, preferindo a fonte do bloco anterior e alongando
+    nela. Quem para por falta de dinheiro que outros usaram, e quem ganhou bloco naquela rodada, ficam "em disputa": a
+    tela não escolhe quem fica. Duas regras descartadas estão no cabeçalho do módulo (grupos por mês de início; "todos
+    até o mesmo mês").
+  - Na tela: período ("Planejar de … até …", início padrão = primeiro mês em que alguém fica descoberto, fim até
+    dez/28; o motor roda com `horizonte_ate` = fim); card **"Quem continua e com que dinheiro"** logo depois do resumo
+    (filtro "Precisam de decisão", mínimo de meses, "Mudar…" por pessoa, editor de pedaços e complemento, aviso de
+    disputa); **"Ver o mês a mês"** em cada fonte (`linhasDoRazao`, na régua comum) com "Abrir … na Visão do Projeto"
+    (grava `cf_selected_project_id` e navega para `hub`). "Voltar ao ponto de partida" pergunta antes de desfazer as
+    decisões da tabela. Nada é gravado.
+  - Dados reais de 18/11: falta R$ 645.276,80 no ponto de partida (mês a mês: R$ 556.388,96); 29 de 38 numa fonte só;
+    nenhuma fonte estoura; < 40 ms por cenário.
 - Cenário escolhido igual a um gravado: o motor recebe **o próprio objeto gravado** (ordem das fontes e listas das
   decisões exatas); só o "Ajuste próprio" é remontado por `cenarioDe`. Fonte `base: 'fixo'` nunca abre balancete,
   mesmo tendo `cc` (o 30.117 abria o balancete com o caixa no lugar dos R$ 20 mil). "Vencem sem uso" só conta

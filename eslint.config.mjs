@@ -66,6 +66,7 @@ export default [
         OrigemDocumento: "readonly",
         PlanejamentoMotor: "readonly",
         PlanejamentoDinheiro: "readonly",
+        PlanejamentoContinuacoes: "readonly",
         parseBolsaSpreadsheet: "readonly",
         compareBolsaData: "readonly",
         // camada de IA (window-bridged via <script type="module">)
@@ -125,6 +126,7 @@ export default [
       "frontend/js/manutencao.js",
       "frontend/js/planejamento-motor.js",
       "frontend/js/planejamento-dinheiro.js",
+      "frontend/js/planejamento-continuacoes.js",
       "frontend/js/origem-busca.js",
       "frontend/js/parsers/**/*.js",
       "frontend/js/components/**/*.js",

@@ -59,6 +59,15 @@ const PlanejamentoPage = (() => {
   let comoContar = null;   // { pelo: 'dinheiro'|'plano', modo: {codigo: 'pessoal'|'total'}, contarAtrasadas, contarSemData, contarRendimento }
   let efetivas = null;      // premissas que o motor recebe (fontes de centro já partidas por parcela)
   let dinheiro = null;      // código da fonte (ou do centro) → saída de dinheiroDoCentro
+  // Planejamento por continuações (planejamento-continuacoes.js), desde 18/11/2026.
+  let periodo = null;       // { inicio, fim }: os meses que esta conta planeja (início null = o primeiro mês em que alguém fica descoberto)
+  let manuais = {};         // pessoa → destino decidido na reunião
+  let minimoMeses = 3;      // duração mínima de um pedaço de bolsa
+  let filtroDecisoes = 'decidir'; // a tabela de decisões abre só com o que precisa de decisão ('decidir' | 'decididas' | 'todas')
+  let blocos = null;        // { res, conts, dist, fontes } do cenário escolhido (null na conta mês a mês)
+  let editando = null;      // pessoa com o editor de destino aberto
+  let antesDoInicio = 0;    // pessoas descobertas antes do início escolhido (fora da conta)
+  const razaoAberta = new Set();
   // "118·p2" (pedaço que chega com a parcela 2) → "118"; "→118·p2" → "→118".
   const pai = k => String(k).split('·')[0];
 
@@ -76,10 +85,11 @@ const PlanejamentoPage = (() => {
     escolha = escolhaDe(base.premissas.cenarios[0]);
     comoContar = {
       // Atrasadas e sem data entram por padrão (estão no plano), marcadas; o rendimento não (não é do plano).
-      pelo: 'dinheiro', contarAtrasadas: true, contarSemData: true, contarRendimento: false,
+      pelo: 'dinheiro', contarAtrasadas: true, contarSemData: true, contarRendimento: false, trocarTodoMes: false,
       modo: Object.fromEntries(fontesDeCentro().map(f => [f.codigo, f.base === 'livre_pessoal' ? 'pessoal' : 'total'])),
     };
     comoPadrao = structuredClone(comoContar);
+    periodo = { inicio: null, fim: base.premissas.horizonte_ate };
     render();
   }
 
@@ -200,7 +210,7 @@ const PlanejamentoPage = (() => {
       });
       const devolver = PlanejamentoMotor.devolverExcluidas(cc, c, base.dados, base.premissas);
       const d = D.dinheiroDoCentro({ modo, centro: c, devolver, rendimento: x.balancete?.rendimento_liquido ?? null, parcelas,
-        opcoes: comoContar, ref: base.dados.ref, horizonte: base.premissas.horizonte_ate });
+        opcoes: comoContar, ref: base.dados.ref, horizonte: periodo.fim });
       return { ...d, cc, parcelas, devolver };
     };
     for (const f of fontesDeCentro()) out[f.codigo] = umCentro(f.cc, comoContar.modo[f.codigo]);
@@ -232,7 +242,71 @@ const PlanejamentoPage = (() => {
     const aEntrar = new Set(P.fontes.itens.filter(f => f.situacao === 'a_entrar').map(f => f.codigo));
     const escSem = { ...escolhido, codigo: '_ESC_SEM', nome: '_ESC_SEM', fontes: escolhido.fontes.filter(f => !aEntrar.has(f)) };
     const cenarios = [...P.cenarios, escolhido, escSem];
-    return PlanejamentoMotor.calcular(base.dados, { ...P, cenarios });
+    const r = PlanejamentoMotor.calcular(base.dados, { ...P, horizonte_ate: periodo.fim, cenarios });
+    return vistaDoPeriodo(r);
+  }
+
+  // As escolhas da tela (fontes ligadas e as duas decisões em aberto) no formato que as continuações usam.
+  function cenBlocos(e) {
+    const P = base.premissas;
+    const comSobras = P.cenarios.find(c => c.sobras_para_gc && c.sobras_para_gc.length) || {};
+    const comFim = P.cenarios.find(c => c.encerra_com_cc && c.encerra_com_cc.length) || {};
+    const fins = Object.fromEntries(Object.entries(base.dados.centros).filter(([, c]) => c.existe).map(([cc, c]) => [cc, mes(c.fim)]));
+    return {
+      ligadas: P.fontes.itens.map(f => f.codigo).filter(k => e.fontes.has(k)),
+      sobras_para_gc: e.sobrasGC ? (comSobras.sobras_para_gc || []) : [],
+      gc_sem_teto: e.sobrasGC && !!comSobras.gc_sem_teto,
+      encerra_com_cc: e.continua ? [] : (comFim.encerra_com_cc || []),
+      _fins: fins,
+    };
+  }
+
+  // As decisões manuais acompanham o período: pedaços cortados ao novo início e fim da continuação, sem buraco;
+  // quem não tem continuação no período fica com a decisão guardada, sem valer nem contar como mudança.
+  function ajustarManuais(conts) {
+    const porId = Object.fromEntries(conts.filter(c => c.meses.length).map(c => [c.id, c]));
+    for (const id of Object.keys(manuais)) {
+      const c = porId[id], d = manuais[id];
+      if (!c) { if (editando === id) editando = null; continue; }
+      if (d.tipo !== 'fonte') continue;
+      let ss = d.segmentos.map(x => ({ ...x, de: x.de < c.de ? c.de : x.de, ate: x.ate > c.ate ? c.ate : x.ate })).filter(x => x.de <= x.ate);
+      if (!ss.length) ss = [{ fonte: d.segmentos[0]?.fonte, de: c.de, ate: c.ate }];
+      ss[0].de = c.de;
+      ss[ss.length - 1].ate = c.ate;
+      d.segmentos = ss;
+    }
+  }
+
+  // O resultado no período escolhido. Padrão: por continuações (bolsas de pelo menos N meses, sem trocar de
+  // fonte todo mês). A conta mês a mês do motor fica em r.mesAMes para comparar, e vale sozinha se pedida.
+  function vistaDoPeriodo(r) {
+    const C = PlanejamentoContinuacoes;
+    const ref = base.dados.ref;
+    const Mt = PlanejamentoMotor.meses(ref, periodo.fim);
+    const umaConta = (e, semAEntrar, inicio) => {
+      const cen = cenBlocos(e);
+      const conts = C.continuacoes({ pessoas: r.pessoas, cen, ref, inicio, fim: periodo.fim });
+      const fontes = C.fontesDosPedacos({ pedacos: r.fontes, itens: base.premissas.fontes.itens, ligadas: cen.ligadas, cen, ref, semAEntrar });
+      const dist = C.distribuir({ conts, fontes, manuais, M: Mt, N: minimoMeses, sobrasParaGC: cen.sobras_para_gc });
+      const Mv = PlanejamentoMotor.meses(inicio, periodo.fim);
+      const res = C.comoCenario({ pessoas: r.pessoas, conts, dist, fontes, Mvista: Mv, M: Mt, sobrasParaGC: cen.sobras_para_gc });
+      return { res, conts, dist, fontes, cen };
+    };
+    if (!periodo.inicio) {
+      const des = umaConta(escolha, false, ref).conts.map(c => c.de).filter(Boolean).sort();
+      periodo.inicio = des[0] || ref;
+    }
+    const Mv = PlanejamentoMotor.meses(periodo.inicio, periodo.fim);
+    const contsEsc = C.continuacoes({ pessoas: r.pessoas, cen: cenBlocos(escolha), ref, inicio: periodo.inicio, fim: periodo.fim });
+    antesDoInicio = contsEsc.filter(c => Object.keys(c.antes).length).length;
+    ajustarManuais(contsEsc);
+    const somaSem = cen => Mv.reduce((s, m) => s + (cen.sem_mes[m] || 0), 0);
+    const mesAMes = Object.fromEntries(Object.entries(r.cenarios).map(([k, c]) => [k, { ...c, total_sem: somaSem(c) }]));
+    if (comoContar.trocarTodoMes) { blocos = null; return { ...r, meses: Mv, cenarios: mesAMes, mesAMes }; }
+    blocos = umaConta(escolha, false, periodo.inicio);
+    const cenarios = { _ESC: blocos.res, _ESC_SEM: umaConta(escolha, true, periodo.inicio).res };
+    base.premissas.cenarios.forEach(c => { cenarios[c.codigo] = umaConta(escolhaDe(c), false, periodo.inicio).res; });
+    return { ...r, meses: Mv, cenarios, mesAMes };
   }
 
   // Uma fonte das premissas juntando os pedaços que o motor recebeu (valor somado, janela de ponta a ponta).
@@ -278,6 +352,7 @@ const PlanejamentoPage = (() => {
       <div class="plan">
         ${resumo(r)}
         ${placar(r)}
+        ${decisoes(r)}
         ${simulacao(r)}
         ${mesAMes(r)}
         ${pessoas(r)}
@@ -318,6 +393,10 @@ const PlanejamentoPage = (() => {
         Object.entries(como.modo).filter(([k, v]) => v !== comoPadrao.modo[k])
           .forEach(([k, v]) => out.push(`${nomeFonte(k)} ${v === 'total' ? 'usa todas as rubricas' : 'usa só Pessoal'}`));
       }
+      if (como.trocarTodoMes) out.push('troca de fonte todo mês');
+      if (!como.trocarTodoMes && minimoMeses !== 3) out.push(`bolsa de pelo menos ${minimoMeses} ${minimoMeses > 1 ? 'meses' : 'mês'}`);
+      const nd = Object.keys(manuais).filter(id => blocos?.conts.some(c => c.id === id && c.meses.length)).length;
+      if (nd && !como.trocarTodoMes) out.push(`${nd} ${nd > 1 ? 'decisões' : 'decisão'} na tabela`);
     }
     return out;
   }
@@ -329,6 +408,7 @@ const PlanejamentoPage = (() => {
     r.meses.forEach(m => { out[m] = {}; });
     r.pessoas.forEach(p => r.meses.forEach(m => {
       (c.mapa[`${p.nome}|${m}`] || []).forEach(([k, val]) => {
+        if (k === 'NAO') return;
         const chave = k === 'SEM' ? 'SEM' : (k.startsWith('→') ? pai(k) : '_proprio');
         out[m][chave] = (out[m][chave] || 0) + val;
       });
@@ -354,13 +434,23 @@ const PlanejamentoPage = (() => {
     const ultimoPago = inicioFalta ? M[M.indexOf(inicioFalta) - 1] : null;
     const mud = mudancas(escolha, comoContar);
 
-    // Dinheiro que ainda não entrou e foi usado: fontes "a entrar" e parcelas futuras dos planos.
-    const aEntrar = efetivas.fontes.itens.filter(f => f.situacao === 'a_entrar' && escolha.fontes.has(pai(f.codigo)));
-    const usadoAEntrar = aEntrar.reduce((s, f) => s + Number(c.usado[f.codigo] || 0), 0);
+    // Dinheiro que ainda não entrou: fontes "a entrar" e parcelas futuras dos planos.
+    const aEntrar = efetivas.fontes.itens.filter(f => f.situacao === 'a_entrar' && escolha.fontes.has(pai(f.codigo)) && Number(f.valor_hoje ?? f.valor ?? 1) > 0);
     const nomesAEntrar = [...new Set(aEntrar.map(f => (f._pai ? 'parcelas previstas nos planos' : nomeFonte(f.codigo))))];
-    const notaEntrar = usadoAEntrar >= 1 && sem.total_sem > falta
-      ? `<li><i data-lucide="hourglass"></i><span>Esta conta usa ${formatBRL(usadoAEntrar)} que ainda não entrou (${esc(lista(nomesAEntrar))}).
-          Se esse dinheiro não vier, a falta sobe para <strong>${formatBRL(sem.total_sem)}</strong>.</span></li>` : '';
+    const notaEntrar = nomesAEntrar.length && sem.total_sem > falta
+      ? `<li><i data-lucide="hourglass"></i><span>Esta conta inclui dinheiro que ainda não entrou (${esc(lista(nomesAEntrar))}).
+          Se ele não vier, a falta sobe para <strong>${formatBRL(sem.total_sem)}</strong>.</span></li>` : '';
+    const mm = r.mesAMes?._ESC?.total_sem;
+    const notaRealismo = blocos && !antesDoInicio && mm != null && Math.abs(mm - falta) >= 1
+      ? `<li><i data-lucide="calendar-range"></i><span>Com bolsas de pelo menos ${minimoMeses} ${minimoMeses > 1 ? 'meses' : 'mês'}, sem trocar de fonte
+          todo mês, a falta é ${formatBRL(falta)}. Trocando de fonte todo mês, como na conta antiga, seria ${formatBRL(mm)}.</span></li>` : '';
+    const disp = blocos?.dist.disputas[0];
+    const estouradas = blocos ? Object.entries(blocos.res.razao).filter(([, x]) => x.estouro.length).map(([k]) => nomeFonte(k)) : [];
+    const notaEstouro = estouradas.length
+      ? `<li><i data-lucide="alert-triangle"></i><span class="plan-falta">Decisões da tabela estouram ${esc(lista(estouradas))}: a falta acima não conta esse estouro.</span></li>` : '';
+    const notaDisputa = disp
+      ? `<li><i data-lucide="users"></i><span><strong>${disp.ids.length} pessoas competem pelo mesmo dinheiro</strong>${disp.desde ? ` a partir de ${rot(disp.desde)}` : ''}:
+          não cabe todo mundo. <button class="plan-link" data-acao="ir-decisoes">Decidir quem continua</button></span></li>` : '';
 
     // Sobra que vence sem uso enquanto falta dinheiro depois.
     const sobraPai = somaPorPai(c.sobra);
@@ -375,8 +465,16 @@ const PlanejamentoPage = (() => {
 
     const item = (rot1, valor, sub, extra = '') => `<div class="plan-conta__item ${extra}"><span class="plan-conta__rot">${rot1}</span>
       <span class="plan-conta__valor">${valor}</span><span class="plan-conta__sub">${sub}</span></div>`;
+    const opMes = (de, ate, sel) => PlanejamentoMotor.meses(de, ate).map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${rot(m)}</option>`).join('');
+    const antes = antesDoInicio;
     return `
       <section class="card plan-resumo">
+        <div class="plan-periodo">
+          <label>Planejar de <select class="plan-sel" data-periodo="inicio">${opMes(base.dados.ref, periodo.fim, periodo.inicio)}</select></label>
+          <label>até <select class="plan-sel" data-periodo="fim">${opMes(periodo.inicio, '2028-12', periodo.fim)}</select></label>
+          ${antes ? `<span class="plan-vence">${antes} ${antes > 1 ? 'pessoas ficam' : 'pessoa fica'} sem bolsa antes de ${rot(periodo.inicio)}, fora desta conta</span>`
+            : `<span class="plan-miudo">Antes de ${rot(periodo.inicio)} as bolsas atuais cobrem todo mundo.</span>`}
+        </div>
         <div class="plan-resumo__estado">
           ${mud.length
             ? `<span class="plan-estado plan-estado--sim">Sua simulação</span><span class="plan-resumo__mud">${esc(maiuscula(mud.join('; ')))}</span>
@@ -397,7 +495,7 @@ const PlanejamentoPage = (() => {
               ? `<span class="plan-conta__sobra">e sobram <strong>${formatBRL(sobraTotal(c))}</strong></span> nas fontes no fim de ${rot(M[M.length - 1])}`
               : `todas pagas até ${rot(M[M.length - 1])}`, 'plan-conta__item--ok')}
         </div>
-        ${notaEntrar || notaVence ? `<ul class="plan-resumo__notas">${notaEntrar}${notaVence}</ul>` : ''}
+        ${notaEstouro || notaDisputa || notaEntrar || notaVence || notaRealismo ? `<ul class="plan-resumo__notas">${notaEstouro}${notaDisputa}${notaEntrar}${notaVence}${notaRealismo}</ul>` : ''}
       </section>`;
   }
 
@@ -511,13 +609,14 @@ const PlanejamentoPage = (() => {
           </div>
           <div class="plan-miudo">${esc(descricao(fi, d))}</div>
           ${conta ? `<div class="plan-fonte-conta">${conta}</div>` : ''}
+          ${fora ? '' : `<button class="plan-link plan-razao-bt" data-razao="${esc(k)}" aria-expanded="${razaoAberta.has(k)}">${razaoAberta.has(k) ? 'Fechar o mês a mês' : 'Ver o mês a mês'}</button>`}
         </th>
         ${M.map(celula).join('')}
         <td class="plan-dir">
           <button class="plan-num" data-fonte="${esc(k)}" title="Ver a conta">${formatBRL(f.valor_hoje)}</button>
           ${fora ? '<div class="plan-miudo">desligada</div>' : `<div class="plan-miudo">usa ${formatBRL(usado)}</div>
           ${sobra >= 1 ? `<div class="plan-miudo ${vence ? 'plan-vence' : ''}">sobra ${formatBRL(sobra)}${vence ? ' sem uso' : ''}</div>` : ''}`}
-        </td></tr>`;
+        </td></tr>${!fora && razaoAberta.has(k) ? linhasDoRazao(r, k, fi, d) : ''}`;
     }).join('');
 
     // Projetos do Laerte que não são fonte: pagam só as próprias bolsas (cinza no gráfico).
@@ -567,12 +666,231 @@ const PlanejamentoPage = (() => {
             ${chk('contarAtrasadas', 'Contar parcelas atrasadas (venceram e não aparecem no balancete)')}
             ${chk('contarSemData', 'Contar parcelas sem data (pagas por entrega)')}
             ${chk('contarRendimento', 'Contar o rendimento da aplicação')}
+            <label class="plan-chk"><input type="checkbox" data-como="trocarTodoMes" ${comoContar.trocarTodoMes ? 'checked' : ''}>
+              <span>Permitir trocar de fonte todo mês (conta antiga: gera bolsas de 1 ou 2 meses)</span></label>
           </div>
         </details>
       </section>`;
   }
 
+  const milCurto = v => (!v ? '' : Math.abs(v) >= 1000 ? `${(Math.round(v / 100) / 10).toLocaleString('pt-BR')} mil` : Math.round(v).toLocaleString('pt-BR'));
+
+  // O dinheiro de uma fonte mês a mês, na mesma régua das outras tabelas: o que entra, o que esta conta usa e o
+  // saldo no fim do mês (vermelho se estoura; apagado depois do fim da fonte).
+  function linhasDoRazao(r, k, fi, d) {
+    const C = PlanejamentoContinuacoes;
+    const M = r.meses;
+    const Mt = PlanejamentoMotor.meses(base.dados.ref, periodo.fim);
+    const cen = cenBlocos(escolha);
+    const fontes = blocos ? blocos.fontes : C.fontesDosPedacos({ pedacos: r.fontes, itens: base.premissas.fontes.itens, ligadas: cen.ligadas, cen, ref: base.dados.ref });
+    const pag = {};
+    Object.entries(r.cenarios._ESC.mapa).forEach(([chave, cel]) => {
+      const m = chave.slice(chave.lastIndexOf('|') + 1);
+      cel.forEach(([q, v]) => { if (!q.startsWith('→')) return; const f = pai(q.slice(1)); pag[f] = pag[f] || {}; pag[f][m] = (pag[f][m] || 0) + v; });
+    });
+    const x = C.razao(fontes, pag, { M: Mt, sobrasParaGC: cen.sobras_para_gc })[k];
+    if (!x) return '';
+    const prev = Mt[Mt.indexOf(M[0]) - 1];
+    const abertura = prev ? (x.saldo[prev] || 0) : 0;
+    const est = new Set(x.estouro.map(e => e.m));
+    const ano = m => (m.endsWith('-01') && m !== M[0] ? 'plan-m--ano' : '');
+    const fimF = m => (x.ate && m > x.ate ? 'plan-rz--fim' : '');
+    const soma = obj => M.reduce((s, m) => s + (obj[m] || 0), 0);
+    const linha = (rotulo, fn, dir, extra = '') => `<tr class="plan-razao ${extra}"><th class="plan-esq plan-rz-rot">${rotulo}</th>${M.map(fn).join('')}<td class="plan-dir plan-rz-dir">${dir}</td></tr>`;
+    const cc = d?.cc || fi.cc;
+    const contexto = (prev ? `Saldo no fim de ${rot(prev)}: ${formatBRL(abertura)}. ` : '') + (d
+      ? 'Entra: o livre para bolsas novas (caixa do balancete sem o rendimento, menos as bolsas já cadastradas e a reserva das outras rubricas) no primeiro mês, e cada parcela do plano no mês dela.'
+      : `${esc(descricao(fi, null))}.`);
+    return `<tr class="plan-razao plan-razao--cab"><td colspan="${M.length + 2}"><span>${contexto}</span>
+        <button class="plan-link" data-fonte="${esc(k)}">Ver a conta e os documentos</button>
+        ${cc && base.porCodigo[cc] ? `<button class="plan-link" data-hub="${esc(cc)}">Abrir ${esc(cc)} na Visão do Projeto</button>` : ''}</td></tr>
+      ${linha('Entra', m => `<td class="plan-rz ${ano(m)} ${fimF(m)}">${milCurto(x.entra[m])}</td>`, `entra ${formatBRL(soma(x.entra))}`)}
+      ${linha('Usa nesta conta', m => `<td class="plan-rz ${ano(m)} ${fimF(m)}">${milCurto(x.usa[m])}</td>`, `usa ${formatBRL(soma(x.usa))}`)}
+      ${linha('Saldo no fim do mês', m => `<td class="plan-rz ${ano(m)} ${fimF(m)} ${est.has(m) || (x.saldo[m] || 0) < -0.005 ? 'plan-rz--neg' : ''}">${x.ate && m > x.ate ? '—' : milCurto(x.saldo[m]) || '0'}</td>`,
+        `sobra ${formatBRL(x.sobra || 0)}${x.para_gc ? `, ${formatBRL(x.para_gc)} ao guarda-chuva` : ''}`, 'plan-razao--fim')}`;
+  }
+
+  // 3. Quem continua e com que dinheiro: uma linha por pessoa cuja bolsa atual acaba dentro do período.
+  const ROT_SIT = { sugestao: 'sugestão', manual: 'decidido', nao: 'não continua', disputa: 'em disputa', sem_fonte: 'sem fonte' };
+  function decisoes(r) {
+    if (!blocos) {
+      return `<section class="card" id="plan-decisoes"><div class="card__header"><div><h3 class="card__title">Quem continua e com que dinheiro</h3>
+        <p class="card__subtitle">Na conta que troca de fonte todo mês não há decisão por pessoa. Desmarque essa opção em "Como o dinheiro é contado".</p></div></div></section>`;
+    }
+    const { conts, dist, res } = blocos;
+    const lig = cenBlocos(escolha).ligadas;
+    const estouroDe = (c, d) => {
+      const pg = PlanejamentoContinuacoes.pagamentosDe(c, d).pag;
+      for (const [f, ms] of Object.entries(pg)) {
+        const pago = Object.keys(ms).sort();
+        // Saldo negativo é cumulativo: culpa quem pagou daquela fonte até o mês do estouro. Teto e "fora": só o mês.
+        const e = (res.razao[f]?.estouro || []).find(x => (x.motivo === 'saldo' ? pago[0] <= x.m : ms[x.m]));
+        if (e) return { f, m: e.m, motivo: e.motivo };
+      }
+      return null;
+    };
+    const itens = conts.filter(c => c.meses.length).map(c => {
+      const d = dist.destinos[c.id] || { tipo: 'nenhum', situacao: 'sem_fonte', segmentos: [] };
+      const est = d.situacao === 'manual' ? estouroDe(c, d) : null;
+      const ordem = est ? 0 : { disputa: 1, sem_fonte: 2, manual: 3, nao: 3 }[d.situacao] ?? 4;
+      return { c, d, est, ordem };
+    }).sort((a, b) => a.ordem - b.ordem || (a.c.de < b.c.de ? -1 : a.c.de > b.c.de ? 1 : 0) || (a.c.id < b.c.id ? -1 : 1));
+    const precisam = itens.filter(x => x.ordem < 3);
+    const decididas = itens.filter(x => x.ordem === 3);
+    const mostrar = filtroDecisoes === 'decidir' ? precisam : filtroDecisoes === 'decididas' ? decididas : itens;
+    const destinoTxt = (c, d) => {
+      if (d.tipo === 'nao') return '<span class="plan-miudo">não continua</span>';
+      const segs = (d.segmentos || []).map(x => `<span class="plan-seg-dest"><i class="plan-cor" style="background:${corDe('→' + x.fonte)}"></i>${esc(nomeFonte(x.fonte))}
+        <span class="plan-miudo">${rot(x.de)}${x.de !== x.ate ? '–' + rot(x.ate) : ''}</span></span>`).join('<span class="plan-seta">depois</span>');
+      const comp = d.complemento?.fonte && d.complemento.valor > 0 ? ` <span class="plan-miudo">+ ${esc(nomeFonte(d.complemento.fonte))}, ${formatBRL(d.complemento.valor)} por mês</span>` : '';
+      const ult = (d.segmentos || []).length ? d.segmentos[d.segmentos.length - 1].ate : null;
+      const resto = c.meses.filter(m => !ult || m > ult);
+      const sem = resto.length ? `<span class="plan-falta">sem dinheiro ${rot(resto[0])}${resto.length > 1 ? '–' + rot(resto[resto.length - 1]) : ''}</span>` : '';
+      return [segs + comp, sem].filter(Boolean).join(' ');
+    };
+    const situacao = (d, est) => {
+      if (est) {
+        const por = { teto: 'passa do teto mensal de', fora: 'fora do período de', desligada: 'usa a fonte desligada', saldo: 'estoura' }[est.motivo] || 'estoura';
+        return `<span class="plan-st plan-st--est">${por} ${esc(nomeFonte(est.f))} em ${rot(est.m)}</span>`;
+      }
+      const extra = d.situacao === 'sem_fonte' ? (d.motivo === 'alcance' ? ': nenhuma fonte vai até lá' : ': falta dinheiro') : '';
+      return `<span class="plan-st plan-st--${d.situacao}">${ROT_SIT[d.situacao] || d.situacao}${extra}</span>`;
+    };
+    const seletor = c => `<select class="plan-sel" data-decidir="${esc(c.id)}" aria-label="Mudar o destino de ${esc(c.id)}">
+        <option value="">Mudar…</option>
+        ${manuais[c.id] ? '<option value="sug">Voltar à sugestão</option>' : ''}
+        ${lig.filter(k => { const f = blocos.fontes.get(k); return f && f.ate && f.ate >= c.de; }).map(k => `<option value="f:${esc(k)}">Só ${esc(nomeFonte(k))}</option>`).join('')}
+        ${lig.length ? '<option value="dividir">Dividir entre fontes…</option>' : ''}
+        <option value="nao">Não continua</option></select>`;
+    const editor = c => {
+      const d = manuais[c.id];
+      if (!d || d.tipo !== 'fonte') return '';
+      const ss = d.segmentos;
+      const linhasSeg = ss.map((x, i) => {
+        const ult = i === ss.length - 1;
+        const opAte = c.meses.filter(m => m >= x.de && m < c.ate).map(m => `<option value="${m}" ${m === x.ate ? 'selected' : ''}>${rot(m)}</option>`).join('');
+        return `<div class="plan-ed-linha"><select class="plan-sel" data-seg-fonte="${i}" aria-label="Fonte do pedaço ${i + 1}">${lig.map(k => `<option value="${esc(k)}" ${k === x.fonte ? 'selected' : ''}>${esc(nomeFonte(k))}</option>`).join('')}</select>
+          de ${rot(x.de)} até ${ult ? rot(c.ate) : `<select class="plan-sel" data-seg-ate="${i}" aria-label="Fim do pedaço ${i + 1}">${opAte}</select>`}
+          ${ss.length > 1 ? `<button class="plan-link" data-seg-menos="${i}">tirar</button>` : ''}</div>`;
+      }).join('');
+      return `<tr class="plan-editor"><td colspan="5"><div class="plan-ed" data-editor="${esc(c.id)}">${linhasSeg}
+        ${c.meses.filter(m => m >= ss[ss.length - 1].de).length >= 2 ? '<button class="plan-link" data-seg-mais>Mais uma fonte depois</button>' : ''}
+        <div class="plan-ed-linha">Completar todo mês com <select class="plan-sel" data-comp-fonte aria-label="Fonte do complemento"><option value="">nenhuma</option>
+          ${lig.map(k => `<option value="${esc(k)}" ${d.complemento?.fonte === k ? 'selected' : ''}>${esc(nomeFonte(k))}</option>`).join('')}</select>
+          <input class="plan-num-in" type="number" min="0" step="100" data-comp-valor value="${d.complemento?.valor || ''}" placeholder="R$ por mês" aria-label="Valor do complemento por mês">
+          <span class="plan-miudo">duas bolsas no mesmo mês, como quem já está em dois projetos</span></div>
+        <div><button class="btn btn--secondary btn--sm" data-fechar-editor>Pronto</button></div></div></td></tr>`;
+    };
+    const linhas = mostrar.map(({ c, d, est }) => {
+      const p = r.pessoas.find(x => x.nome === c.id);
+      const valores = [...new Set(c.meses.map(m => c.nec[m]).filter(v => v > 0))];
+      return `<tr class="${editando === c.id ? 'plan-dec--aberta' : ''}">
+        <td data-rot="Pessoa"><strong>${esc(c.id)}</strong><div class="plan-miudo">${esc(p?.grupo || c.grupo)}, bolsa atual até ${rot(c.fimAtual)}</div></td>
+        <td data-rot="Precisa de">${rot(c.de)}${c.de !== c.ate ? '–' + rot(c.ate) : ''}<div class="plan-miudo">${valores.length > 1 ? `${formatBRL(Math.min(...valores))} a ${formatBRL(Math.max(...valores))}` : formatBRL(valores[0])} por mês</div></td>
+        <td data-rot="Com que dinheiro">${destinoTxt(c, d)}</td>
+        <td data-rot="Situação">${situacao(d, est)}</td>
+        <td>${seletor(c)}</td></tr>${editando === c.id ? editor(c) : ''}`;
+    }).join('');
+    const disp = dist.disputas[0];
+    const aviso = disp ? `<div class="plan-aviso"><i data-lucide="users"></i><div><strong>${disp.ids.length} pessoas competem pelo mesmo dinheiro${disp.desde ? ` a partir de ${rot(disp.desde)}` : ''}.</strong>
+        Disputam ${esc(lista(disp.fontes.map(nomeFonte)))}. A sugestão espalhou esse dinheiro em blocos de ${minimoMeses} ${minimoMeses > 1 ? 'meses' : 'mês'},
+        na ordem de quem precisa primeiro; quem vai além não é escolha da tela.
+        ${disp.comEspaco.length ? `Ainda cabe um bloco em ${esc(lista(disp.comEspaco.map(nomeFonte)))}.` : 'Nenhuma fonte tem dinheiro para mais um bloco.'}
+        Para decidir, marque quem não continua ou mande alguém para uma fonte.</div></div>` : '';
+    return `
+      <section class="card" id="plan-decisoes">
+        <div class="card__header"><div><h3 class="card__title">Quem continua e com que dinheiro</h3>
+          <p class="card__subtitle">Uma linha por pessoa cuja bolsa acaba antes de ${rot(periodo.fim)}. A tela sugere; vocês decidem. Cada bolsa nova com pelo menos
+            <select class="plan-sel" data-minimo aria-label="Duração mínima de uma bolsa">${[1, 2, 3, 4, 6].map(n => `<option value="${n}" ${n === minimoMeses ? 'selected' : ''}>${n}</option>`).join('')}</select>
+            ${minimoMeses > 1 ? 'meses' : 'mês'}.</p></div></div>
+        ${aviso}
+        <div class="plan-seg plan-dec-filtro" role="group" aria-label="Quais pessoas mostrar">
+          <button data-filtro-dec="decidir" aria-pressed="${filtroDecisoes === 'decidir'}">Para decidir (${precisam.length})</button>
+          <button data-filtro-dec="decididas" aria-pressed="${filtroDecisoes === 'decididas'}">Decididas (${decididas.length})</button>
+          <button data-filtro-dec="todas" aria-pressed="${filtroDecisoes === 'todas'}">Todas (${itens.length})</button>
+        </div>
+        ${mostrar.length ? `<div class="plan-rolagem"><table class="plan-tab plan-dec"><thead><tr><th>Pessoa</th><th>Precisa de</th><th>Com que dinheiro</th><th>Situação</th><th><span class="plan-sr">Mudar</span></th></tr></thead>
+          <tbody>${linhas}</tbody></table></div>`
+          : `<p class="plan-nota">${filtroDecisoes === 'decididas' ? 'Nenhuma decisão ainda.' : 'Nada a decidir: todas as continuações cabem na sugestão. Veja todas para mudar alguma.'}</p>`}
+      </section>`;
+  }
+
+  function decidir(id, v) {
+    const c = blocos?.conts.find(x => x.id === id);
+    if (!c || !v) return;
+    if (v === 'sug') { delete manuais[id]; editando = null; }
+    else if (v === 'nao') { manuais[id] = { tipo: 'nao' }; editando = null; }
+    else if (v.startsWith('f:')) { manuais[id] = { tipo: 'fonte', segmentos: [{ fonte: v.slice(2), de: c.de, ate: c.ate }] }; editando = null; }
+    else if (v === 'dividir') {
+      const atual = blocos.dist.destinos[id];
+      const segs = atual?.tipo === 'fonte' && atual.segmentos?.length ? structuredClone(atual.segmentos)
+        : [{ fonte: cenBlocos(escolha).ligadas[0], de: c.de, ate: c.ate }];
+      segs[segs.length - 1].ate = c.ate;
+      manuais[id] = { tipo: 'fonte', segmentos: segs, ...(atual?.complemento ? { complemento: { ...atual.complemento } } : {}) };
+      editando = id;
+    }
+    render();
+  }
+
+  function ligarEditor(ed) {
+    const id = ed.dataset.editor;
+    const c = blocos?.conts.find(x => x.id === id);
+    const d = manuais[id];
+    if (!c || !d || d.tipo !== 'fonte') return;
+    // Pedaços sempre em sequência, sem buraco: cada um começa no mês seguinte ao fim do anterior; o último vai até o fim.
+    const arrumar = () => {
+      const ms = c.meses, ss = d.segmentos;
+      for (let i = 0; i < ss.length; i++) {
+        ss[i].de = i ? ms[ms.indexOf(ss[i - 1].ate) + 1] : c.de;
+        if (i === ss.length - 1) ss[i].ate = c.ate;
+        else if (!ss[i].de || !(ss[i].ate >= ss[i].de) || ss[i].ate >= c.ate) ss[i].ate = ss[i].de;
+      }
+      d.segmentos = ss.filter(x => x.de && x.de <= c.ate);
+      render();
+    };
+    ed.querySelectorAll('[data-seg-fonte]').forEach(x => x.addEventListener('change', () => { d.segmentos[Number(x.dataset.segFonte)].fonte = x.value; arrumar(); }));
+    ed.querySelectorAll('[data-seg-ate]').forEach(x => x.addEventListener('change', () => { d.segmentos[Number(x.dataset.segAte)].ate = x.value; arrumar(); }));
+    ed.querySelectorAll('[data-seg-menos]').forEach(x => x.addEventListener('click', () => { d.segmentos.splice(Number(x.dataset.segMenos), 1); arrumar(); }));
+    ed.querySelector('[data-seg-mais]')?.addEventListener('click', () => {
+      const ss = d.segmentos, u = ss[ss.length - 1];
+      const ms = c.meses.filter(m => m >= u.de);
+      if (ms.length < 2) return;
+      u.ate = ms[Math.floor(ms.length / 2) - 1];
+      const meio = u.ate;
+      const outra = cenBlocos(escolha).ligadas.find(k => k !== u.fonte && (blocos.fontes.get(k)?.ate || '') > meio) || u.fonte;
+      ss.push({ fonte: outra, de: null, ate: c.ate });
+      arrumar();
+    });
+    ed.querySelector('[data-comp-fonte]')?.addEventListener('change', e => {
+      d.complemento = { fonte: e.target.value, valor: d.complemento?.valor || 0 };
+      render();
+    });
+    ed.querySelector('[data-comp-valor]')?.addEventListener('change', e => {
+      d.complemento = { fonte: d.complemento?.fonte || '', valor: Math.max(0, Number(e.target.value) || 0) };
+      render();
+    });
+    // mousedown vem antes do blur do campo de valor (que redesenha a tela): o primeiro clique já fecha.
+    const fechar = e => {
+      e.preventDefault();
+      const v = ed.querySelector('[data-comp-valor]');
+      if (v && v.value !== String(d.complemento?.valor || '')) d.complemento = { fonte: d.complemento?.fonte || '', valor: Math.max(0, Number(v.value) || 0) };
+      editando = null;
+      render();
+    };
+    ed.querySelector('[data-fechar-editor]')?.addEventListener('mousedown', fechar);
+    ed.querySelector('[data-fechar-editor]')?.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fechar(e); });
+  }
+
+  // "Abrir na Visão do Projeto": a tela do projeto lê o projeto atual do armazenamento do navegador.
+  function abrirProjeto(cc) {
+    const p = base.porCodigo[cc];
+    if (!p) return;
+    try { localStorage.setItem('cf_selected_project_id', p.id); } catch { /* sem armazenamento: a Visão abre no último projeto */ }
+    if (typeof Router.navigate === 'function') Router.navigate('hub');
+  }
+
   function rotuloFonte(k) {
+    if (k === 'NAO') return 'não continua';
     if (k === 'SEM') return 'sem dinheiro';
     if (k === '_proprio') return 'próprios projetos';
     if (!k.startsWith('→')) return `o próprio projeto (${k})`;
@@ -624,7 +942,7 @@ const PlanejamentoPage = (() => {
       const x = c.mapa[`${p.nome}|${m}`] || [];
       if (!x.length) return `<td class="plan-c ${ano}"></td>`;
       const grupos = {};
-      x.forEach(([k, v]) => { const g = k === 'SEM' ? 'SEM' : k.startsWith('→') ? pai(k) : '_proprio'; grupos[g] = (grupos[g] || 0) + v; });
+      x.forEach(([k, v]) => { const g = k === 'SEM' || k === 'NAO' ? k : k.startsWith('→') ? pai(k) : '_proprio'; grupos[g] = (grupos[g] || 0) + v; });
       const tot = Object.values(grupos).reduce((s, v) => s + v, 0);
       const dica = `${rot(m)}, ${formatBRL(tot)}: ` + Object.entries(grupos).map(([g, v]) =>
         `${g === '_proprio' ? 'o próprio projeto' : rotuloFonte(g)} ${formatBRL(v)}`).join(' + ');
@@ -646,7 +964,7 @@ const PlanejamentoPage = (() => {
         <summary><span><strong>Pessoa a pessoa</strong> · ${r.pessoas.length} pessoas${semNenhum ? `, <span class="plan-falta">${semNenhum} ficam sem dinheiro em algum mês</span>` : ''}</span></summary>
         <div class="plan-det__corpo">
           <div class="plan-pessoas-topo">
-            <p class="plan-nota">Quem fica sem dinheiro depende da ordem da lista; o total do mês, não. Isto não é proposta de quem sai.</p>
+            <p class="plan-nota">Vermelho é mês sem dinheiro. Quem continua e com que dinheiro se decide na tabela "Quem continua", lá em cima.</p>
             <label class="plan-chk plan-chk--linha"><input type="checkbox" data-acao="filtro" ${filtroFalta ? 'checked' : ''}> Só quem fica sem dinheiro</label>
           </div>
           <div class="plan-legenda">${legendaFontes(r)}</div>
@@ -669,6 +987,7 @@ const PlanejamentoPage = (() => {
   const PALETA = ['#8b6fd6', '#e08a3c', '#2a9d8f', '#d4a72c', '#4a7fd4', '#d4609b', '#3fa34d', '#5bb5d9'];
   function corDe(k) {
     if (k === 'SEM') return 'var(--danger)';
+    if (k === 'NAO') return '#e1e5e2';
     if (!k.startsWith('→')) return '#a9b1ab';
     const i = base.premissas.fontes.itens.findIndex(f => f.codigo === pai(k.slice(1)));
     return i < 0 ? '#a9b1ab' : PALETA[i % PALETA.length];
@@ -692,10 +1011,35 @@ const PlanejamentoPage = (() => {
     }));
     el.querySelectorAll('[data-liga]').forEach(b => b.addEventListener('click', () => { escolha[b.dataset.liga] = true; render(); }));
     el.querySelector('[data-acao="voltar"]')?.addEventListener('click', () => {
+      const nd = Object.keys(manuais).length;
+      if (nd && window.confirm(`Desfazer também ${nd > 1 ? `as ${nd} decisões` : 'a decisão'} da tabela "Quem continua"?`)) { manuais = {}; editando = null; }
       escolha = escolhaDe(base.premissas.cenarios[0]);
       comoContar = structuredClone(comoPadrao);
+      minimoMeses = 3;
+      periodo = { inicio: null, fim: base.premissas.horizonte_ate };
       render();
     });
+    el.querySelectorAll('[data-periodo]').forEach(x => x.addEventListener('change', () => {
+      periodo[x.dataset.periodo] = x.value;
+      if (periodo.fim < periodo.inicio) periodo.fim = periodo.inicio;
+      render();
+    }));
+    el.querySelector('[data-acao="ir-decisoes"]')?.addEventListener('click', () => {
+      filtroDecisoes = 'decidir';
+      render();
+      el.querySelector('#plan-decisoes')?.scrollIntoView({ block: 'start' });
+    });
+    el.querySelector('[data-minimo]')?.addEventListener('change', e => { minimoMeses = Number(e.target.value); render(); });
+    el.querySelectorAll('[data-filtro-dec]').forEach(b => b.addEventListener('click', () => { filtroDecisoes = b.dataset.filtroDec; render(); }));
+    el.querySelectorAll('[data-razao]').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.razao;
+      if (razaoAberta.has(k)) razaoAberta.delete(k); else razaoAberta.add(k);
+      render();
+    }));
+    el.querySelectorAll('[data-hub]').forEach(b => b.addEventListener('click', () => abrirProjeto(b.dataset.hub)));
+    el.querySelectorAll('[data-decidir]').forEach(x => x.addEventListener('change', () => decidir(x.dataset.decidir, x.value)));
+    const ed = el.querySelector('[data-editor]');
+    if (ed) ligarEditor(ed);
     el.querySelectorAll('details[data-det]').forEach(d => d.addEventListener('toggle', () => { abertos[d.dataset.det] = d.open; }));
     el.querySelector('[data-acao="filtro"]')?.addEventListener('change', e => { filtroFalta = e.target.checked; render(); });
     el.querySelector('[data-acao="premissas"]')?.addEventListener('click', verPremissas);
@@ -1090,6 +1434,51 @@ const PlanejamentoPage = (() => {
       .plan-grade tbody tr:has(.plan-pessoa) .plan-esq { padding-top: 6px; padding-bottom: 6px; }
       .plan-c { text-align: center; }
       .plan-c i { display: inline-block; width: 16px; height: 16px; border-radius: 3px; vertical-align: middle; }
+
+      /* Período */
+      .plan-periodo { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); font-size: 14px; color: var(--text-secondary); }
+      .plan-periodo label { display: inline-flex; align-items: center; gap: 6px; }
+      .plan-periodo .plan-sel { font-size: 13px; padding: 3px 6px; }
+
+      /* Mês a mês de uma fonte */
+      .plan-razao-bt { font-size: 12px; margin-top: 6px; display: inline-block; }
+      .plan-grade .plan-razao th, .plan-grade .plan-razao td { border-bottom: 0; background: color-mix(in srgb, var(--bg-secondary) 45%, var(--bg-surface)); }
+      .plan-grade .plan-razao--fim th, .plan-grade .plan-razao--fim td { border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px !important; }
+      .plan-grade .plan-razao--cab td { font-size: 12px; color: var(--text-secondary); padding: 8px 12px 4px !important; text-align: left; }
+      .plan-razao--cab .plan-link { font-size: 12px; margin-left: var(--sp-3); }
+      .plan-grade .plan-rz-rot { font-size: 12px; color: var(--text-secondary); padding: 3px 12px !important; font-weight: 400; }
+      .plan-rz { text-align: center; font-size: 11px; padding: 3px 0 !important; color: var(--text-primary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .plan-rz--fim { color: var(--text-muted); }
+      .plan-rz--neg { color: var(--danger); font-weight: 700; }
+      .plan-grade .plan-rz-dir { font-size: 11px; color: var(--text-secondary); padding: 3px 0 3px 12px !important; white-space: nowrap; }
+
+      /* Quem continua */
+      .plan-aviso { display: flex; gap: var(--sp-2); align-items: flex-start; padding: 10px 14px; margin-bottom: var(--sp-3); border-radius: var(--radius-md); font-size: 14px; line-height: 1.45;
+        background: color-mix(in srgb, var(--warning) 14%, var(--bg-surface)); color: var(--text-primary); }
+      .plan-aviso > i, .plan-aviso > svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; }
+      .plan-dec-filtro { margin-bottom: var(--sp-3); }
+      .plan-dec td, .plan-dec th { text-align: left !important; vertical-align: middle; }
+      .plan-dec td:last-child { text-align: right !important; }
+      .plan-dec--aberta td { border-bottom: 0; }
+      .plan-seg-dest { white-space: nowrap; }
+      .plan-seg-dest .plan-miudo { display: inline; margin-left: 4px; }
+      .plan-seta { color: var(--text-muted); font-size: 12px; margin: 0 6px; }
+      .plan-st { display: inline-block; padding: 1px 9px; border-radius: var(--radius-full); font-size: 12px; background: var(--bg-secondary); color: var(--text-secondary); white-space: nowrap; }
+      .plan-st--disputa { background: color-mix(in srgb, var(--warning) 22%, transparent); color: var(--text-primary); }
+      .plan-st--sem_fonte, .plan-st--est { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+      .plan-st--manual { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text-primary); }
+      @media (max-width: 700px) {
+        .plan-dec thead { display: none; }
+        .plan-dec, .plan-dec tbody, .plan-dec tr, .plan-dec td { display: block; width: 100%; }
+        .plan-dec tr { padding: var(--sp-3) 0; border-bottom: 1px solid var(--border-subtle); }
+        .plan-dec td { border: 0 !important; padding: 2px 0 !important; text-align: left !important; }
+        .plan-dec td[data-rot]:not([data-rot="Pessoa"])::before { content: attr(data-rot) ": "; color: var(--text-muted); font-size: 12px; }
+        .plan-seg-dest { white-space: normal; }
+      }
+      .plan-ed { display: grid; gap: var(--sp-2); padding: 10px 12px; background: var(--bg-secondary); border-radius: var(--radius-md); }
+      .plan-ed-linha { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+      .plan-num-in { width: 120px; font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); }
+      .plan-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
       /* Janelas de detalhe */
       .plan-tab { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
