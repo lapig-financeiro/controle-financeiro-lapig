@@ -31,21 +31,22 @@
 |---|---|
 | Plano, estética, tarefas F0-A/F0-B | escritos e revisados por dois DeepSeek (correções em README §7b) |
 | F0-A — migração 062 (arquivos por centro) | **aplicada em produção em 18/11** (run 44406913645, "tudo bate"); manutenção desligada; admin segue vendo os 3 buckets. Falta só um teste real com login de professor quando houver um à mão. |
-| F0-B — esqueleto `app/` | 3 rodadas feitas (81 KB gz na abertura; 31 testes do app; sem estouro a 360 px); revisão de fase feita (dois DeepSeek + leitura visual do Hydrogen; decisões em `estetica.md` §6b). 4ª rodada (conferência visual do Claude a 360 px, correções pelo Neon) feita. **Falta:** ok do Victor para publicar (catálogo em dev: `.claude/launch.json` → `app-v2-dev`, `/controle-financeiro-lapig/v2/#/componentes`; em produção só admin logado vê) `app/` + workflows (ainda **sem commit**, no working tree). Conversa agy do executor: `0883799a-f793-4445-b301-a9c368df404c` |
+| F0-B — esqueleto `app/` | **publicado em /v2/ em 18/11** (commit dfc7bd1; CI e deploy ok; conferido no ar: login, catálogo só com login, site atual intacto). Catálogo em dev: `.claude/launch.json` → `app-v2-dev`, `#/componentes`. |
 | Vigia | **parado** — nenhuma checagem depois das 18:10 de 18/11 (conferido no banco) |
 | F0-C — oráculo | retrato de `get_saldo_livre` dos 21 centros guardado fora do git (`oraculo-saldo-livre-2026-11-18.json`) |
 | Redirect URL `/v2/` no Supabase | feito pelo Victor (18/11) |
 
 ## Próximos passos
 1. (feito) 062 aplicada e manutenção desligada em 18/11.
-2. F0-B: telas conferidas (4ª rodada); com o ok do Victor, commit de `app/`, workflows, eslint,
+2. (feito) F0-B publicada em /v2/ (18/11).
+   Era: commit de `app/`, workflows, eslint,
    `.gitignore`, `package.json` e `.claude/launch.json` (entrada `app-v2`).
-3. Commit de `app/` + workflows (com ok do Victor para publicar, porque muda o deploy).
+3. (feito) Commit de `app/` + workflows com o ok do Victor.
 4. Escrever as tarefas da F1 (README §6 + §7b): pendências + `v_balancete_vigente`, página Projetos e do
    projeto, filtro de visão do admin; executores em worktrees fora do OneDrive.
 
 ## Pendências com o Victor
-- Ok para publicar `app/` e a mudança do deploy (quando a F0 fechar).
+- Nenhuma no momento.
 
 ## Registro
 | Data | O que aconteceu |
@@ -55,4 +56,5 @@
 | 18/11 | Victor autorizou publicar a 062 e configurou a Redirect URL do `/v2/` |
 | 18/11 | 062 aplicada em produção; vigia confirmado parado; F0-B na 3ª rodada concluída |
 | 18/11 | 4ª rodada da F0-B: Claude conferiu a 360 px; Neon corrigiu barra do topo e destaques |
+| 18/11 | Victor autorizou e o /v2/ foi publicado (dfc7bd1) |
 | 18/11 | Victor trocou o executor: Orchestrator (Neon) no lugar do Hydrogen, a partir da F1 |
