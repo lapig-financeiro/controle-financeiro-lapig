@@ -84,7 +84,7 @@ transação compensatória; quem grava número é sempre o leitor determinístic
 ## 6. Fases
 
 Cada fase termina com: relatórios das tarefas, conferência do Claude (lê o diff e roda os testes), **revisão
-de dois DeepSeek V4.1 Flash high** independentes (opencode, um com o projeto e um cego só com o diff), e
+de dois DeepSeek V4.1 Flash max** independentes (opencode, um com o projeto e um cego só com o diff), e
 correção dos achados confirmados. Só então a fase seguinte.
 
 ### F0 — Fundação (dias)
@@ -145,7 +145,7 @@ correção dos achados confirmados. Só então a fase seguinte.
   cruzam.
 - **Acompanhamento**: o Claude lê o diff, roda lint/testes, confere no navegador o que for tela, e corrige o
   rumo antes da revisão.
-- **Revisão de fase**: dois DeepSeek V4.1 Flash high (opencode), independentes; achados conferidos pelo
+- **Revisão de fase**: dois DeepSeek V4.1 Flash **max** (opencode, `#max`; pedido do Victor em 18/11 — antes era high), independentes; achados conferidos pelo
   Claude antes de virar correção.
 - **Victor** é chamado para: aplicar migração (ok no chat), decisões de produto, e ver a tela.
 

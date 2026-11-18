@@ -21,7 +21,7 @@
   resumir o AGENTS.md e as pendências do Buriti depois.
 - Modo de trabalho: executor = **Orchestrator (Neon)** no agy (`--model gemini-pro-orchestrator-neon`; nunca o
   `gemini-pro-orchestrator-g1-pro`, que é o Argon), desde 18/11 no lugar do Hydrogen (até dois em paralelo, sem arquivo em comum);
-  o Claude acompanha e confere; fim de cada etapa = revisão de dois DeepSeek V4.1 high. Gemini e Ollama
+  o Claude acompanha e confere; fim de cada etapa = revisão de dois DeepSeek V4.1 Flash **max** (`#max`, pedido de 18/11; sempre, inclusive revisão de SQL para o cofre). Gemini e Ollama
   têm cota sobrando; a do Claude está apertada.
 - Migração: só pelo cofre, com ok do Victor no chat para publicar e de novo para aplicar; manutenção ligada
   em toda aplicação.
