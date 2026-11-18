@@ -47,7 +47,7 @@
    projeto, filtro de visão do admin; executores em worktrees fora do OneDrive.
 
 ## Pendências com o Victor
-- Ok para publicar a 063 no `master` e ensaiar no cofre (pedido em 18/11, noite).
+- **Ok para aplicar a 063** (ensaio 44420452880 passou; commit 30330194120a3af9e293bca4b7811a7abb986760; aprovação `3829738d6c8673e0`). 1º ensaio (44419732462) falhou na ACL da view para authenticated; corrigido e o stub-063 passou a imitar os default privileges do Supabase.
 
 ## Registro
 | Data | O que aconteceu |
@@ -59,5 +59,6 @@
 | 18/11 | 4ª rodada da F0-B: Claude conferiu a 360 px; Neon corrigiu barra do topo e destaques |
 | 18/11 | Victor autorizou e o /v2/ foi publicado (dfc7bd1) |
 | 18/11 | Tarefas da F1 escritas, revisadas por dois DeepSeek e entregues a dois Neon em paralelo |
+| 18/11 | Victor autorizou publicar a 063; 1º ensaio falhou (ACL da view), 2º passou |
 | 18/11 | F1-A e F1-B: 1ª rodada, revisão de fase (dois DeepSeek cada) e 2ª rodada concluídas |
 | 18/11 | Victor trocou o executor: Orchestrator (Neon) no lugar do Hydrogen, a partir da F1 |
