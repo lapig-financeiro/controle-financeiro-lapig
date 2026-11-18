@@ -26,6 +26,16 @@ if (window.SENTRY_DSN) {
 
 // Create client and assign it to the global object. 
 // This overwrites the library namespace avoiding the "Identifier 'supabase' has already been declared" SyntaxError.
+// Link de "esqueci a senha": o Supabase volta com #...type=recovery (ou #error=... se expirou).
+// Lido ANTES de criar o cliente, porque o cliente limpa o endereço ao trocar o link por sessão.
+window.cfLinkSenha = (() => {
+  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (h.get('type') === 'recovery') return { tipo: 'recuperacao' };
+  if (h.get('error_code') || h.get('error')) return { tipo: 'erro', codigo: h.get('error_code') || h.get('error') };
+  return null;
+})();
+if (window.cfLinkSenha?.tipo === 'erro') history.replaceState(null, '', location.pathname + location.search);
+
 window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Utility: legenda "inclui R$ X de rendimento" sob um valor de saldo.

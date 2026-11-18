@@ -114,6 +114,31 @@
             <i data-lucide="loader-2" class="spin"></i>
           </span>
         </button>
+
+        <button type="button" id="esqueci-senha" class="login-card__link">Esqueci a senha</button>
+        <div id="login-aviso" class="login-card__aviso" hidden></div>
+      </form>
+
+      <form id="senha-form" class="login-card__form" hidden>
+        <p class="login-card__instrucao">Escolha a nova senha (mínimo de 8 caracteres).</p>
+        <div class="input-group">
+          <i data-lucide="lock" class="input-group__icon"></i>
+          <input type="password" id="senha-nova" class="input-group__field" placeholder="Nova senha"
+            required minlength="8" autocomplete="new-password">
+        </div>
+        <div class="input-group">
+          <i data-lucide="lock" class="input-group__icon"></i>
+          <input type="password" id="senha-confirma" class="input-group__field" placeholder="Repita a nova senha"
+            required minlength="8" autocomplete="new-password">
+        </div>
+        <div id="senha-erro" class="login-card__error" hidden>
+          <i data-lucide="alert-circle"></i>
+          <span id="senha-erro-text"></span>
+        </div>
+        <button type="submit" id="senha-btn" class="btn btn--primary btn--full">
+          <span class="btn__text">Salvar nova senha</span>
+          <span class="btn__loader" hidden><i data-lucide="loader-2" class="spin"></i></span>
+        </button>
       </form>
 
       <div class="login-card__footer">

@@ -292,6 +292,36 @@ img { max-width: 100%; display: block; }
   flex-shrink: 0;
 }
 
+.login-card__link {
+  align-self: center;
+  background: none;
+  border: none;
+  padding: var(--sp-1);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.login-card__link:hover { color: var(--text-primary); }
+.login-card__link:disabled { opacity: 0.6; cursor: default; }
+
+.login-card__aviso {
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--success-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+.login-card__instrucao {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 .login-card__footer {
   text-align: center;
   margin-top: var(--sp-6);

@@ -43,6 +43,8 @@ Every JS module is an IIFE that registers globals on `window`. Inline `onclick` 
 
 Simplified login: users type a short name (e.g., "Laerte") which is mapped to a Supabase email via `USER_MAPPING` in `auth.js`. Direct email input (containing `@`) also works. Session persistence via Supabase Auth.
 
+**Senha esquecida (18/11/2026):** "Esqueci a senha" na tela de login chama `resetPasswordForEmail` com `redirectTo` = o próprio endereço do site. O link do e-mail volta com `#...type=recovery`; `supabase-config.js` guarda isso em `window.cfLinkSenha` antes de criar o cliente (o cliente limpa o endereço), e `Auth.checkSession()` mostra o formulário "nova senha" (`updateUser({ password })`) em vez do app. Link vencido (`#error_code=otp_expired`) vira aviso no login. Depende do painel do Supabase: Authentication → URL Configuration com o **Site URL** e as **Redirect URLs** apontando para o endereço publicado (até 18/11 estava `localhost:3000`, de fábrica, e o link caía no vazio).
+
 ## ChartBuilder
 
 `chart-builder.js` provides `buildFinancialChart()` — a shared Chart.js configuration for the monthly projection charts used by both DashboardPage and ProjectsPage. Also exports a `COLORS` object with the palette: funding (teal), bolsas (gold), gastos (red), positive balance (green), negative balance (red).
