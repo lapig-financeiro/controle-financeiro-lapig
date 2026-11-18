@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import {
   AvisoFalha,
   CabecalhoPagina,
@@ -10,7 +10,7 @@ import {
   Valor,
   Vazio,
 } from '../componentes/index.js';
-import { urlProjeto } from '../roteador.js';
+import { ehCliqueNavegacaoSimples, urlProjeto } from '../roteador.js';
 import { dinheiroCompacto } from '../util/formato.js';
 import './Projetos.css';
 
@@ -37,7 +37,8 @@ function temNumeroLivre(centro) {
 }
 
 function montarContexto(centros, ocultos) {
-  const partes = [`${centros.length} ${centros.length === 1 ? 'centro' : 'centros'}`];
+  const totalCentros = centros.length + ocultos;
+  const partes = [`${totalCentros} ${totalCentros === 1 ? 'centro' : 'centros'}`];
   let soma = 0;
   let comNumero = 0;
   let semNumero = 0;
@@ -66,7 +67,7 @@ function montarContexto(centros, ocultos) {
 
 /**
  * Tela inicial `Projetos`: lista alfabética dos centros de custo visíveis,
- * total livre no cabeçalho e filtro rápido por situação.
+ * total no cabeçalho e filtro rápido por situação.
  */
 export function Projetos({
   carregando = false,
@@ -78,9 +79,18 @@ export function Projetos({
   onNavegar = null,
 }) {
   const [filtroSituacao, setFiltroSituacao] = useState('todas');
+  const [mostrandoTodos, setMostrandoTodos] = useState(false);
+  const [erroMostrarTodos, setErroMostrarTodos] = useState(null);
 
-  const centrosBrutos = Array.isArray(resumo?.centros) ? resumo.centros : [];
+  const temResumo = Boolean(resumo && Array.isArray(resumo.centros));
+  const centrosBrutos = temResumo ? resumo.centros : [];
   const ocultos = Number(resumo?.ocultos || 0);
+
+  useEffect(() => {
+    if (centrosBrutos.length > 0) {
+      setErroMostrarTodos(null);
+    }
+  }, [centrosBrutos.length]);
 
   const centrosOrdenados = [...centrosBrutos].sort((a, b) => {
     const compNome = String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR', {
@@ -100,24 +110,45 @@ export function Projetos({
     ? centrosOrdenados
     : centrosOrdenados.filter((c) => situacaoCentro(c) === situacaoAtiva);
 
-  const contexto = !carregando && !erro && resumo
+  const contexto = temResumo && !erro
     ? montarContexto(centrosOrdenados, ocultos)
     : null;
+
+  const lidarMostrarTodos = async () => {
+    if (!onMostrarTodos || mostrandoTodos) return;
+    setMostrandoTodos(true);
+    setErroMostrarTodos(null);
+    try {
+      const res = await onMostrarTodos();
+      if (res?.erro) {
+        setErroMostrarTodos(res.erro);
+      }
+    } catch {
+      setErroMostrarTodos('Não foi possível mostrar os centros ocultos.');
+    } finally {
+      setMostrandoTodos(false);
+    }
+  };
 
   return (
     <div class="conteudo">
       <CabecalhoPagina titulo="Projetos" contexto={contexto} />
 
-      {carregando ? (
+      {carregando && !temResumo ? (
         <Esqueleto variante="linha" linhas={6} rotulo="Carregando centros de custo" />
       ) : erro ? (
         <AvisoFalha mensagem={erro} aoTentarNovamente={onRecarregar} />
       ) : centrosOrdenados.length === 0 ? (
-        <Vazio
-          mensagem="Nenhum centro para mostrar."
-          rotuloBotao={ocultos > 0 && isAdmin && onMostrarTodos ? 'Mostrar todos' : ''}
-          aoClicar={ocultos > 0 && isAdmin ? onMostrarTodos : null}
-        />
+        <>
+          {erroMostrarTodos && (
+            <AvisoFalha mensagem={erroMostrarTodos} aoTentarNovamente={lidarMostrarTodos} />
+          )}
+          <Vazio
+            mensagem="Nenhum centro para mostrar."
+            rotuloBotao={ocultos > 0 && isAdmin && onMostrarTodos ? 'Mostrar todos' : ''}
+            aoClicar={ocultos > 0 && isAdmin && onMostrarTodos ? lidarMostrarTodos : null}
+          />
+        </>
       ) : (
         <>
           {chips.length > 0 && (
@@ -154,6 +185,7 @@ export function Projetos({
                   onClick={
                     onNavegar
                       ? (e) => {
+                          if (!ehCliqueNavegacaoSimples(e)) return;
                           e.preventDefault();
                           onNavegar(destino);
                         }

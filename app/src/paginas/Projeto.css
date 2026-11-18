@@ -118,3 +118,13 @@
   line-height: var(--lh-2);
   color: var(--cor-texto);
 }
+
+.projeto__subsecao-bolsas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.projeto__bolsa-encerrada {
+  color: var(--cor-texto-3);
+}

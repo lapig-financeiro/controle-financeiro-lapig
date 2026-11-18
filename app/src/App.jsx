@@ -49,6 +49,18 @@ export function App() {
   const [filtroSalvando, setFiltroSalvando] = useState(false);
   const [filtroErro, setFiltroErro] = useState(null);
 
+  const montadoRef = useRef(true);
+  const genResumoRef = useRef(0);
+  const genSinoRef = useRef(0);
+  const salvandoFiltroRef = useRef(false);
+
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
+
   const verificarManutencao = useCallback(async () => {
     const estado = await consultarManutencao();
     if (!estado.ativo && manutencaoAtivaRef.current) {
@@ -61,14 +73,19 @@ export function App() {
 
   const aplicarUsuario = useCallback(async (user) => {
     if (!user) {
+      genResumoRef.current += 1;
+      genSinoRef.current += 1;
       setUsuario(null);
       setPerfil({ erro: null, role: null, nome: '', email: '' });
       setCarregandoPerfil(false);
+      setResumoSt({ carregando: true, dados: null, erro: null });
+      setSinoSt({ estado: 'consultando', dados: [], erro: null });
       return;
     }
     setUsuario(user);
     setCarregandoPerfil(true);
     const dadosPerfil = await carregarPerfil(user);
+    if (!montadoRef.current) return;
     setPerfil(dadosPerfil);
     setCarregandoPerfil(false);
   }, []);
@@ -139,14 +156,22 @@ export function App() {
   const isAdmin = papelConhecido && perfil.role === 'admin';
 
   const carregarResumo = useCallback(async () => {
+    const gen = ++genResumoRef.current;
     setResumoSt((prev) => ({ carregando: true, dados: prev.dados, erro: null }));
     const res = await resumoProjetos();
-    setResumoSt({ carregando: false, dados: res.dados, erro: res.erro });
+    if (!montadoRef.current || gen !== genResumoRef.current) return;
+    setResumoSt((prev) => ({
+      carregando: false,
+      dados: res.erro ? prev.dados : res.dados,
+      erro: res.erro,
+    }));
   }, []);
 
   const carregarSino = useCallback(async () => {
+    const gen = ++genSinoRef.current;
     setSinoSt((prev) => ({ estado: 'consultando', dados: prev.dados, erro: null }));
     const res = await buscarPendencias(null);
+    if (!montadoRef.current || gen !== genSinoRef.current) return;
     if (res.erro) {
       setSinoSt({ estado: 'indisponivel', dados: [], erro: res.erro });
     } else {
@@ -177,18 +202,40 @@ export function App() {
 
   const salvarFiltro = useCallback(
     async (centrosOcultos) => {
+      if (salvandoFiltroRef.current) {
+        return { erro: null, ignorado: true };
+      }
+      salvandoFiltroRef.current = true;
       setFiltroSalvando(true);
       setFiltroErro(null);
-      const res = await salvarFiltroVisao(centrosOcultos);
-      setFiltroSalvando(false);
-      if (res.erro) {
-        setFiltroErro(res.erro);
-        return { erro: res.erro };
+      try {
+        const res = await salvarFiltroVisao(centrosOcultos);
+        if (res.erro) {
+          if (montadoRef.current) setFiltroErro(res.erro);
+          return { erro: res.erro };
+        }
+        await carregarDadosGlobais();
+        return { erro: null };
+      } catch {
+        const erro = 'Não foi possível salvar o filtro de visão.';
+        if (montadoRef.current) setFiltroErro(erro);
+        return { erro };
+      } finally {
+        salvandoFiltroRef.current = false;
+        if (montadoRef.current) setFiltroSalvando(false);
       }
-      await carregarDadosGlobais();
-      return { erro: null };
     },
     [carregarDadosGlobais]
+  );
+
+  const mostrarCentro = useCallback(
+    (projectId) => {
+      const ocultosRestantes = (resumoSt.dados?.todos || [])
+        .filter((c) => c.oculto && c.id !== projectId)
+        .map((c) => c.id);
+      return salvarFiltro(ocultosRestantes);
+    },
+    [resumoSt.dados, salvarFiltro]
   );
 
   if (manutencao.ativo) {
@@ -286,17 +333,22 @@ export function App() {
 
     if (rota.pagina === 'projeto') {
       const resumoCentro = (resumoSt.dados?.centros || []).find((c) => c.id === rota.id) || null;
+      const centroNoFiltro = (resumoSt.dados?.todos || []).find((c) => c.id === rota.id) || null;
+      const centroOculto = Boolean(!resumoCentro && centroNoFiltro && centroNoFiltro.oculto);
       return (
         <Projeto
           projectId={rota.id}
           abaInicial={rota.aba}
           resumoCentro={resumoCentro}
+          centroOculto={centroOculto}
+          centroOcultoInfo={centroOculto ? centroNoFiltro : null}
           carregandoResumo={resumoSt.carregando}
           erroResumo={resumoSt.erro}
           isAdmin={isAdmin}
           onNavegar={navegarPara}
           onMudarPendencias={carregarDadosGlobais}
           onRecarregarResumo={carregarResumo}
+          onMostrarEsteCentro={centroOculto && isAdmin ? () => mostrarCentro(rota.id) : null}
         />
       );
     }

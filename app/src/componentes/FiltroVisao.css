@@ -30,14 +30,15 @@
   color: var(--cor-acento);
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
   transition: background-color var(--rapido) var(--curva);
 }
 
-.filtro-visao__acao:hover:not(:disabled) {
+.filtro-visao__acao:hover:not([aria-disabled="true"]) {
   background-color: var(--cor-acento-suave);
 }
 
-.filtro-visao__acao:disabled {
+.filtro-visao__acao[aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -70,7 +71,7 @@
 
 .filtro-visao__grupo-cabecalho {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--esp-2);
   padding: 0 var(--esp-1);
@@ -82,9 +83,7 @@
   font-weight: var(--fw-semi);
   color: var(--cor-texto-2);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .filtro-visao__lista {
@@ -114,6 +113,11 @@
   flex-shrink: 0;
   accent-color: var(--cor-acento);
   cursor: pointer;
+}
+
+.filtro-visao__caixa[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .filtro-visao__centro-nome {

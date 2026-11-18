@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'preact/hooks';
 import { ChevronDown, Filter } from 'lucide-preact';
+import { ehCliqueNavegacaoSimples } from '../roteador.js';
 import { FiltroVisao } from './FiltroVisao.jsx';
 import { MenuSuspenso, MenuSuspensoItem } from './MenuSuspenso.jsx';
 import { MenuUsuario } from './MenuUsuario.jsx';
@@ -57,7 +58,7 @@ export function BarraTopo({
     : 'Todos os centros';
 
   const irPara = (e, hash) => {
-    if (onNavegar) {
+    if (onNavegar && ehCliqueNavegacaoSimples(e)) {
       e.preventDefault();
       onNavegar(hash);
     }

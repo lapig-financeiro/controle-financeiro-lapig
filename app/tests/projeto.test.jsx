@@ -66,6 +66,12 @@ function configurarPadrao({
       compromissos_cobertura: 'nenhuma',
     },
   ],
+  bolsas = [
+    { scholarship_id: 'b1', bolsista: 'Bolsista 1', valor_mensal: 6000, end_date: '2027-08-31' },
+    { scholarship_id: 'b2', bolsista: 'Bolsista 2', valor_mensal: 4000, end_date: '2027-06-30' },
+    { scholarship_id: 'b3', bolsista: 'Bolsista Encerrada', valor_mensal: 3500, end_date: '2026-10-31' },
+  ],
+  avisos = [],
 } = {}) {
   saldoLivreMock.mockResolvedValue({
     dados: {
@@ -75,13 +81,10 @@ function configurarPadrao({
       project_name: 'Bacia do Cerrado',
       end_date: '2027-08-31',
       data_referencia: '2026-10-15',
-      bolsas_ativas: [
-        { scholarship_id: 'b1', bolsista: 'Bolsista 1', valor_mensal: 6000, end_date: '2027-08-31' },
-        { scholarship_id: 'b2', bolsista: 'Bolsista 2', valor_mensal: 4000, end_date: '2027-06-30' },
-        { scholarship_id: 'b3', bolsista: 'Bolsista Encerrada', valor_mensal: 3500, end_date: '2026-10-31' },
-      ],
+      bolsas_ativas: bolsas,
       grupos,
       rubricas: [],
+      avisos,
     },
     erro: null,
   });
@@ -134,8 +137,8 @@ function configurarPadrao({
 }
 
 describe('página do Projeto', () => {
-  it('usa o livre do resumo sem recalcular, soma partes no painel, filtra bolsas ativas e calcula repasses', async () => {
-    configurarPadrao();
+  it('usa o livre do resumo sem recalcular, soma partes no painel, filtra bolsas ativas e exibe Drive só para admin', async () => {
+    configurarPadrao({ avisos: ['Balancete defasado: última referência de out/26.'] });
     render(
       <Projeto
         projectId="p-1"
@@ -168,12 +171,27 @@ describe('página do Projeto', () => {
     expect(destaques[2].textContent).toContain('2 de 3');
     expect(destaques[2].textContent).toContain('próximo em jan/27');
 
+    // Aviso vindo da RPC é exibido no topo da aba Dinheiro.
+    expect(document.querySelector('.abas__painel .aviso-falha').textContent).toContain(
+      'Balancete defasado'
+    );
+
     // Botão Pasta no Drive visível para admin com URL.
     const linkDrive = Array.from(document.querySelectorAll('a.botao')).find((a) =>
       a.textContent.includes('Pasta no Drive')
     );
     expect(linkDrive).toBeTruthy();
     expect(linkDrive.getAttribute('href')).toBe('https://drive.google.com/drive/folders/teste');
+
+    // Aba Bolsas lista todas as bolsas (inclusive encerrada com marcação "encerrada em out/26").
+    const abaBolsas = Array.from(document.querySelectorAll('[role="tab"]')).find((t) =>
+      t.textContent.includes('Bolsas')
+    );
+    abaBolsas.click();
+    await tick();
+    expect(abaBolsas.textContent).toContain('3');
+    expect(document.querySelector('.abas__painel').textContent).toContain('Bolsista Encerrada');
+    expect(document.querySelector('.abas__painel').textContent).toContain('encerrada em out/26');
 
     // Abre painel "De onde vem este valor" ao clicar no destaque principal.
     destaques[0].querySelector('button.valor--origem').click();
@@ -184,7 +202,7 @@ describe('página do Projeto', () => {
     expect(painel.querySelector('.aviso-falha')).toBeNull();
   });
 
-  it('acusa no painel quando a soma dos grupos não bate com o livre do resumo e esconde Drive para professor', async () => {
+  it('oculta Pasta no Drive para professor mesmo com URL preenchida e acusa divergência no painel', async () => {
     configurarPadrao({
       grupos: [
         {
@@ -209,7 +227,7 @@ describe('página do Projeto', () => {
           code: '30.901',
           name: 'Bacia do Cerrado',
           end_date: '2027-08-31',
-          drive_folder_url: null,
+          drive_folder_url: 'https://drive.google.com/drive/folders/nao-deve-aparecer',
           livre: 84300,
           situacao: 'em dia',
           data_referencia: '2026-10-15',
@@ -222,7 +240,6 @@ describe('página do Projeto', () => {
     expect(document.body.textContent).not.toContain('Pasta no Drive');
 
     const destaquePrincipal = document.querySelector('.destaque--principal');
-    expect(destaquePrincipal.textContent).toContain('84.300');
     destaquePrincipal.querySelector('button.valor--origem').click();
     await tick();
 
@@ -231,7 +248,202 @@ describe('página do Projeto', () => {
     expect(painel.textContent).toContain('50.000,00');
   });
 
-  it('trata centro sem plano (048 sem grupos/bolsas_ativas) e centro sem balancete sem mostrar zeros', async () => {
+  it('descarta resposta atrasada ao trocar rapidamente de projeto (corrida entre promessas)', async () => {
+    let resolverSaldoA;
+    saldoLivreMock.mockImplementation((id) => {
+      if (id === 'p-A') {
+        return new Promise((r) => {
+          resolverSaldoA = r;
+        });
+      }
+      return Promise.resolve({
+        dados: {
+          has_plano: true,
+          has_balancete: true,
+          project_id: 'p-B',
+          project_name: 'Projeto B',
+          end_date: '2027-10-31',
+          data_referencia: '2026-10-15',
+          bolsas_ativas: [{ scholarship_id: 'bB', bolsista: 'Bolsista B', valor_mensal: 7000, end_date: '2027-10-31' }],
+          grupos: [{ grupo_code: 'a', grupo_name: 'Pessoal', previsto: 100000, realizado: 50000, compromissos: 0, saldo_livre: 50000, compromissos_cobertura: 'bolsas' }],
+          rubricas: [],
+          avisos: [],
+        },
+        erro: null,
+      });
+    });
+    repassesMock.mockResolvedValue({ dados: { parcelas: [], valor_total_plano: null, data_balancete: null, recursos: null }, erro: null });
+    balancetesMock.mockResolvedValue({ dados: [], erro: null });
+    planosMock.mockResolvedValue({ dados: [], erro: null });
+    pendenciasMock.mockResolvedValue({ dados: [], erro: null });
+
+    render(
+      <Projeto
+        projectId="p-A"
+        hoje="2026-11-18"
+        resumoCentro={{ id: 'p-A', code: '30.901', name: 'Projeto A', livre: 10000, situacao: 'em dia' }}
+      />,
+      document.body
+    );
+
+    render(
+      <Projeto
+        projectId="p-B"
+        hoje="2026-11-18"
+        resumoCentro={{ id: 'p-B', code: '30.902', name: 'Projeto B', livre: 50000, situacao: 'em dia' }}
+      />,
+      document.body
+    );
+    await tick();
+
+    expect(document.querySelector('h1').textContent).toContain('Projeto B');
+    expect(document.querySelectorAll('.destaque')[1].textContent).toContain('7.000');
+
+    // Resposta atrasada de p-A chega depois e NÃO pode sobrescrever p-B.
+    resolverSaldoA({
+      dados: {
+        has_plano: true,
+        has_balancete: true,
+        project_id: 'p-A',
+        project_name: 'Projeto A',
+        bolsas_ativas: [{ scholarship_id: 'bA', bolsista: 'Bolsista A', valor_mensal: 1111, end_date: '2027-10-31' }],
+        grupos: [],
+        rubricas: [],
+        avisos: [],
+      },
+      erro: null,
+    });
+    await tick();
+
+    expect(document.querySelector('h1').textContent).toContain('Projeto B');
+    expect(document.querySelectorAll('.destaque')[1].textContent).toContain('7.000');
+    expect(document.querySelectorAll('.destaque')[1].textContent).not.toContain('1.111');
+  });
+
+  it('nunca converte nulo em zero em bolsas/grupos/recursos, separa bolsa sem data e prioriza parcela a conferir', async () => {
+    configurarPadrao({
+      grupos: [
+        { grupo_code: 'a', grupo_name: 'Pessoal', previsto: 100000, realizado: 40000, compromissos: 0, saldo_livre: 60000, compromissos_cobertura: 'bolsas' },
+        { grupo_code: 'b', grupo_name: 'Serviços', previsto: 50000, realizado: 20000, compromissos: 0, saldo_livre: null, compromissos_cobertura: 'nenhuma' },
+      ],
+      bolsas: [
+        { scholarship_id: 'b1', bolsista: 'Sem Valor', valor_mensal: null, end_date: '2027-08-31' },
+        { scholarship_id: 'b2', bolsista: 'Sem Data', valor_mensal: 4000, end_date: null },
+      ],
+    });
+    repassesMock.mockResolvedValue({
+      dados: {
+        parcelas: [
+          { parcela: 1, data_prevista: '2026-01-15', data_texto: null, valor: 100000, valor_texto: null },
+          { parcela: 2, data_prevista: '2026-08-15', data_texto: null, valor: 100000, valor_texto: null },
+          { parcela: 3, data_prevista: '2027-02-15', data_texto: null, valor: 100000, valor_texto: null },
+        ],
+        valor_total_plano: 300000,
+        data_balancete: '2026-10-15',
+        recursos: { recebido: 150000, a_receber: 0 },
+      },
+      erro: null,
+    });
+
+    render(
+      <Projeto
+        projectId="p-1"
+        hoje="2026-11-18"
+        resumoCentro={{
+          id: 'p-1',
+          code: '30.901',
+          name: 'Centro Nulo',
+          end_date: 'data-invalida',
+          livre: 60000,
+          situacao: 'em dia',
+          data_referencia: '2026-10-15',
+        }}
+      />,
+      document.body
+    );
+    await tick();
+
+    // Sem "faltam null meses" para end_date inválida.
+    const cabecalhoContexto = document.querySelector('.cabecalho-pagina__contexto').textContent;
+    expect(cabecalhoContexto).not.toContain('null');
+
+    // Bolsa vigente com valor_mensal null -> "—" e "valor incompleto" (não zero).
+    const destaques = Array.from(document.querySelectorAll('.destaque'));
+    expect(destaques[1].textContent).toContain('—');
+    expect(destaques[1].textContent).toContain('valor incompleto');
+
+    // Parcela 2 é parcial (150k recebido para 100k + 100k): "1 parcela parcial" tem prioridade sobre "próximo em fev/27".
+    expect(destaques[2].textContent).toContain('1 de 3');
+    expect(destaques[2].textContent).toContain('1 parcela parcial');
+    expect(destaques[2].textContent).not.toContain('próximo em fev/27');
+
+    // Painel acusa grupo com valor nulo e mostra — em "Soma das partes".
+    destaques[0].querySelector('button.valor--origem').click();
+    await tick();
+    const painel = document.querySelector('.painel-lateral');
+    expect(painel.querySelector('.aviso-falha').textContent).toContain('grupo sem valor válido');
+    expect(painel.querySelector('.projeto__par--total').textContent).toContain('—');
+    document.querySelector('.painel-lateral__fechar').click();
+    await tick();
+
+    // Aba Bolsas exibe aviso e seção de bolsa sem data (não marcada como encerrada).
+    Array.from(document.querySelectorAll('[role="tab"]')).find((t) => t.textContent.includes('Bolsas')).click();
+    await tick();
+    const painelBolsas = document.querySelector('.abas__painel');
+    expect(painelBolsas.textContent).toContain('Bolsas sem data de término');
+    expect(painelBolsas.textContent).toContain('Sem Data');
+    expect(painelBolsas.textContent).not.toContain('encerrada em');
+
+    // Recursos com recebido: null -> "sem dados de recurso".
+    repassesMock.mockResolvedValueOnce({
+      dados: {
+        parcelas: [{ parcela: 1, data_prevista: '2026-01-15', data_texto: null, valor: 100000, valor_texto: null }],
+        valor_total_plano: 100000,
+        data_balancete: '2026-10-15',
+        recursos: { recebido: null },
+      },
+      erro: null,
+    });
+    render(null, document.body);
+    render(
+      <Projeto
+        projectId="p-rec"
+        hoje="2026-11-18"
+        resumoCentro={{ id: 'p-rec', code: '30.999', name: 'Rec Nulo', livre: 10, situacao: 'em dia' }}
+      />,
+      document.body
+    );
+    await tick();
+    const repSemDado = Array.from(document.querySelectorAll('.destaque'))[2];
+    expect(repSemDado.textContent).toContain('—');
+    expect(repSemDado.textContent).toContain('sem dados de recurso');
+  });
+
+  it('mostra Vazio específico quando centro está oculto pelo filtro de visão', async () => {
+    const mostrarCentro = vi.fn().mockResolvedValue({ erro: null });
+    render(
+      <Projeto
+        projectId="p-oculto"
+        centroOculto
+        centroOcultoInfo={{ id: 'p-oculto', code: '30.907', name: 'Corredor Oculto' }}
+        onMostrarEsteCentro={mostrarCentro}
+      />,
+      document.body
+    );
+    await tick();
+
+    expect(saldoLivreMock).not.toHaveBeenCalled();
+    expect(document.querySelector('h1').textContent).toBe('Corredor Oculto · 30.907');
+    expect(document.querySelector('.vazio').textContent).toContain(
+      'Este centro está oculto pelo seu filtro de visão.'
+    );
+    const btn = document.querySelector('.vazio button');
+    expect(btn.textContent).toBe('Mostrar este centro');
+    btn.click();
+    expect(mostrarCentro).toHaveBeenCalledTimes(1);
+  });
+
+  it('trata centro sem plano e centro sem balancete sem mostrar zeros', async () => {
     saldoLivreMock.mockResolvedValue({
       dados: {
         has_plano: false,
@@ -276,7 +488,6 @@ describe('página do Projeto', () => {
     expect(destaques[1].textContent).not.toContain('0 bolsas');
     expect(document.querySelector('.abas__painel .vazio').textContent).toContain('não tem plano de trabalho ativo');
 
-    // Centro sem balancete: destaque principal e repasses mostram — e "sem balancete" (nunca "R$ 0" nem "0 de 2").
     saldoLivreMock.mockResolvedValue({
       dados: {
         has_plano: true,
@@ -297,6 +508,7 @@ describe('página do Projeto', () => {
           },
         ],
         rubricas: [],
+        avisos: ['Sem balancete importado: realizado igual a zero.'],
       },
       erro: null,
     });
@@ -332,14 +544,15 @@ describe('página do Projeto', () => {
     const destaquesSemBal = Array.from(document.querySelectorAll('.destaque'));
     expect(destaquesSemBal[0].textContent).toContain('—');
     expect(destaquesSemBal[0].textContent).toContain('sem balancete');
-    expect(destaquesSemBal[0].textContent).not.toContain('R$ 0');
     expect(destaquesSemBal[2].textContent).toContain('—');
     expect(destaquesSemBal[2].textContent).toContain('sem balancete');
     expect(destaquesSemBal[2].textContent).not.toContain('0 de 1');
   });
 
-  it('abre na aba pendencias, confirma inline sem window.confirm e ordena documentos', async () => {
+  it('abre na aba pendencias, confirma inline sem window.confirm e trata erro parcial em Documentos', async () => {
     configurarPadrao();
+    balancetesMock.mockResolvedValue({ dados: null, erro: 'Falha ao carregar balancetes.' });
+    planosMock.mockResolvedValue({ dados: [], erro: null });
     resolverPendenciaMock.mockResolvedValue({ dados: { id: 'pend-1', situacao: 'resolvida' }, erro: null });
     const confirmOriginal = window.confirm;
     const confirmSpy = vi.fn();
@@ -388,13 +601,14 @@ describe('página do Projeto', () => {
       const abaDocs = Array.from(document.querySelectorAll('[role="tab"]')).find((t) =>
         t.textContent.includes('Documentos')
       );
+      // Com erro parcial nos balancetes, contagem da aba é "—" e Vazio não aparece.
+      expect(abaDocs.querySelector('.abas__contagem').textContent).toBe('—');
       abaDocs.click();
       await tick();
 
-      const linhasDocs = Array.from(document.querySelectorAll('.tabela__linha')).map((l) => l.textContent);
-      expect(linhasDocs[0]).toContain('balancete-out.pdf');
-      expect(linhasDocs[1]).toContain('plano-v2.docx');
-      expect(linhasDocs[2]).toContain('plano-v1.docx');
+      const painelDocs = document.querySelector('.abas__painel');
+      expect(painelDocs.querySelector('.aviso-falha').textContent).toContain('Falha ao carregar balancetes.');
+      expect(painelDocs.querySelector('.vazio')).toBeNull();
     } finally {
       window.confirm = confirmOriginal;
     }

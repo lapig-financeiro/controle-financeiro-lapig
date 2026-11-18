@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "vite",
     "dev:exemplo": "vite --mode exemplo",
-    "build": "node scripts/verificar-estilo.mjs && vite build",
+    "build": "node scripts/verificar-estilo.mjs && vite build && node scripts/verificar-build.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "verificar-estilo": "node scripts/verificar-estilo.mjs"
+    "verificar-estilo": "node scripts/verificar-estilo.mjs",
+    "verificar-build": "node scripts/verificar-build.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.5",

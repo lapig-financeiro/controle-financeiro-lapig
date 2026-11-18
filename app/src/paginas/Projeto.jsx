@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { ExternalLink } from 'lucide-preact';
 import { situacaoDasParcelas } from '../../../frontend/js/planejamento-dinheiro.js';
 import {
@@ -16,7 +16,7 @@ import {
   Valor,
   Vazio,
 } from '../componentes/index.js';
-import { urlProjeto } from '../roteador.js';
+import { ehCliqueNavegacaoSimples, urlProjeto } from '../roteador.js';
 import {
   balancetes,
   pendencias,
@@ -50,11 +50,35 @@ const ROTULOS_TIPO_PENDENCIA = {
   outro: 'Outro',
 };
 
+const DATA_ISO_RE = /^\d{4}-\d{2}-\d{2}/;
+
+function numeroFinito(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  const n = typeof valor === 'number' ? valor : Number(valor);
+  return Number.isFinite(n) ? n : null;
+}
+
+function somarGrupos(grupos) {
+  if (!Array.isArray(grupos) || grupos.length === 0) {
+    return { soma: null, invalida: false };
+  }
+  let total = 0;
+  for (const g of grupos) {
+    const v = numeroFinito(g?.saldo_livre);
+    if (v === null) {
+      return { soma: null, invalida: true };
+    }
+    total += v;
+  }
+  return { soma: total, invalida: false };
+}
+
 function situacaoGrupo(grupo, hasBalancete, defasagemMeses) {
   if (!hasBalancete) return 'sem balancete';
-  const livre = Number(grupo?.saldo_livre);
-  if (Number.isFinite(livre) && livre < 0) return 'problema';
-  if (defasagemMeses !== null && defasagemMeses !== undefined && Number(defasagemMeses) >= 2) {
+  const livre = numeroFinito(grupo?.saldo_livre);
+  if (livre !== null && livre < 0) return 'problema';
+  const defasagem = numeroFinito(defasagemMeses);
+  if (defasagem !== null && defasagem >= 2) {
     return 'atenção';
   }
   return 'em dia';
@@ -62,26 +86,40 @@ function situacaoGrupo(grupo, hasBalancete, defasagemMeses) {
 
 function resumirRepasses(repassesDados, hasPlano, hoje) {
   if (!repassesDados) {
-    return { valor: '—', contexto: 'indisponível' };
+    return { valor: <Valor valor={null} motivoSemDado="indisponível" />, contexto: 'indisponível' };
   }
+
+  const recebidoValido = repassesDados.recursos
+    ? numeroFinito(repassesDados.recursos.recebido)
+    : null;
+  const recursosValidos = recebidoValido !== null
+    ? {
+        ...repassesDados.recursos,
+        recebido: recebidoValido,
+        a_receber: numeroFinito(repassesDados.recursos.a_receber) ?? 0,
+      }
+    : null;
 
   const calc = situacaoDasParcelas({
     parcelas: repassesDados.parcelas || [],
-    recursos: repassesDados.recursos || null,
+    recursos: recursosValidos,
     dataBalancete: repassesDados.data_balancete || null,
     hoje,
-    totalPlano:
-      repassesDados.valor_total_plano != null ? Number(repassesDados.valor_total_plano) : null,
+    totalPlano: numeroFinito(repassesDados.valor_total_plano),
   });
 
   if (calc.itens.length === 0) {
-    return { valor: '—', contexto: hasPlano === false ? 'sem plano' : 'sem cronograma' };
+    const motivo = hasPlano === false ? 'sem plano' : 'sem cronograma';
+    return { valor: <Valor valor={null} motivoSemDado={motivo} />, contexto: motivo };
   }
 
   if (calc.recebido === null) {
+    const motivo = repassesDados.data_balancete || repassesDados.recursos
+      ? 'sem dados de recurso'
+      : 'sem balancete';
     return {
-      valor: <Valor valor={null} motivoSemDado="sem balancete" />,
-      contexto: 'sem balancete',
+      valor: <Valor valor={null} motivoSemDado={motivo} />,
+      contexto: motivo,
     };
   }
 
@@ -97,19 +135,27 @@ function resumirRepasses(repassesDados, hasPlano, hoje) {
 
   const total = calc.itens.length;
   const recebidas = calc.itens.filter((i) => i.situacao === 'recebida').length;
-  const atrasadas = calc.itens.filter((i) => i.situacao === 'atrasada').length;
+  const contar = (sit) => calc.itens.filter((i) => i.situacao === sit).length;
+  const atrasadas = contar('atrasada');
+  const parciais = contar('parcial');
+  const notasEmitidas = contar('nota_emitida');
+  const aConfirmar = contar('confirmar');
+  const semData = contar('sem_data');
   const proximaFutura = calc.itens.find((i) => i.situacao === 'futura' && i.mes);
-  const temPendenteConferencia = calc.itens.some((i) =>
-    ['parcial', 'nota_emitida', 'confirmar'].includes(i.situacao)
-  );
 
   let contexto;
   if (atrasadas > 0) {
     contexto = atrasadas === 1 ? '1 parcela atrasada' : `${atrasadas} parcelas atrasadas`;
+  } else if (parciais > 0) {
+    contexto = parciais === 1 ? '1 parcela parcial' : `${parciais} parcelas parciais`;
+  } else if (notasEmitidas > 0) {
+    contexto = notasEmitidas === 1 ? '1 nota emitida' : `${notasEmitidas} notas emitidas`;
+  } else if (aConfirmar > 0) {
+    contexto = aConfirmar === 1 ? '1 parcela a confirmar' : `${aConfirmar} parcelas a confirmar`;
+  } else if (semData > 0) {
+    contexto = semData === 1 ? '1 parcela sem data' : `${semData} parcelas sem data`;
   } else if (proximaFutura) {
     contexto = `próximo em ${dataCompacta(proximaFutura.mes)}`;
-  } else if (temPendenteConferencia) {
-    contexto = 'parcela a confirmar';
   } else if (recebidas === total) {
     contexto = 'todas recebidas';
   } else {
@@ -149,6 +195,8 @@ export function Projeto({
   projectId,
   abaInicial = null,
   resumoCentro = null,
+  centroOculto = false,
+  centroOcultoInfo = null,
   carregandoResumo = false,
   erroResumo = null,
   isAdmin = false,
@@ -156,6 +204,7 @@ export function Projeto({
   onNavegar = null,
   onMudarPendencias = null,
   onRecarregarResumo = null,
+  onMostrarEsteCentro = null,
 }) {
   const [abaAtiva, setAbaAtiva] = useState(abaInicial || 'dinheiro');
   const [saldoSt, setSaldoSt] = useState({ carregando: true, dados: null, erro: null });
@@ -174,6 +223,25 @@ export function Projeto({
   const [confirmacao, setConfirmacao] = useState(null);
   const [salvandoPendenciaId, setSalvandoPendenciaId] = useState(null);
   const [erroResolucao, setErroResolucao] = useState(null);
+  const [mostrandoCentro, setMostrandoCentro] = useState(false);
+  const [erroMostrarCentro, setErroMostrarCentro] = useState(null);
+
+  const montadoRef = useRef(true);
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+
+  const genSaldoRef = useRef(0);
+  const genRepassesRef = useRef(0);
+  const genDocsRef = useRef(0);
+  const genPendenciasRef = useRef(0);
+  const genResolucaoRef = useRef(0);
+
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     setAbaAtiva(abaInicial || 'dinheiro');
@@ -184,21 +252,35 @@ export function Projeto({
     setGrupoSelecionado(null);
     setConfirmacao(null);
     setErroResolucao(null);
+    setErroMostrarCentro(null);
+    setSalvandoPendenciaId(null);
   }, [projectId]);
 
   const carregarSaldo = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genSaldoRef.current;
     setSaldoSt({ carregando: true, dados: null, erro: null });
-    const res = await saldoLivre(projectId);
+    const res = await saldoLivre(id);
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genSaldoRef.current) {
+      return;
+    }
     setSaldoSt({ carregando: false, dados: res.dados, erro: res.erro });
   }, [projectId]);
 
   const carregarRepasses = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genRepassesRef.current;
     setRepassesSt({ carregando: true, dados: null, erro: null });
-    const res = await repasses(projectId);
+    const res = await repasses(id);
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genRepassesRef.current) {
+      return;
+    }
     setRepassesSt({ carregando: false, dados: res.dados, erro: res.erro });
   }, [projectId]);
 
   const carregarDocumentos = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genDocsRef.current;
     setDocsSt({
       carregando: true,
       balancetes: [],
@@ -206,7 +288,10 @@ export function Projeto({
       erroBalancetes: null,
       erroPlanos: null,
     });
-    const [resBal, resPl] = await Promise.all([balancetes(projectId), planos(projectId)]);
+    const [resBal, resPl] = await Promise.all([balancetes(id), planos(id)]);
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genDocsRef.current) {
+      return;
+    }
     setDocsSt({
       carregando: false,
       balancetes: Array.isArray(resBal.dados) ? resBal.dados : [],
@@ -217,8 +302,13 @@ export function Projeto({
   }, [projectId]);
 
   const carregarPendencias = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genPendenciasRef.current;
     setPendenciasSt({ carregando: true, dados: [], erro: null });
-    const res = await pendencias(projectId);
+    const res = await pendencias(id);
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genPendenciasRef.current) {
+      return;
+    }
     setPendenciasSt({
       carregando: false,
       dados: Array.isArray(res.dados) ? res.dados : [],
@@ -227,12 +317,87 @@ export function Projeto({
   }, [projectId]);
 
   useEffect(() => {
-    if (!projectId) return;
+    const saldoRef = genSaldoRef;
+    const repassesRef = genRepassesRef;
+    const docsRef = genDocsRef;
+    const pendenciasRef = genPendenciasRef;
+    const resolucaoRef = genResolucaoRef;
+
+    if (!projectId || centroOculto) {
+      return () => {
+        saldoRef.current += 1;
+        repassesRef.current += 1;
+        docsRef.current += 1;
+        pendenciasRef.current += 1;
+        resolucaoRef.current += 1;
+      };
+    }
+
     carregarSaldo();
     carregarRepasses();
     carregarDocumentos();
     carregarPendencias();
-  }, [projectId, carregarSaldo, carregarRepasses, carregarDocumentos, carregarPendencias]);
+
+    return () => {
+      saldoRef.current += 1;
+      repassesRef.current += 1;
+      docsRef.current += 1;
+      pendenciasRef.current += 1;
+      resolucaoRef.current += 1;
+    };
+  }, [projectId, centroOculto, carregarSaldo, carregarRepasses, carregarDocumentos, carregarPendencias]);
+
+  const voltarProps = {
+    rotulo: 'Projetos',
+    href: '#/projetos',
+    onClick: onNavegar
+      ? (e) => {
+          if (!ehCliqueNavegacaoSimples(e)) return;
+          e.preventDefault();
+          onNavegar('#/projetos');
+        }
+      : undefined,
+  };
+
+  const lidarMostrarEsteCentro = async () => {
+    if (!onMostrarEsteCentro || mostrandoCentro) return;
+    setMostrandoCentro(true);
+    setErroMostrarCentro(null);
+    try {
+      const res = await onMostrarEsteCentro();
+      if (montadoRef.current && res?.erro) {
+        setErroMostrarCentro(res.erro);
+      }
+    } catch {
+      if (montadoRef.current) {
+        setErroMostrarCentro('Não foi possível reexibir este centro.');
+      }
+    } finally {
+      if (montadoRef.current) {
+        setMostrandoCentro(false);
+      }
+    }
+  };
+
+  if (centroOculto && !carregandoResumo) {
+    const tituloOculto = centroOcultoInfo?.name
+      ? (centroOcultoInfo.code ? `${centroOcultoInfo.name} · ${centroOcultoInfo.code}` : centroOcultoInfo.name)
+      : 'Centro oculto';
+
+    return (
+      <div class="conteudo">
+        <CabecalhoPagina voltar={voltarProps} titulo={tituloOculto} />
+        {erroMostrarCentro && (
+          <AvisoFalha mensagem={erroMostrarCentro} aoTentarNovamente={lidarMostrarEsteCentro} />
+        )}
+        <Vazio
+          mensagem="Este centro está oculto pelo seu filtro de visão."
+          rotuloBotao={onMostrarEsteCentro ? 'Mostrar este centro' : ''}
+          aoClicar={onMostrarEsteCentro ? lidarMostrarEsteCentro : null}
+        />
+      </div>
+    );
+  }
 
   const nomeProjeto = resumoCentro?.name || saldoSt.dados?.project_name || 'Centro de custo';
   const codigoProjeto = resumoCentro?.code || '';
@@ -243,14 +408,17 @@ export function Projeto({
   let contextoVigencia = null;
   if (endDate) {
     const textoMeses =
-      meses === 0
-        ? 'vigência encerrada'
-        : meses === 1
-          ? 'falta 1 mês'
-          : `faltam ${meses} meses`;
+      meses === null
+        ? null
+        : meses === 0
+          ? 'vigência encerrada'
+          : meses === 1
+            ? 'falta 1 mês'
+            : `faltam ${meses} meses`;
     contextoVigencia = (
       <>
-        Vigência até <Valor valor={endDate} tipo="data-completa" /> · {textoMeses} ·{' '}
+        Vigência até <Valor valor={endDate} tipo="data-completa" />
+        {textoMeses ? ` · ${textoMeses}` : ''} ·{' '}
         <span class="projeto__nota-discreta">vigência digitada</span>
       </>
     );
@@ -270,10 +438,13 @@ export function Projeto({
     : resumoCentro?.situacao !== 'sem balancete';
   const defasagemMeses = saldoSt.dados?.balancete_defasagem_meses ?? null;
   const dataRef = resumoCentro?.data_referencia || saldoSt.dados?.data_referencia || null;
+  const avisosRpc = Array.isArray(saldoSt.dados?.avisos)
+    ? saldoSt.dados.avisos.filter((a) => typeof a === 'string' && a.trim())
+    : [];
 
   const grupos = Array.isArray(saldoSt.dados?.grupos) ? saldoSt.dados.grupos : [];
   const rubricas = Array.isArray(saldoSt.dados?.rubricas) ? saldoSt.dados.rubricas : [];
-  const podeAbrirOrigem = grupos.length > 0 && resumoCentro?.livre != null;
+  const podeAbrirOrigem = grupos.length > 0 && numeroFinito(resumoCentro?.livre) !== null;
 
   // Destaque principal: sempre o `livre` do resumo (nunca recalculado).
   let valorPrincipal = <Valor valor={null} motivoSemDado="sem dado" />;
@@ -291,7 +462,7 @@ export function Projeto({
   } else if (carregandoResumo && !resumoCentro) {
     valorPrincipal = <Valor valor={null} motivoSemDado="consultando" />;
     contextoPrincipal = 'consultando';
-  } else if (resumoCentro && resumoCentro.livre !== null && resumoCentro.livre !== undefined) {
+  } else if (resumoCentro && numeroFinito(resumoCentro.livre) !== null) {
     valorPrincipal = (
       <Valor
         valor={resumoCentro.livre}
@@ -308,15 +479,23 @@ export function Projeto({
     ? `Livres para gastar até ${dataCompacta(endDate)}`
     : 'Livres para gastar';
 
-  // Bolsas por mês (Correções #2 e #3).
+  // Bolsas por mês (Correções #2, #3 e 2ª rodada itens 4 e 10).
   const temArrayBolsas = Boolean(saldoSt.dados && hasPlano && Array.isArray(saldoSt.dados.bolsas_ativas));
   const bolsasTodas = temArrayBolsas ? saldoSt.dados.bolsas_ativas : [];
-  const bolsasVigentes = bolsasTodas.filter(
-    (b) => b?.end_date && String(b.end_date).slice(0, 10) >= hoje
-  );
-  const bolsasEncerradasJanela = bolsasTodas.filter(
-    (b) => !b?.end_date || String(b.end_date).slice(0, 10) < hoje
-  );
+  const bolsasVigentes = [];
+  const bolsasEncerradas = [];
+  const bolsasSemData = [];
+
+  for (const bolsa of bolsasTodas) {
+    const raw = typeof bolsa?.end_date === 'string' ? bolsa.end_date.slice(0, 10) : '';
+    if (!DATA_ISO_RE.test(raw)) {
+      bolsasSemData.push(bolsa);
+    } else if (raw >= hoje) {
+      bolsasVigentes.push(bolsa);
+    } else {
+      bolsasEncerradas.push(bolsa);
+    }
+  }
 
   let valorBolsas = <Valor valor={null} motivoSemDado="sem dado" />;
   let contextoBolsas = 'sem dado';
@@ -330,18 +509,33 @@ export function Projeto({
     valorBolsas = <Valor valor={null} motivoSemDado="sem plano" />;
     contextoBolsas = 'sem plano';
   } else {
-    const somaBolsasMes = bolsasVigentes.reduce((s, b) => s + Number(b.valor_mensal || 0), 0);
-    valorBolsas = <Valor valor={somaBolsasMes} centavos={false} />;
-    if (bolsasVigentes.length === 0) {
-      contextoBolsas = 'nenhum bolsista ativo';
-    } else if (bolsasVigentes.length === 1) {
-      contextoBolsas = '1 bolsista ativo';
+    let somaBolsasMes = 0;
+    let valorIncompleto = false;
+    for (const b of bolsasVigentes) {
+      const mensal = numeroFinito(b?.valor_mensal);
+      if (mensal === null) {
+        valorIncompleto = true;
+        break;
+      }
+      somaBolsasMes += mensal;
+    }
+
+    if (valorIncompleto) {
+      valorBolsas = <Valor valor={null} motivoSemDado="Há bolsa ativa sem valor mensal válido" />;
+      contextoBolsas = 'valor incompleto';
     } else {
-      contextoBolsas = `${bolsasVigentes.length} bolsistas ativos`;
+      valorBolsas = <Valor valor={somaBolsasMes} centavos={false} />;
+      if (bolsasVigentes.length === 0) {
+        contextoBolsas = 'nenhum bolsista ativo';
+      } else if (bolsasVigentes.length === 1) {
+        contextoBolsas = '1 bolsista ativo';
+      } else {
+        contextoBolsas = `${bolsasVigentes.length} bolsistas ativos`;
+      }
     }
   }
 
-  // Repasses (Correção #4).
+  // Repasses (Correção #4 e 2ª rodada itens 4 e 9).
   const resumoRep = repassesSt.carregando
     ? { valor: <Valor valor={null} motivoSemDado="consultando" />, contexto: 'consultando' }
     : repassesSt.erro
@@ -379,9 +573,14 @@ export function Projeto({
   };
 
   const confirmarResolucao = async (item, situacao) => {
+    const idProjeto = projectId;
+    const gen = ++genResolucaoRef.current;
     setSalvandoPendenciaId(item.id);
     setErroResolucao(null);
     const res = await resolverPendencia(item.id, situacao);
+    if (!montadoRef.current || projectIdRef.current !== idProjeto || gen !== genResolucaoRef.current) {
+      return;
+    }
     setSalvandoPendenciaId(null);
 
     if (res.erro) {
@@ -391,15 +590,19 @@ export function Projeto({
 
     setConfirmacao(null);
     await carregarPendencias();
-    onMudarPendencias?.();
+    if (montadoRef.current && projectIdRef.current === idProjeto && gen === genResolucaoRef.current) {
+      onMudarPendencias?.();
+    }
   };
 
-  const somaGrupos = grupos.reduce((s, g) => s + Number(g?.saldo_livre || 0), 0);
+  const { soma: somaGrupos, invalida: somaGruposInvalida } = somarGrupos(grupos);
+  const livreResumoNum = numeroFinito(resumoCentro?.livre);
   const divergeDoResumo =
-    resumoCentro?.livre != null &&
     grupos.length > 0 &&
-    Math.abs(somaGrupos - Number(resumoCentro.livre)) > 0.01;
+    (somaGruposInvalida ||
+      (livreResumoNum !== null && Math.abs(somaGrupos - livreResumoNum) > 0.01));
 
+  const temErroDocs = Boolean(docsSt.erroBalancetes || docsSt.erroPlanos);
   const documentosUnificados = [
     ...docsSt.balancetes.map((b, idx) => ({
       id: `bal-${b.id ?? idx}`,
@@ -477,6 +680,11 @@ export function Projeto({
     },
   ];
 
+  const bolsasComData = [
+    ...bolsasVigentes.map((b) => ({ ...b, _encerrada: false })),
+    ...bolsasEncerradas.map((b) => ({ ...b, _encerrada: true })),
+  ];
+
   const itensAbas = [
     {
       id: 'dinheiro',
@@ -486,12 +694,17 @@ export function Projeto({
       ) : saldoSt.erro ? (
         <AvisoFalha mensagem={saldoSt.erro} aoTentarNovamente={carregarSaldo} />
       ) : !hasPlano || grupos.length === 0 ? (
-        <Vazio mensagem="Este centro ainda não tem plano de trabalho ativo." />
+        <>
+          {avisosRpc.map((aviso, idx) => (
+            <AvisoFalha key={idx} mensagem={aviso} />
+          ))}
+          <Vazio mensagem="Este centro ainda não tem plano de trabalho ativo." />
+        </>
       ) : (
         <>
-          {!hasBalancete && (
-            <AvisoFalha mensagem="Sem balancete importado: realizado, comprometido e livre aguardam o documento." />
-          )}
+          {avisosRpc.map((aviso, idx) => (
+            <AvisoFalha key={idx} mensagem={aviso} />
+          ))}
           <Tabela
             colunas={colunasGrupos}
             dados={grupos}
@@ -506,55 +719,86 @@ export function Projeto({
     {
       id: 'bolsas',
       rotulo: 'Bolsas',
-      contagem: !saldoSt.carregando && temArrayBolsas ? bolsasVigentes.length : null,
+      contagem: !saldoSt.carregando && temArrayBolsas ? bolsasTodas.length : null,
       conteudo: saldoSt.carregando ? (
         <Esqueleto variante="tabela" linhas={3} rotulo="Carregando bolsas" />
       ) : saldoSt.erro ? (
         <AvisoFalha mensagem={saldoSt.erro} aoTentarNovamente={carregarSaldo} />
       ) : !hasPlano || !temArrayBolsas ? (
         <Vazio mensagem="Sem plano de trabalho ativo para listar as bolsas deste centro." />
-      ) : bolsasVigentes.length === 0 ? (
-        <>
-          <Vazio mensagem="Nenhuma bolsa ativa neste centro." />
-          {bolsasEncerradasJanela.length > 0 && (
-            <p class="projeto__nota-discreta">
-              {bolsasEncerradasJanela.length}{' '}
-              {bolsasEncerradasJanela.length === 1
-                ? 'bolsa encerrada permanece na janela de compromissos deste balancete.'
-                : 'bolsas encerradas permanecem na janela de compromissos deste balancete.'}
-            </p>
-          )}
-        </>
+      ) : bolsasTodas.length === 0 ? (
+        <Vazio mensagem="Nenhuma bolsa ativa neste centro." />
       ) : (
         <>
-          <Tabela
-            legenda="Bolsas ativas no centro"
-            chaveLinha={(b, idx) => b.scholarship_id ?? idx}
-            colunas={[
-              { chave: 'bolsista', titulo: 'Bolsista' },
-              {
-                chave: 'valor_mensal',
-                titulo: 'Valor por mês (R$)',
-                alinhamento: 'direita',
-                render: (b) => (
-                  <Valor valor={b.valor_mensal} centavos={false} semPrefixo alinhadoDireita />
-                ),
-              },
-              {
-                chave: 'end_date',
-                titulo: 'Até quando',
-                render: (b) => <Valor valor={b.end_date} tipo="data" />,
-              },
-            ]}
-            dados={bolsasVigentes}
-          />
-          {bolsasEncerradasJanela.length > 0 && (
-            <p class="projeto__nota-discreta">
-              {bolsasEncerradasJanela.length}{' '}
-              {bolsasEncerradasJanela.length === 1
-                ? 'bolsa encerrada também compõe os compromissos da janela do balancete.'
-                : 'bolsas encerradas também compõem os compromissos da janela do balancete.'}
-            </p>
+          {bolsasSemData.length > 0 && (
+            <div class="projeto__subsecao-bolsas">
+              <AvisoFalha mensagem="Há bolsas sem data de término informada; elas não entram no total mensal de bolsas ativas." />
+              <h3 class="projeto__subtitulo-painel">Bolsas sem data de término</h3>
+              <Tabela
+                legenda="Bolsas sem data de término"
+                chaveLinha={(b, idx) => b.scholarship_id ?? `sd-${idx}`}
+                colunas={[
+                  { chave: 'bolsista', titulo: 'Bolsista' },
+                  {
+                    chave: 'valor_mensal',
+                    titulo: 'Valor por mês (R$)',
+                    alinhamento: 'direita',
+                    render: (b) => (
+                      <Valor
+                        valor={numeroFinito(b.valor_mensal)}
+                        centavos={false}
+                        semPrefixo
+                        alinhadoDireita
+                        motivoSemDado="sem valor"
+                      />
+                    ),
+                  },
+                  {
+                    chave: 'end_date',
+                    titulo: 'Até quando',
+                    render: () => <Valor valor={null} motivoSemDado="sem data" />,
+                  },
+                ]}
+                dados={bolsasSemData}
+              />
+            </div>
+          )}
+
+          {bolsasComData.length > 0 && (
+            <Tabela
+              legenda="Bolsas do centro"
+              chaveLinha={(b, idx) => b.scholarship_id ?? idx}
+              colunas={[
+                { chave: 'bolsista', titulo: 'Bolsista' },
+                {
+                  chave: 'valor_mensal',
+                  titulo: 'Valor por mês (R$)',
+                  alinhamento: 'direita',
+                  render: (b) => (
+                    <Valor
+                      valor={numeroFinito(b.valor_mensal)}
+                      centavos={false}
+                      semPrefixo
+                      alinhadoDireita
+                      motivoSemDado="sem valor"
+                    />
+                  ),
+                },
+                {
+                  chave: 'end_date',
+                  titulo: 'Até quando',
+                  render: (b) =>
+                    b._encerrada ? (
+                      <span class="projeto__bolsa-encerrada">
+                        encerrada em <Valor valor={b.end_date} tipo="data" />
+                      </span>
+                    ) : (
+                      <Valor valor={b.end_date} tipo="data" />
+                    ),
+                },
+              ]}
+              dados={bolsasComData}
+            />
           )}
         </>
       ),
@@ -562,10 +806,11 @@ export function Projeto({
     {
       id: 'documentos',
       rotulo: 'Documentos',
-      contagem:
-        !docsSt.carregando && (!docsSt.erroBalancetes || !docsSt.erroPlanos)
-          ? documentosUnificados.length
-          : null,
+      contagem: docsSt.carregando
+        ? null
+        : temErroDocs
+          ? '—'
+          : documentosUnificados.length,
       conteudo: docsSt.carregando ? (
         <Esqueleto variante="tabela" linhas={4} rotulo="Carregando documentos" />
       ) : docsSt.erroBalancetes && docsSt.erroPlanos ? (
@@ -581,20 +826,23 @@ export function Projeto({
           {docsSt.erroPlanos && (
             <AvisoFalha mensagem={docsSt.erroPlanos} aoTentarNovamente={carregarDocumentos} />
           )}
-          <Tabela
-            legenda="Planos e balancetes do centro"
-            colunas={[
-              { chave: 'tipo', titulo: 'Tipo' },
-              { chave: 'nome', titulo: 'Documento' },
-              {
-                chave: 'data',
-                titulo: 'Data',
-                render: (d) => <Valor valor={d.data} tipo="data-completa" />,
-              },
-            ]}
-            dados={documentosUnificados}
-            vazio="Nenhum documento registrado neste centro."
-          />
+          {documentosUnificados.length > 0 ? (
+            <Tabela
+              legenda="Planos e balancetes do centro"
+              colunas={[
+                { chave: 'tipo', titulo: 'Tipo' },
+                { chave: 'nome', titulo: 'Documento' },
+                {
+                  chave: 'data',
+                  titulo: 'Data',
+                  render: (d) => <Valor valor={d.data} tipo="data-completa" />,
+                },
+              ]}
+              dados={documentosUnificados}
+            />
+          ) : !temErroDocs ? (
+            <Vazio mensagem="Nenhum documento registrado neste centro." />
+          ) : null}
         </>
       ),
     },
@@ -715,16 +963,7 @@ export function Projeto({
   return (
     <div class="conteudo">
       <CabecalhoPagina
-        voltar={{
-          rotulo: 'Projetos',
-          href: '#/projetos',
-          onClick: onNavegar
-            ? (e) => {
-                e.preventDefault();
-                onNavegar('#/projetos');
-              }
-            : undefined,
-        }}
+        voltar={voltarProps}
         titulo={tituloPagina}
         contexto={contextoVigencia}
         acoes={
@@ -781,13 +1020,17 @@ export function Projeto({
       >
         <Destaque
           rotulo={rotuloPrincipal}
-          valor={<Valor valor={resumoCentro?.livre ?? null} centavos />}
+          valor={<Valor valor={livreResumoNum} centavos />}
           contexto={dataRef ? `balancete de ${dataCompacta(dataRef)}` : 'soma dos grupos abaixo'}
         />
 
         {divergeDoResumo && (
           <AvisoFalha
-            mensagem={`A soma dos grupos (${dinheiro(somaGrupos, { centavos: true })}) difere do valor exibido (${dinheiro(resumoCentro?.livre, { centavos: true })}).`}
+            mensagem={
+              somaGruposInvalida
+                ? 'Não foi possível somar as partes porque há grupo sem valor válido.'
+                : `A soma dos grupos (${dinheiro(somaGrupos, { centavos: true })}) difere do valor exibido (${dinheiro(livreResumoNum, { centavos: true })}).`
+            }
           />
         )}
 
@@ -800,16 +1043,17 @@ export function Projeto({
                 </dt>
                 <dd>
                   <Valor
-                    valor={g.saldo_livre}
+                    valor={numeroFinito(g.saldo_livre)}
                     centavos
-                    problema={Number(g.saldo_livre) < 0}
+                    problema={numeroFinito(g.saldo_livre) !== null && Number(g.saldo_livre) < 0}
+                    motivoSemDado="valor indisponível"
                   />
                 </dd>
               </div>
               <span class="projeto__formula">
-                Previsto <Valor valor={g.previsto} centavos /> − Realizado{' '}
-                <Valor valor={g.realizado} centavos /> − Comprometido{' '}
-                <Valor valor={g.compromissos} centavos />
+                Previsto <Valor valor={numeroFinito(g.previsto)} centavos motivoSemDado="sem dado" /> − Realizado{' '}
+                <Valor valor={numeroFinito(g.realizado)} centavos motivoSemDado="sem dado" /> − Comprometido{' '}
+                <Valor valor={numeroFinito(g.compromissos)} centavos motivoSemDado="sem dado" />
               </span>
             </div>
           ))}
@@ -817,7 +1061,11 @@ export function Projeto({
 
         <div class="projeto__par projeto__par--total">
           <span>Soma das partes</span>
-          <Valor valor={somaGrupos} centavos />
+          <Valor
+            valor={somaGruposInvalida ? null : somaGrupos}
+            centavos
+            motivoSemDado="Há grupo sem valor válido"
+          />
         </div>
       </PainelLateral>
 

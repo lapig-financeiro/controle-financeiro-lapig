@@ -55,6 +55,14 @@ export function urlProjeto(id, aba = null) {
   return base;
 }
 
+export function ehCliqueNavegacaoSimples(evento) {
+  if (!evento) return true;
+  if (evento.defaultPrevented) return false;
+  if (typeof evento.button === 'number' && evento.button !== 0) return false;
+  if (evento.metaKey || evento.ctrlKey || evento.shiftKey || evento.altKey) return false;
+  return true;
+}
+
 export function navegarPara(hash) {
   if (typeof window === 'undefined') return;
   if (window.location.hash !== hash) {

@@ -65,7 +65,7 @@ describe('FiltroVisao e BarraTopo', () => {
     expect(document.querySelector('.barra-topo__filtro')).toBeNull();
   });
 
-  it('agrupa por responsaveis[0] com Sem responsável por último, seleciona co-responsável em Só os de X e limpa em Mostrar todos', async () => {
+  it('agrupa por responsaveis[0] com Sem responsável por último, seleciona co-responsável em Só estes e limpa em Mostrar todos', async () => {
     const salvar = vi.fn().mockResolvedValue({ erro: null });
     render(<FiltroVisao todos={TODOS_EXEMPLO} onSalvar={salvar} />, document.body);
 
@@ -77,10 +77,10 @@ describe('FiltroVisao e BarraTopo', () => {
     );
     expect(grupos).toEqual(['Prof. Renato', 'Profa. Clara', 'Sem responsável']);
 
-    // Atalho "Só os de Profa. Clara" deve manter c1 (responsaveis[0]) e c2 (responsaveis[1]), ocultando só c3.
-    const btnSoClara = Array.from(document.querySelectorAll('.filtro-visao__acao')).find(
-      (b) => b.textContent === 'Só os de Profa. Clara'
-    );
+    // Atalho "Só estes" de Profa. Clara mantém c1 (responsaveis[0]) e c2 (responsaveis[1]), ocultando só c3.
+    const btnSoClara = document.querySelector('button[aria-label="Mostrar só os centros de Profa. Clara"]');
+    expect(btnSoClara).not.toBeNull();
+    expect(btnSoClara.textContent).toBe('Só estes');
     btnSoClara.click();
     await tick();
     expect(salvar).toHaveBeenCalledWith(['c3']);
@@ -92,6 +92,49 @@ describe('FiltroVisao e BarraTopo', () => {
     btnTodos.click();
     await tick();
     expect(salvar).toHaveBeenLastCalledWith([]);
+  });
+
+  it('aplica atualização otimista, ignora segundo clique enquanto salva sem perder foco e reverte se falhar', async () => {
+    let resolver;
+    const salvar = vi.fn().mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolver = r;
+        })
+    );
+
+    render(<FiltroVisao todos={TODOS_EXEMPLO} onSalvar={salvar} />, document.body);
+
+    document.querySelector('.barra-topo__filtro').click();
+    await tick();
+
+    const btnSoClara = document.querySelector('button[aria-label="Mostrar só os centros de Profa. Clara"]');
+    btnSoClara.focus();
+    btnSoClara.click();
+    await tick();
+
+    // Otimista: 2 de 3 centros (apenas c3 oculto), aria-disabled="true" e foco preservado no botão.
+    expect(document.querySelector('.barra-topo__filtro').textContent).toContain('2 de 3 centros');
+    expect(btnSoClara.getAttribute('aria-disabled')).toBe('true');
+    expect(btnSoClara.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(btnSoClara);
+
+    // Segundo clique enquanto ainda salva deve ser ignorado.
+    const btnTodos = Array.from(document.querySelectorAll('.filtro-visao__acao')).find(
+      (b) => b.textContent === 'Mostrar todos'
+    );
+    btnTodos.click();
+    await tick();
+    expect(salvar).toHaveBeenCalledTimes(1);
+
+    // Se falhar, reverte otimismo para 1 de 3 e exibe AvisoFalha.
+    resolver({ erro: 'Falha ao salvar filtro.' });
+    await tick();
+
+    expect(document.querySelector('.barra-topo__filtro').textContent).toContain('1 de 3 centros');
+    expect(document.querySelector('.filtro-visao__erro .aviso-falha').textContent).toContain(
+      'Falha ao salvar filtro.'
+    );
   });
 });
 

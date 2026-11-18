@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'preact/hooks';
 import { AlertTriangle, Bell } from 'lucide-preact';
-import { urlProjeto } from '../roteador.js';
+import { ehCliqueNavegacaoSimples, urlProjeto } from '../roteador.js';
 import { tempoRelativo } from '../util/formato.js';
 import { AvisoFalha } from './AvisoFalha.jsx';
 import { Esqueleto } from './Esqueleto.jsx';
@@ -106,7 +106,7 @@ export function Sino({
                         class="sino__item"
                         onClick={(e) => {
                           setAberto(false);
-                          if (onSelecionar) {
+                          if (onSelecionar && ehCliqueNavegacaoSimples(e)) {
                             e.preventDefault();
                             onSelecionar(item);
                           }

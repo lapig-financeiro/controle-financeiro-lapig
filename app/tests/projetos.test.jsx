@@ -53,14 +53,14 @@ const RESUMO_BASE = {
 };
 
 describe('página Projetos', () => {
-  it('ordena centros alfabeticamente e monta linha de contexto com e sem ocultos', () => {
+  it('ordena centros alfabeticamente e soma o total real (visíveis + ocultos) na linha de contexto', () => {
     render(<Projetos resumo={RESUMO_BASE} isAdmin />, document.body);
 
     const nomes = Array.from(document.querySelectorAll('.projetos__nome')).map((el) => el.textContent);
     expect(nomes).toEqual(['Atlas Hídrico', 'Kalungas Teste', 'Serra Erro', 'Zebra Ambiental']);
 
     const contexto = document.querySelector('.cabecalho-pagina__contexto').textContent;
-    expect(contexto).toContain('4 centros');
+    expect(contexto).toContain('6 centros');
     expect(contexto).toContain('R$ 94,3 mil livres no total');
     expect(contexto).toContain('2 centros sem número');
     expect(contexto).toContain('2 centros ocultos');
@@ -117,7 +117,27 @@ describe('página Projetos', () => {
     expect(linhaErro.textContent).toContain('sem dado');
   });
 
-  it('mostra AvisoFalha em erro e Vazio com Mostrar todos quando há centros ocultos', () => {
+  it('mantém lista e contexto ao recarregar sem piscar esqueleto e preserva ctrl+clique em links', () => {
+    const navegar = vi.fn();
+    render(<Projetos carregando resumo={RESUMO_BASE} onNavegar={navegar} />, document.body);
+
+    expect(document.querySelector('[role="status"]')).toBeNull();
+    expect(document.querySelectorAll('.linha-de-lista')).toHaveLength(4);
+    expect(document.querySelector('.cabecalho-pagina__contexto').textContent).toContain('6 centros');
+
+    const primeiroLink = document.querySelector('.linha-de-lista');
+    const evCtrl = new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
+    primeiroLink.dispatchEvent(evCtrl);
+    expect(evCtrl.defaultPrevented).toBe(false);
+    expect(navegar).not.toHaveBeenCalled();
+
+    const evNormal = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    primeiroLink.dispatchEvent(evNormal);
+    expect(evNormal.defaultPrevented).toBe(true);
+    expect(navegar).toHaveBeenCalledWith('#/projeto/1');
+  });
+
+  it('mostra AvisoFalha em erro e junto do Vazio quando Mostrar todos falha', async () => {
     const recarregar = vi.fn();
     render(
       <Projetos erro="Falha ao consultar centros." onRecarregar={recarregar} />,
@@ -128,7 +148,7 @@ describe('página Projetos', () => {
     document.querySelector('.aviso-falha button').click();
     expect(recarregar).toHaveBeenCalledTimes(1);
 
-    const mostrarTodos = vi.fn();
+    const mostrarTodos = vi.fn().mockResolvedValue({ erro: 'Não foi possível salvar o filtro de visão.' });
     render(
       <Projetos
         resumo={{ centros: [], ocultos: 3, todos: [] }}
@@ -142,6 +162,12 @@ describe('página Projetos', () => {
     const btnMostrar = document.querySelector('.vazio button');
     expect(btnMostrar.textContent).toBe('Mostrar todos');
     btnMostrar.click();
+    await tick();
+
     expect(mostrarTodos).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.aviso-falha').textContent).toContain(
+      'Não foi possível salvar o filtro de visão.'
+    );
+    expect(document.querySelector('.vazio')).not.toBeNull();
   });
 });
