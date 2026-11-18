@@ -52,7 +52,7 @@ select set_config('test063.def',  (select id::text from public.projects where co
 select set_config('test063.inat', (select id::text from public.projects where code = '63.INAT'), true);
 
 -- ------------------------------------------------------------
--- BLOCO 1 — criar_pendencia_v2, idempotência, CPF e isolamento SELECT
+-- BLOCO 1 — criar_pendencia_v2, idempotência, CPF, recência e isolamento SELECT
 -- ------------------------------------------------------------
 -- Professor A (b1), agente (c1) e automação (d1) não criam pendências.
 do $$
@@ -76,25 +76,70 @@ begin
   end loop;
 end $$;
 
--- Admin (a1): validações, criação, atualização de aberta, não reabertura de resolvida.
+-- Item 14: get_filtro_visao_v2 de admin sem linha devolve [] (não null), antes de qualquer set.
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 set local role authenticated;
+do $$
+declare
+  fv jsonb := public.get_filtro_visao_v2();
+begin
+  perform pg_temp.ok(
+    jsonb_typeof(fv -> 'centros_ocultos') = 'array'
+    and jsonb_array_length(fv -> 'centros_ocultos') = 0,
+    'get_filtro_visao_v2 de admin sem linha devolve [] (não null)'
+  );
+end $$;
 
+-- Admin (a1): validações, criação, atualização de aberta, conflitos e não reabertura de resolvida.
 do $$
 declare
   x    uuid := current_setting('test063.x')::uuid;
   y    uuid := current_setting('test063.y')::uuid;
+  inat uuid := current_setting('test063.inat')::uuid;
   r1   jsonb;
   r2   jsonb;
   r_x2 jsonb;
   r_x3 jsonb;
   r_y  jsonb;
   r_g  jsonb;
+  v_st text;
+  v_mg text;
 begin
   -- Chave desconhecida no payload é recusada
   perform pg_temp.falha_com(
     format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
       jsonb_build_object('chave', 'outro:51.X:k1', 'project_id', x, 'tipo', 'outro', 'titulo', 'Ok', 'extra', 1)::text),
+    '22023'
+  );
+
+  -- Projeto inativo é recusado (22023)
+  perform pg_temp.falha_com(
+    format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
+      jsonb_build_object('chave', 'outro:63.INAT:inat', 'project_id', inat, 'tipo', 'outro', 'titulo', 'Inativo')::text),
+    '22023'
+  );
+
+  -- UUID inválido falha com 22023 sem ecoar o payload
+  begin
+    perform public.criar_pendencia_v2(jsonb_build_object(
+      'chave', 'outro:51.X:uuid-ruim', 'project_id', 'invalido-52998224725', 'tipo', 'outro', 'titulo', 'Teste'
+    ));
+    raise exception '063 FALHOU: project_id inválido foi aceito';
+  exception when others then
+    get stacked diagnostics v_st = returned_sqlstate, v_mg = message_text;
+    perform pg_temp.ok(v_st = '22023' and position('invalido-52998224725' in v_mg) = 0,
+      'project_id inválido falha com 22023 sem ecoar o payload');
+  end;
+
+  -- detalhe precisa ser objeto JSON (nulo -> '{}')
+  perform pg_temp.falha_com(
+    format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
+      jsonb_build_object('chave', 'outro:51.X:det-arr', 'project_id', x, 'tipo', 'outro', 'titulo', 'Det array', 'detalhe', '[1,2]'::jsonb)::text),
+    '22023'
+  );
+  perform pg_temp.falha_com(
+    format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
+      jsonb_build_object('chave', 'outro:51.X:det-txt', 'project_id', x, 'tipo', 'outro', 'titulo', 'Det texto', 'detalhe', 'texto')::text),
     '22023'
   );
 
@@ -122,10 +167,10 @@ begin
     'project_id', x,
     'tipo', 'balancete',
     'titulo', 'Conta sem rubrica (inicial)',
-    'detalhe', jsonb_build_object('conta', '7.1.3.99.01'),
+    'detalhe', null,
     'origem', 'sistema'
   ));
-  perform pg_temp.ok((r1 ->> 'criada')::boolean = true and r1 ->> 'situacao' = 'aberta', 'criou pendência 1');
+  perform pg_temp.ok((r1 ->> 'criada')::boolean = true and r1 ->> 'situacao' = 'aberta', 'criou pendência 1 com detalhe null -> {}');
 
   r2 := public.criar_pendencia_v2(jsonb_build_object(
     'chave', 'balancete:51.X:conta-sem-rubrica:2026-10',
@@ -146,7 +191,19 @@ begin
     'aberta teve título e detalhe atualizados sem duplicar'
   );
 
-  -- Cria outra em 51.X, resolve e tenta recriar pela mesma chave -> NÃO reabre
+  -- Mesma chave com project_id ou tipo diferente é recusada (22023)
+  perform pg_temp.falha_com(
+    format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
+      jsonb_build_object('chave', 'balancete:51.X:conta-sem-rubrica:2026-10', 'project_id', y, 'tipo', 'balancete', 'titulo', 'Outro centro')::text),
+    '22023'
+  );
+  perform pg_temp.falha_com(
+    format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
+      jsonb_build_object('chave', 'balancete:51.X:conta-sem-rubrica:2026-10', 'project_id', x, 'tipo', 'plano', 'titulo', 'Outro tipo')::text),
+    '22023'
+  );
+
+  -- Cria outra em 51.X, resolve e tenta recriar pela mesma chave -> NÃO reabre; e conflito de tipo/centro também falha
   r_x2 := public.criar_pendencia_v2(jsonb_build_object(
     'chave', 'plano:51.X:fechada-nao-reabre',
     'project_id', x,
@@ -172,6 +229,11 @@ begin
   perform pg_temp.ok(
     (select titulo = 'Título original resolvido' from public.pendencias where id = (r_x2 ->> 'id')::uuid),
     'pendência resolvida manteve título original'
+  );
+  perform pg_temp.falha_com(
+    format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
+      jsonb_build_object('chave', 'plano:51.X:fechada-nao-reabre', 'project_id', y, 'tipo', 'plano', 'titulo', 'Conflito')::text),
+    '22023'
   );
 
   -- Cria em 51.Y e uma pendência geral (sem centro)
@@ -200,10 +262,15 @@ end $$;
 
 reset role;
 
--- Insere via superuser uma resolvida há 91 dias (fora da janela) e uma aberta antiga (dentro).
+-- Insere via superuser casos de recência e de centro inativo:
+--   • aberta antiga (120d) em 51.X (aparece)
+--   • resolvida há 91d em 51.X (fica fora)
+--   • criada há 200d e resolvida há 5d em 51.X (aparece - item 12)
+--   • aberta e resolvida em 63.INAT (só a aberta aparece para admin; nenhuma para b1 - itens 4 e 15)
 do $$
 declare
-  x uuid := current_setting('test063.x')::uuid;
+  x    uuid := current_setting('test063.x')::uuid;
+  inat uuid := current_setting('test063.inat')::uuid;
   v_old_open uuid;
 begin
   insert into public.pendencias (chave, project_id, tipo, titulo, situacao, origem, criada_em)
@@ -213,18 +280,29 @@ begin
   insert into public.pendencias (chave, project_id, tipo, titulo, situacao, origem, criada_em, resolvida_em)
   values ('contrato:51.X:antiga-resolvida', x, 'contrato', 'Resolvida há 91 dias', 'resolvida', 'sistema', now() - interval '100 days', now() - interval '91 days');
 
+  insert into public.pendencias (chave, project_id, tipo, titulo, situacao, origem, criada_em, resolvida_em)
+  values ('contrato:51.X:200d-res5d', x, 'contrato', 'Criada há 200d, resolvida há 5d', 'resolvida', 'sistema', now() - interval '200 days', now() - interval '5 days');
+
+  insert into public.pendencias (chave, project_id, tipo, titulo, situacao, origem, criada_em)
+  values ('outro:63.INAT:aberta', inat, 'outro', 'Aberta de centro inativo', 'aberta', 'sistema', now() - interval '10 days');
+
+  insert into public.pendencias (chave, project_id, tipo, titulo, situacao, origem, criada_em, resolvida_em)
+  values ('outro:63.INAT:resolvida', inat, 'outro', 'Resolvida de centro inativo', 'resolvida', 'sistema', now() - interval '10 days', now() - interval '2 days');
+
   perform set_config('test063.px_old_open', v_old_open::text, true);
 end $$;
 
--- Professor A (b1): vê só 51.X (abertas primeiro); não vê 51.Y nem geral; listar_pendencias_v2(y) falha.
+-- Professor A (b1): vê só 51.X (abertas primeiro, incluindo a de 200d resolvida há 5d; sem inativo, sem 91d, sem 51.Y, sem geral).
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
 set local role authenticated;
 
 do $$
 declare
-  x uuid := current_setting('test063.x')::uuid;
-  y uuid := current_setting('test063.y')::uuid;
-  l jsonb;
+  x    uuid := current_setting('test063.x')::uuid;
+  y    uuid := current_setting('test063.y')::uuid;
+  inat uuid := current_setting('test063.inat')::uuid;
+  l    jsonb;
+  lx   jsonb;
 begin
   perform pg_temp.ok(
     not exists (select 1 from public.pendencias where project_id = y or project_id is null),
@@ -237,19 +315,35 @@ begin
 
   l := public.listar_pendencias_v2();
   perform pg_temp.ok(
-    jsonb_array_length(l) = 3
+    jsonb_array_length(l) = 4
     and (l -> 0 ->> 'situacao') = 'aberta'
     and (l -> 1 ->> 'situacao') = 'aberta'
-    and (l -> 2 ->> 'situacao') = 'resolvida',
-    'professor A vê 2 abertas (inclusive >90d) antes da resolvida recente, sem a de 91 dias nem 51.Y/geral'
+    and (l -> 2 ->> 'situacao') = 'resolvida'
+    and (l -> 3 ->> 'situacao') = 'resolvida'
+    and exists (select 1 from jsonb_array_elements(l) el where el ->> 'titulo' = 'Criada há 200d, resolvida há 5d'),
+    'professor A vê 2 abertas + 2 resolvidas recentes (incl. criada 200d/resolvida 5d), sem 91d nem 63.INAT'
   );
   perform pg_temp.ok(
     not exists (
       select 1 from jsonb_array_elements(l) el
-       where el ->> 'project_id' = y::text or el -> 'project_id' = 'null'::jsonb
+       where el ->> 'project_id' in (y::text, inat::text)
+          or el -> 'project_id' = 'null'::jsonb
           or el ->> 'titulo' = 'Resolvida há 91 dias'
     ),
-    'listar_pendencias_v2 de b1 não vaza 51.Y, geral nem resolvida > 90d'
+    'listar_pendencias_v2() de b1 não vaza 51.Y, 63.INAT, geral nem resolvida > 90d'
+  );
+
+  -- Item 11: caso positivo de listar_pendencias_v2(<centro>) para professor
+  lx := public.listar_pendencias_v2(x);
+  perform pg_temp.ok(
+    jsonb_array_length(lx) = 4
+    and not exists (
+      select 1 from jsonb_array_elements(lx) el
+       where el ->> 'project_id' is distinct from x::text
+          or el ->> 'code' is distinct from '51.X'
+    )
+    and exists (select 1 from jsonb_array_elements(lx) el where el ->> 'titulo' = 'Criada há 200d, resolvida há 5d'),
+    'listar_pendencias_v2(x) devolve apenas as 4 pendências válidas de 51.X para b1'
   );
 
   perform pg_temp.falha_com(format('select public.listar_pendencias_v2(%L::uuid)', y), null, 'Acesso negado%');
@@ -257,13 +351,15 @@ end $$;
 
 reset role;
 
--- Professor B (b2): vê só 51.Y; Admin (a1): vê todas (abertas + resolvidas recentes, exclui > 90d).
+-- Professor B (b2): vê só 51.Y (geral e por centro). Admin (a1): vê abertas (incl. geral e 63.INAT aberta) + resolvidas recentes.
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b2', false);
 set local role authenticated;
 select pg_temp.ok(
   jsonb_array_length(public.listar_pendencias_v2()) = 1
-  and (public.listar_pendencias_v2() -> 0 ->> 'project_id') = current_setting('test063.y'),
-  'professor B vê só a pendência de 51.Y'
+  and (public.listar_pendencias_v2() -> 0 ->> 'project_id') = current_setting('test063.y')
+  and jsonb_array_length(public.listar_pendencias_v2(current_setting('test063.y')::uuid)) = 1
+  and (public.listar_pendencias_v2(current_setting('test063.y')::uuid) -> 0 ->> 'code') = '51.Y',
+  'professor B vê só a pendência de 51.Y (geral e com p_project_id)'
 );
 reset role;
 
@@ -274,23 +370,27 @@ declare
   l jsonb := public.listar_pendencias_v2();
 begin
   perform pg_temp.ok(
-    jsonb_array_length(l) = 5
-    and exists (select 1 from jsonb_array_elements(l) el where el -> 'project_id' = 'null'::jsonb),
-    'admin vê 5 pendências (4 abertas incl. sem centro + 1 resolvida recente; exclui 91d)'
+    jsonb_array_length(l) = 7
+    and exists (select 1 from jsonb_array_elements(l) el where el -> 'project_id' = 'null'::jsonb)
+    and exists (select 1 from jsonb_array_elements(l) el where el ->> 'titulo' = 'Aberta de centro inativo')
+    and not exists (select 1 from jsonb_array_elements(l) el where el ->> 'titulo' = 'Resolvida de centro inativo')
+    and exists (select 1 from jsonb_array_elements(l) el where el ->> 'titulo' = 'Criada há 200d, resolvida há 5d'),
+    'admin vê 7 pendências (5 abertas incl. sem centro e inativo aberto + 2 resolvidas recentes; exclui 91d e inativo fechado)'
   );
   perform pg_temp.ok(
-    (l -> 4 ->> 'situacao') = 'resolvida'
-    and (l -> 0 ->> 'situacao') = 'aberta'
-    and (l -> 3 ->> 'situacao') = 'aberta',
+    (l -> 0 ->> 'situacao') = 'aberta'
+    and (l -> 4 ->> 'situacao') = 'aberta'
+    and (l -> 5 ->> 'situacao') = 'resolvida'
+    and (l -> 6 ->> 'situacao') = 'resolvida',
     'abertas vêm antes das resolvidas'
   );
 end $$;
 reset role;
 
-do $$ begin raise notice 'BLOCO 1 ok: criação, upsert, não reabertura, CPF, recência 90d e isolamento por centro'; end $$;
+do $$ begin raise notice 'BLOCO 1 ok: criação, conflitos, CPF, recência 90d, inativo e isolamento por centro'; end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 2 — Escrita direta bloqueada em pendencias e filtro_visao (professor e agente)
+-- BLOCO 2 — Escrita direta bloqueada em pendencias e filtro_visao + gatilho de CPF
 -- ------------------------------------------------------------
 do $$
 begin
@@ -303,12 +403,17 @@ begin
          and (t.tgtype & 1) = 0 and (t.tgtype & 2) <> 0 and (t.tgtype & (4|8|16)) = (4|8|16)
     ) and exists (
       select 1 from pg_trigger t
+       where t.tgrelid = 'public.pendencias'::regclass
+         and t.tgname = 'trg_pendencias_sem_cpf'
+         and (t.tgtype & 1) <> 0 and (t.tgtype & 2) <> 0 and (t.tgtype & (4|16)) = (4|16)
+    ) and exists (
+      select 1 from pg_trigger t
        where t.tgrelid = 'public.filtro_visao'::regclass
          and t.tgname = 'trg_bloqueia_agente'
          and t.tgqual is null
          and (t.tgtype & 1) = 0 and (t.tgtype & 2) <> 0 and (t.tgtype & (4|8|16)) = (4|8|16)
     ),
-    'trg_bloqueia_agente presente no catálogo para pendencias e filtro_visao'
+    'gatilhos trg_bloqueia_agente e trg_pendencias_sem_cpf presentes no catálogo'
   );
 end $$;
 
@@ -328,8 +433,10 @@ begin
 end $$;
 reset role;
 
--- Com grant temporário de teste, testa RLS (professor: insert 42501, update/delete row_count=0)
--- e o gatilho da 051 para o agente (insert/update/delete bloqueados pelo gatilho).
+-- Com grant temporário de teste:
+--   • professor: insert 42501 (RLS), update/delete row_count=0
+--   • agente: insert/update/delete bloqueados por trg_bloqueia_agente (051)
+--   • admin: insert direto com CPF barrado por trg_pendencias_sem_cpf (23514) antes do RLS
 grant insert, update, delete on public.pendencias to authenticated;
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
@@ -368,15 +475,40 @@ begin
 end $$;
 reset role;
 
+-- Item 15: gatilho de CPF na tabela barra escrita direta com CPF (admin e superuser update)
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+set local role authenticated;
+do $$
+declare
+  x text := current_setting('test063.x');
+begin
+  perform pg_temp.falha_com(
+    format($q$insert into public.pendencias (chave, project_id, tipo, titulo) values ('outro:51.X:cpf-trig', %L::uuid, 'outro', 'Bolsista 529.982.247-25')$q$, x),
+    '23514', 'Pendência com CPF%'
+  );
+end $$;
+reset role;
+
+select pg_temp.falha_com(
+  format($q$update public.pendencias set detalhe = '{"cpf":"52998224725"}'::jsonb where id = %L::uuid$q$, current_setting('test063.px1')),
+  '23514', 'Pendência com CPF%'
+);
+
 revoke insert, update, delete on public.pendencias from authenticated;
 
--- filtro_visao: professor falha no RLS e agente falha no gatilho 051.
+-- Item 10: Admin grava linha em filtro_visao ANTES da tentativa do professor; linha sobrevive intacta.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+set local role authenticated;
+select public.set_filtro_visao_v2(array[current_setting('test063.y')::uuid]);
+reset role;
+
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
 set local role authenticated;
 do $$
 declare
   n int;
 begin
+  perform pg_temp.ok((select count(*) = 0 from public.filtro_visao), 'professor vê 0 linhas em filtro_visao');
   perform pg_temp.falha_com(
     $q$insert into public.filtro_visao (user_id, centros_ocultos) values ('00000000-0000-0000-0000-0000000000b1', '{}')$q$,
     '42501'
@@ -403,10 +535,25 @@ begin
 end $$;
 reset role;
 
-do $$ begin raise notice 'BLOCO 2 ok: escrita direta bloqueada em pendencias e filtro_visao (RLS + gatilho 051)'; end $$;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+set local role authenticated;
+do $$
+declare
+  y uuid := current_setting('test063.y')::uuid;
+begin
+  perform pg_temp.ok(
+    (public.get_filtro_visao_v2() -> 'centros_ocultos' ->> 0) = y::text
+    and jsonb_array_length(public.get_filtro_visao_v2() -> 'centros_ocultos') = 1,
+    'linha do admin em filtro_visao sobreviveu intacta às tentativas do professor e agente'
+  );
+  perform public.set_filtro_visao_v2('{}'::uuid[]);
+end $$;
+reset role;
+
+do $$ begin raise notice 'BLOCO 2 ok: escrita direta bloqueada, linha do admin preservada e gatilho de CPF'; end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 3 — resolver_pendencia_v2 (escopo, transições, idempotência, filtro não nega)
+-- BLOCO 3 — resolver_pendencia_v2 (escopo, sem oráculo, transições, idempotência)
 -- ------------------------------------------------------------
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
 set local role authenticated;
@@ -424,10 +571,35 @@ declare
   py1 uuid := current_setting('test063.py1')::uuid;
   pg1 uuid := current_setting('test063.pg1')::uuid;
   res jsonb;
+  s_inex text; m_inex text;
+  s_alh  text; m_alh  text;
+  s_ger  text; m_ger  text;
 begin
-  -- Centro alheio, pendência geral e situação inválida falham
-  perform pg_temp.falha_com(format($q$select public.resolver_pendencia_v2(%L::uuid, 'resolvida')$q$, py1), null, 'Acesso negado%');
-  perform pg_temp.falha_com(format($q$select public.resolver_pendencia_v2(%L::uuid, 'resolvida')$q$, pg1), '42501');
+  -- Item 15 (5): id inexistente, centro alheio e pendência geral devolvem exatamente o mesmo erro (sem oráculo)
+  begin
+    perform public.resolver_pendencia_v2('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 'resolvida');
+    raise exception '063 FALHOU: id inexistente passou';
+  exception when others then
+    get stacked diagnostics s_inex = returned_sqlstate, m_inex = message_text;
+  end;
+  begin
+    perform public.resolver_pendencia_v2(py1, 'resolvida');
+    raise exception '063 FALHOU: centro alheio passou';
+  exception when others then
+    get stacked diagnostics s_alh = returned_sqlstate, m_alh = message_text;
+  end;
+  begin
+    perform public.resolver_pendencia_v2(pg1, 'resolvida');
+    raise exception '063 FALHOU: pendência geral por professor passou';
+  exception when others then
+    get stacked diagnostics s_ger = returned_sqlstate, m_ger = message_text;
+  end;
+  perform pg_temp.ok(
+    s_inex = '42501' and s_alh = '42501' and s_ger = '42501'
+    and m_inex = m_alh and m_inex = m_ger,
+    'resolver_pendencia_v2 devolve o mesmo erro/SQLSTATE para inexistente, centro alheio e sem centro'
+  );
+
   perform pg_temp.falha_com(format($q$select public.resolver_pendencia_v2(%L::uuid, 'aberta')$q$, px1), '22023');
 
   -- Professor resolve pendência do próprio centro; repetir mesma situação é idempotente; trocar é erro
@@ -473,12 +645,11 @@ begin
 end $$;
 reset role;
 
-do $$ begin raise notice 'BLOCO 3 ok: resolver_pendencia_v2, transições e independência do filtro de visão'; end $$;
+do $$ begin raise notice 'BLOCO 3 ok: resolver_pendencia_v2, sem oráculo, transições e independência do filtro'; end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 4 — filtro_visao (só admin, normalização, ocultos, pendência sem centro)
+-- BLOCO 4 — filtro_visao (só admin, normalização, ocultos, getter guardado, pendência sem centro)
 -- ------------------------------------------------------------
--- Reabre uma pendência em 51.Y e outra sem centro para testar listar_pendencias_v2 com filtro ativo.
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 set local role authenticated;
 do $$
@@ -494,7 +665,7 @@ begin
 end $$;
 reset role;
 
--- Professor chamando set_filtro_visao_v2 recebe erro 42501 (inclusive com centro alheio).
+-- Professor chamando set_filtro_visao_v2 recebe erro 42501.
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
 set local role authenticated;
 do $$
@@ -506,7 +677,7 @@ begin
 end $$;
 reset role;
 
--- Admin: oculta 1 centro (com null, duplicata, inexistente e inativo ignorados); depois oculta 2; depois limpa.
+-- Admin: oculta 1 centro (normalizando); depois oculta 2; depois limpa.
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 set local role authenticated;
 do $$
@@ -549,7 +720,6 @@ begin
     'listar_pendencias_v2 sem project_id omite centro oculto mas mantém pendência sem centro'
   );
 
-  -- Oculta 2 centros (o 1º continua oculto)
   f2 := public.set_filtro_visao_v2(array[y, sb]);
   res := public.resumo_projetos_v2();
   perform pg_temp.ok(
@@ -560,17 +730,48 @@ begin
     'ocultar 2 centros mantém o 1º oculto e reduz centros para 3'
   );
 
-  -- Limpa o filtro
-  perform public.set_filtro_visao_v2('{}'::uuid[]);
-  res := public.resumo_projetos_v2();
-  perform pg_temp.ok((res ->> 'ocultos')::int = 0 and jsonb_array_length(res -> 'centros') = 5, 'limpar filtro restaura 5 ativos');
+  -- Item 13: grava direto como admin ocultando 63.SB, desativa 63.SB e garante que get_filtro_visao_v2 devolve a lista guardada
+  insert into public.filtro_visao (user_id, centros_ocultos)
+  values (auth.uid(), array[sb])
+  on conflict (user_id) do update
+     set centros_ocultos = excluded.centros_ocultos;
 end $$;
 reset role;
 
-do $$ begin raise notice 'BLOCO 4 ok: filtro de visão exclusivo do admin, normalização, ocultos e pendência sem centro'; end $$;
+update public.projects set active = false where id = current_setting('test063.sb')::uuid;
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+set local role authenticated;
+do $$
+declare
+  sb  uuid := current_setting('test063.sb')::uuid;
+  fv  jsonb := public.get_filtro_visao_v2();
+  res jsonb := public.resumo_projetos_v2();
+begin
+  perform pg_temp.ok(
+    jsonb_array_length(fv -> 'centros_ocultos') = 1
+    and (fv -> 'centros_ocultos' ->> 0) = sb::text,
+    'get_filtro_visao_v2 devolve a lista guardada mesmo após desativar centro oculto'
+  );
+  perform pg_temp.ok(
+    (res ->> 'ocultos')::int = 0
+    and not exists (select 1 from jsonb_array_elements(res -> 'todos') t where t ->> 'id' = sb::text),
+    'centro desativado sai de todos e não infla ocultos'
+  );
+end $$;
+reset role;
+
+update public.projects set active = true where id = current_setting('test063.sb')::uuid;
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+set local role authenticated;
+select public.set_filtro_visao_v2('{}'::uuid[]);
+reset role;
+
+do $$ begin raise notice 'BLOCO 4 ok: filtro de visão exclusivo do admin, normalização, ocultos e getter guardado'; end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 5 — resumo_projetos_v2 (estados, valores reais de get_saldo_livre e falha sentinela)
+-- BLOCO 5 — resumo_projetos_v2 (estados, valores reais de get_saldo_livre, falha e cast quebrado)
 -- ------------------------------------------------------------
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 set local role authenticated;
@@ -679,7 +880,7 @@ begin
 end $$;
 reset role;
 
--- Falha de get_saldo_livre num id sentinela (51.X): vira 'sem dado' / 'falha_saldo_livre' sem vazar SQLERRM; outros intactos.
+-- Falha de get_saldo_livre (exceção no 51.X + cast quebrado no 63.DEF): ambos viram 'sem dado' sem vazar SQLERRM; outros intactos.
 alter function public.get_saldo_livre(uuid) rename to _get_saldo_livre_real_063;
 create function public.get_saldo_livre(p_project_id uuid)
 returns jsonb
@@ -689,9 +890,13 @@ set search_path = public, pg_temp
 as $$
 declare
   v_sentinela uuid := (select id from public.projects where code = '51.X');
+  v_quebrado  uuid := (select id from public.projects where code = '63.DEF');
 begin
   if p_project_id = v_sentinela then
     raise exception 'Detalhe interno secreto XYZ-999';
+  end if;
+  if p_project_id = v_quebrado then
+    return '{"has_plano": true, "has_balancete": true, "data_referencia": "data-invalida", "balancete_defasagem_meses": "nao-int", "grupos": [{"saldo_livre": "nao-num"}]}'::jsonb;
   end if;
   return public._get_saldo_livre_real_063(p_project_id);
 end $$;
@@ -702,14 +907,17 @@ select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1
 set local role authenticated;
 do $$
 declare
-  x   uuid := current_setting('test063.x')::uuid;
-  y   uuid := current_setting('test063.y')::uuid;
-  res jsonb := public.resumo_projetos_v2();
-  cx  jsonb;
-  cy  jsonb;
+  x    uuid := current_setting('test063.x')::uuid;
+  def  uuid := current_setting('test063.def')::uuid;
+  y    uuid := current_setting('test063.y')::uuid;
+  res  jsonb := public.resumo_projetos_v2();
+  cx   jsonb;
+  cdef jsonb;
+  cy   jsonb;
 begin
-  select c into cx from jsonb_array_elements(res -> 'centros') c where c ->> 'id' = x::text;
-  select c into cy from jsonb_array_elements(res -> 'centros') c where c ->> 'id' = y::text;
+  select c into cx   from jsonb_array_elements(res -> 'centros') c where c ->> 'id' = x::text;
+  select c into cdef from jsonb_array_elements(res -> 'centros') c where c ->> 'id' = def::text;
+  select c into cy   from jsonb_array_elements(res -> 'centros') c where c ->> 'id' = y::text;
 
   perform pg_temp.ok(
     cx ->> 'situacao' = 'sem dado'
@@ -720,8 +928,15 @@ begin
     'sentinela com erro devolve sem dado, erro fixo falha_saldo_livre e sem vazar SQLERRM'
   );
   perform pg_temp.ok(
+    cdef ->> 'situacao' = 'sem dado'
+    and cdef -> 'livre' = 'null'::jsonb
+    and cdef -> 'data_referencia' = 'null'::jsonb
+    and cdef ->> 'erro' = 'falha_saldo_livre',
+    'cast quebrado dentro de resumo_projetos_v2 vira sem dado sem derrubar a lista'
+  );
+  perform pg_temp.ok(
     cy ->> 'situacao' = 'problema' and cy -> 'erro' = 'null'::jsonb,
-    'outros centros seguem intactos após falha no sentinela'
+    'outros centros seguem intactos após falha e cast quebrado'
   );
 end $$;
 reset role;
@@ -729,11 +944,15 @@ reset role;
 drop function public.get_saldo_livre(uuid);
 alter function public._get_saldo_livre_real_063(uuid) rename to get_saldo_livre;
 
-do $$ begin raise notice 'BLOCO 5 ok: resumo_projetos_v2 com situações reais e tolerância a falha'; end $$;
+do $$ begin raise notice 'BLOCO 5 ok: resumo_projetos_v2 com situações reais, falha e cast quebrado'; end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 6 — v_balancete_vigente e get_repasses_v2
+-- BLOCO 6 — v_balancete_vigente e get_repasses_v2 (inclusive desempate por versao desc)
 -- ------------------------------------------------------------
+-- Insere um segundo plano ativo de versao = 0 em 51.X para provar que order by versao desc escolhe versao = 1.
+insert into public.planos_trabalho (project_id, ativo, versao, valor_total_plano)
+values (current_setting('test063.x')::uuid, true, 0, 99999.00);
+
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
 set local role authenticated;
 do $$
@@ -786,7 +1005,7 @@ begin
   -- get_repasses_v2 de centro alheio falha
   perform pg_temp.falha_com(format('select public.get_repasses_v2(%L::uuid)', y), null, 'Acesso negado%');
 
-  -- get_repasses_v2 do próprio centro devolve parcelas em ordem, valor_total_plano e recursos do balancete vigente
+  -- get_repasses_v2 do próprio centro escolhe versao=1 (260000, não 99999), devolve parcelas em ordem e recursos vigentes
   rx := public.get_repasses_v2(x);
   perform pg_temp.ok(
     (rx ->> 'valor_total_plano')::numeric = 260000.00
@@ -797,7 +1016,7 @@ begin
     and (rx -> 'recursos' ->> 'recebido')::numeric = 150000
     and (rx -> 'recursos' ->> 'a_receber')::numeric = 50000
     and (rx ->> 'data_balancete')::date = (date_trunc('month', current_date) + interval '14 days')::date,
-    'get_repasses_v2 de b1 em 51.X devolve parcelas em ordem, valor_total_plano e recursos vigentes'
+    'get_repasses_v2 de b1 em 51.X devolve versao maior, parcelas em ordem e recursos vigentes'
   );
 end $$;
 reset role;
@@ -805,7 +1024,7 @@ reset role;
 do $$ begin raise notice 'BLOCO 6 ok: v_balancete_vigente e get_repasses_v2'; end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 7 — anon sem privilégios em tabelas, view e 8 funções novas
+-- BLOCO 7 — anon sem privilégios em tabelas, view e funções da 063
 -- ------------------------------------------------------------
 do $$
 declare
@@ -819,6 +1038,7 @@ begin
   );
 
   foreach fn in array array[
+    'public._pendencias_sem_cpf()',
     'public.centros_visiveis()',
     'public.resumo_projetos_v2()',
     'public.listar_pendencias_v2(uuid)',
@@ -833,9 +1053,14 @@ begin
       'anon sem EXECUTE em ' || fn
     );
   end loop;
+
+  perform pg_temp.ok(
+    not has_function_privilege('authenticated', 'public._pendencias_sem_cpf()'::regprocedure, 'EXECUTE'),
+    'authenticated sem EXECUTE em _pendencias_sem_cpf()'
+  );
 end $$;
 
-do $$ begin raise notice 'BLOCO 7 ok: anon sem privilégios nas tabelas, view e 8 funções da 063'; end $$;
+do $$ begin raise notice 'BLOCO 7 ok: anon sem privilégios e _pendencias_sem_cpf fechada'; end $$;
 
 select set_config('request.jwt.claim.sub', '', false);
 rollback;

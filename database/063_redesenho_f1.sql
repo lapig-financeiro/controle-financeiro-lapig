@@ -16,8 +16,9 @@
 --     critério usa `is_admin() or ...`.
 --   • Filtro de visão é exclusivo do admin; nunca autoriza nem
 --     nega ações e nunca oculta pendência sem centro.
---   • CPF em `pendencias` é barrado dentro de `criar_pendencia_v2`
---     (definer), nunca por CHECK (052 revogou `contem_cpf`).
+--   • CPF em `pendencias` é barrado em `criar_pendencia_v2`
+--     e no gatilho `trg_pendencias_sem_cpf` (definer), nunca por
+--     CHECK (052 revogou `contem_cpf`).
 --   • `get_saldo_livre` segue lendo `balancetes` direto na F1.
 -- ============================================================
 
@@ -59,12 +60,12 @@ alter table public.pendencias
 alter table public.pendencias drop constraint if exists pendencias_project_id_fkey;
 alter table public.pendencias
   add constraint pendencias_project_id_fkey
-  foreign key (project_id) references public.projects(id) on delete cascade;
+  foreign key (project_id) references public.projects(id) on delete restrict;
 
 alter table public.pendencias drop constraint if exists pendencias_resolvida_por_fkey;
 alter table public.pendencias
   add constraint pendencias_resolvida_por_fkey
-  foreign key (resolvida_por) references auth.users(id);
+  foreign key (resolvida_por) references auth.users(id) on delete set null;
 
 alter table public.pendencias drop constraint if exists pendencias_tipo_check;
 alter table public.pendencias
@@ -90,6 +91,35 @@ alter table public.pendencias drop constraint if exists pendencias_titulo_nao_va
 alter table public.pendencias
   add constraint pendencias_titulo_nao_vazio
   check (btrim(titulo) <> '');
+
+alter table public.pendencias drop constraint if exists pendencias_detalhe_objeto_check;
+alter table public.pendencias
+  add constraint pendencias_detalhe_objeto_check
+  check (jsonb_typeof(detalhe) = 'object');
+
+create or replace function public._pendencias_sem_cpf()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if public.contem_cpf(
+    coalesce(new.chave, '') || ' ' || coalesce(new.titulo, '') || ' ' || coalesce(new.detalhe::text, '')
+  ) then
+    raise exception 'Pendência com CPF não pode ser gravada.'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public._pendencias_sem_cpf() from public, anon, authenticated;
+
+drop trigger if exists trg_pendencias_sem_cpf on public.pendencias;
+create trigger trg_pendencias_sem_cpf
+  before insert or update on public.pendencias
+  for each row execute function public._pendencias_sem_cpf();
 
 comment on table public.pendencias is
   'Lista única de pendências do sistema (por centro de custo ou gerais). Escrita exclusiva pelas RPCs v2 (mig. 063).';
@@ -206,7 +236,7 @@ with (security_invoker = true) as
   order by b.project_id, b.data_referencia desc;
 
 comment on view public.v_balancete_vigente is
-  'Balancete mais recente de cada centro de custo (security_invoker). Separada para a F2 versionar balancetes sem alterar os leitores (mig. 063).';
+  'Balancete mais recente de cada centro de custo (security_invoker = true protege leituras diretas da view). Separada para a F2 versionar balancetes sem alterar os leitores; em RPCs definer, a guarda real de escopo é assert_project_allowed (mig. 063).';
 
 revoke all on public.v_balancete_vigente from public, anon;
 grant select on public.v_balancete_vigente to authenticated;
@@ -291,18 +321,11 @@ begin
 
     begin
       v_sl := public.get_saldo_livre(v_proj.id);
-    exception when others then
-      v_erro := 'falha_saldo_livre';
-      raise warning 'resumo_projetos_v2: falha em get_saldo_livre(%) [%]: %',
-        v_proj.id, sqlstate, sqlerrm;
-    end;
 
-    if v_erro is not null or v_sl is null then
-      v_erro     := 'falha_saldo_livre';
-      v_situacao := 'sem dado';
-      v_livre    := null;
-      v_data_ref := null;
-    else
+      if v_sl is null or jsonb_typeof(v_sl) <> 'object' then
+        raise exception 'Retorno inválido de get_saldo_livre';
+      end if;
+
       v_has_plano     := coalesce((v_sl ->> 'has_plano')::boolean, false);
       v_has_balancete := coalesce((v_sl ->> 'has_balancete')::boolean, false);
       v_data_ref      := nullif(v_sl ->> 'data_referencia', '')::date;
@@ -329,7 +352,14 @@ begin
       else
         v_situacao := 'em dia';
       end if;
-    end if;
+    exception when others then
+      v_erro     := 'falha_saldo_livre';
+      v_situacao := 'sem dado';
+      v_livre    := null;
+      v_data_ref := null;
+      raise warning 'resumo_projetos_v2: falha ao calcular centro % [%]: %',
+        v_proj.id, sqlstate, sqlerrm;
+    end;
 
     v_centros := v_centros || jsonb_build_array(
       jsonb_build_object(
@@ -430,7 +460,13 @@ begin
              p_project_id is null
              and (
                pe.project_id in (select public.centros_visiveis())
-               or (pe.project_id is null and public.is_admin())
+               or (
+                 public.is_admin()
+                 and (
+                   pe.project_id is null
+                   or (pe.situacao = 'aberta' and p.active = false)
+                 )
+               )
              )
            )
          )
@@ -444,7 +480,7 @@ end;
 $$;
 
 comment on function public.listar_pendencias_v2(uuid) is
-  'Lista pendências abertas primeiro e resolvidas/descartadas dos últimos 90 dias. Sem project_id, respeita centros_visiveis() e mantém pendências sem centro para admin (mig. 063).';
+  'Lista pendências abertas primeiro e resolvidas/descartadas dos últimos 90 dias. Sem project_id, respeita centros_visiveis() e, para admin, mantém sem centro e abertas de centros inativos (mig. 063).';
 
 revoke all on function public.listar_pendencias_v2(uuid) from public, anon;
 grant execute on function public.listar_pendencias_v2(uuid) to authenticated;
@@ -468,22 +504,19 @@ begin
       using errcode = '22023';
   end if;
 
-  select * into v_row
-    from public.pendencias
-   where id = p_id
+  select pe.*
+    into v_row
+    from public.pendencias pe
+   where pe.id = p_id
+     and (
+       public.is_admin()
+       or (pe.project_id is not null and pe.project_id = any(public.allowed_project_ids()))
+     )
      for update;
 
   if not found then
-    raise exception 'Pendência não encontrada: %', p_id
-      using errcode = 'P0002';
-  end if;
-
-  if v_row.project_id is null then
-    if not public.is_admin() then
-      raise exception 'Acesso negado à pendência sem centro.' using errcode = '42501';
-    end if;
-  else
-    perform public.assert_project_allowed(v_row.project_id);
+    raise exception 'Pendência não encontrada ou sem permissão.'
+      using errcode = '42501';
   end if;
 
   if v_row.situacao = p_situacao then
@@ -527,6 +560,7 @@ as $$
 declare
   v_chaves_invalidas text;
   v_chave            text;
+  v_project_id_txt   text;
   v_project_id       uuid;
   v_tipo             text;
   v_titulo           text;
@@ -536,6 +570,8 @@ declare
   v_chave_ret        text;
   v_situacao         text;
   v_criada           boolean;
+  v_ex_project_id    uuid;
+  v_ex_tipo          text;
 begin
   if not public.is_admin() or public.is_agente() then
     raise exception 'Só admin humano cria pendências nesta fase.' using errcode = '42501';
@@ -568,7 +604,7 @@ begin
   end if;
   v_tipo := nullif(btrim(p ->> 'tipo'), '');
   if v_tipo is null or v_tipo not in ('balancete', 'plano', 'bolsas', 'contrato', 'cadastro', 'outro') then
-    raise exception 'Tipo de pendência inválido: %', coalesce(v_tipo, '<null>')
+    raise exception 'Tipo de pendência inválido.'
       using errcode = '22023';
   end if;
 
@@ -585,24 +621,39 @@ begin
   end if;
   v_origem := coalesce(nullif(btrim(p ->> 'origem'), ''), 'sistema');
   if v_origem not in ('sistema', 'buriti', 'claude', 'pessoa') then
-    raise exception 'Origem de pendência inválida: %', v_origem
+    raise exception 'Origem de pendência inválida.'
       using errcode = '22023';
   end if;
 
   if p ? 'project_id' and jsonb_typeof(p -> 'project_id') not in ('string', 'null') then
     raise exception 'Campo project_id deve ser UUID ou nulo.' using errcode = '22023';
   end if;
+  v_project_id := null;
   if p ? 'project_id' and jsonb_typeof(p -> 'project_id') = 'string' then
-    v_project_id := nullif(btrim(p ->> 'project_id'), '')::uuid;
-  else
-    v_project_id := null;
+    v_project_id_txt := nullif(btrim(p ->> 'project_id'), '');
+    if v_project_id_txt is not null then
+      if v_project_id_txt !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        raise exception 'Campo project_id inválido.' using errcode = '22023';
+      end if;
+      begin
+        v_project_id := v_project_id_txt::uuid;
+      exception when invalid_text_representation then
+        raise exception 'Campo project_id inválido.' using errcode = '22023';
+      end;
+    end if;
   end if;
 
-  if v_project_id is not null and not exists (select 1 from public.projects where id = v_project_id) then
-    raise exception 'Projeto não encontrado: %', v_project_id
+  if v_project_id is not null and not exists (
+    select 1 from public.projects pr where pr.id = v_project_id and pr.active = true
+  ) then
+    raise exception 'Projeto não encontrado ou inativo.'
       using errcode = '22023';
   end if;
 
+  if p ? 'detalhe' and jsonb_typeof(p -> 'detalhe') not in ('object', 'null') then
+    raise exception 'Campo detalhe deve ser um objeto JSON.'
+      using errcode = '22023';
+  end if;
   v_detalhe := case
     when not (p ? 'detalhe') or jsonb_typeof(p -> 'detalhe') = 'null' then '{}'::jsonb
     else p -> 'detalhe'
@@ -619,14 +670,22 @@ begin
      set titulo  = excluded.titulo,
          detalhe = excluded.detalhe
    where public.pendencias.situacao = 'aberta'
+     and public.pendencias.project_id is not distinct from excluded.project_id
+     and public.pendencias.tipo = excluded.tipo
   returning id, chave, situacao, (xmax = 0)
     into v_id, v_chave_ret, v_situacao, v_criada;
 
   if not found then
-    select pe.id, pe.chave, pe.situacao
-      into v_id, v_chave_ret, v_situacao
+    select pe.id, pe.chave, pe.situacao, pe.project_id, pe.tipo
+      into v_id, v_chave_ret, v_situacao, v_ex_project_id, v_ex_tipo
       from public.pendencias pe
      where pe.chave = v_chave;
+
+    if v_ex_project_id is distinct from v_project_id or v_ex_tipo is distinct from v_tipo then
+      raise exception 'Conflito de chave: já existe pendência com esta chave para outro centro ou tipo.'
+        using errcode = '22023';
+    end if;
+
     v_criada := false;
   end if;
 
@@ -746,6 +805,7 @@ begin
     from public.planos_trabalho pt
    where pt.project_id = p_project_id
      and pt.ativo = true
+   order by pt.versao desc
    limit 1;
 
   if v_plano_id is not null then
@@ -789,7 +849,7 @@ end;
 $$;
 
 comment on function public.get_repasses_v2(uuid) is
-  'Leitura pura de parcelas do plano ativo, valor_total_plano e recursos do balancete vigente (via v_balancete_vigente) para o frontend calcular situacaoDasParcelas (mig. 063).';
+  'Leitura pura de parcelas do plano ativo, valor_total_plano e recursos do balancete vigente (lido via v_balancete_vigente; dentro desta RPC definer a guarda real de escopo é assert_project_allowed) para o frontend calcular situacaoDasParcelas (mig. 063).';
 
 revoke all on function public.get_repasses_v2(uuid) from public, anon;
 grant execute on function public.get_repasses_v2(uuid) to authenticated;
@@ -843,6 +903,43 @@ begin
     raise exception '063: trg_bloqueia_agente ausente ou incorreto em filtro_visao';
   end if;
 
+  -- Gatilho de CPF na tabela pendencias (BEFORE INSERT OR UPDATE FOR EACH ROW)
+  if not exists (
+    select 1 from pg_trigger t
+     where t.tgrelid = v_pend
+       and t.tgname = 'trg_pendencias_sem_cpf'
+       and not t.tgisinternal
+       and (t.tgtype & 1) <> 0        -- row-level
+       and (t.tgtype & 2) <> 0        -- BEFORE
+       and (t.tgtype & (4|16)) = (4|16) -- INSERT | UPDATE
+       and t.tgfoid = 'public._pendencias_sem_cpf()'::regprocedure
+  ) then
+    raise exception '063: trg_pendencias_sem_cpf ausente ou incorreto em pendencias';
+  end if;
+
+  v_fn := 'public._pendencias_sem_cpf()'::regprocedure;
+  if not exists (
+    select 1 from pg_proc p
+     where p.oid = v_fn
+       and p.prosecdef
+       and p.proconfig is not null
+       and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')
+  ) then
+    raise exception '063: _pendencias_sem_cpf sem security definer ou search_path';
+  end if;
+  if has_function_privilege('anon', v_fn, 'EXECUTE')
+     or has_function_privilege('authenticated', v_fn, 'EXECUTE')
+     or exists (
+       select 1
+         from pg_proc p
+        cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+        where p.oid = v_fn
+          and a.grantee = 0
+          and a.privilege_type = 'EXECUTE'
+     ) then
+    raise exception '063: ACL incorreta em _pendencias_sem_cpf';
+  end if;
+
   -- Nenhuma policy de escrita em pendencias; apenas a policy de SELECT esperada
   if exists (
     select 1 from pg_policies
@@ -859,7 +956,7 @@ begin
     raise exception '063: policy pendencias_select_escopo ausente';
   end if;
 
-  -- Policy de filtro_visao só para o próprio admin
+  -- Policy de filtro_visao só para o próprio admin, sem nenhuma outra policy de escrita
   if not exists (
     select 1 from pg_policies
      where schemaname = 'public' and tablename = 'filtro_visao'
@@ -869,8 +966,39 @@ begin
   ) then
     raise exception '063: policy filtro_visao_proprio_admin ausente ou sem is_admin';
   end if;
+  if exists (
+    select 1 from pg_policies
+     where schemaname = 'public' and tablename = 'filtro_visao'
+       and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+       and policyname <> 'filtro_visao_proprio_admin'
+  ) then
+    raise exception '063: filtro_visao possui policy de escrita inesperada';
+  end if;
 
-  -- Nenhum CHECK em pendencias usando contem_cpf
+  -- FKs com regras de deleção corretas (restrict em project_id; set null em resolvida_por)
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = v_pend and contype = 'f'
+       and conname = 'pendencias_project_id_fkey' and confdeltype = 'r'
+  ) then
+    raise exception '063: pendencias_project_id_fkey ausente ou sem ON DELETE RESTRICT';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = v_pend and contype = 'f'
+       and conname = 'pendencias_resolvida_por_fkey' and confdeltype = 'n'
+  ) then
+    raise exception '063: pendencias_resolvida_por_fkey ausente ou sem ON DELETE SET NULL';
+  end if;
+
+  -- Check de detalhe objeto e nenhum CHECK em pendencias usando contem_cpf
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = v_pend and contype = 'c'
+       and conname = 'pendencias_detalhe_objeto_check'
+  ) then
+    raise exception '063: pendencias_detalhe_objeto_check ausente';
+  end if;
   if exists (
     select 1 from pg_constraint
      where conrelid = v_pend and contype = 'c'

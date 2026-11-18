@@ -46,3 +46,36 @@ Branch: `redesenho/f1-a-banco` (worktree fora do OneDrive).
 
 - **Aplicação em produção pelo cofre**: não executada (regra da tarefa). Ficam para o fluxo normal (`docs/aplicar-migracao.md`): revisão do SQL por outra IA, `ensaiar` no cofre, aprovação explícita do Victor no chat e `aplicar` com o site em manutenção.
 - **Limitação do ambiente local**: PGlite valida Postgres, PL/pgSQL e RLS puros, sem a camada HTTP do PostgREST.
+
+## 5. 2ª rodada (revisão de fase — `F1-A-rodada2.md`)
+
+### Correções na migração `database/063_redesenho_f1.sql` (41.685 bytes)
+1. **`resumo_projetos_v2`**: todo o cálculo por centro (chamada a `get_saldo_livre`, checagem de objeto não nulo, casts de `data_referencia`, `balancete_defasagem_meses`, `saldo_livre` e definição de `situacao`) passou para dentro do bloco `begin ... exception when others`; qualquer falha vira `'sem dado'` com `erro = 'falha_saldo_livre'` e `raise warning` sem enviar `SQLERRM` ao cliente.
+2. **`criar_pendencia_v2`**: recusa `project_id` de projeto inativo (`22023`); recusa conflito de chave quando já existe linha com `project_id` ou `tipo` diferente (`22023`, tanto aberta quanto fechada); valida formato UUID antes do cast sem ecoar o payload (`22023`); exige `detalhe` como objeto JSON (ausente ou `null` → `'{}'`), também travado pela constraint `pendencias_detalhe_objeto_check`.
+3. **Gatilho de CPF na tabela `pendencias`**: criado `_pendencias_sem_cpf()` (`security definer`, `set search_path = public, pg_temp`, `revoke all ... from public, anon, authenticated`) + trigger `trg_pendencias_sem_cpf` (`before insert or update on public.pendencias for each row`), seguindo o padrão da `061` (segunda barreira além da RPC, nunca CHECK).
+4. **`listar_pendencias_v2` (sem centro, admin)**: além de `centros_visiveis()` e pendências sem centro, passa a incluir pendências **abertas** de centros **inativos** (`pe.situacao = 'aberta' and p.active = false`), mantendo ocultos os centros ativos escondidos por `filtro_visao` e mantendo inativos fechados e centros alheios fora para professores.
+5. **`resolver_pendencia_v2`**: autorização movida para o `WHERE` antes do `for update`; id inexistente, centro alheio e pendência geral por não-admin devolvem o mesmo SQLSTATE (`42501`) e a mesma mensagem (`'Pendência não encontrada ou sem permissão.'`), sem oráculo de existência nem lock de linha alheia.
+6. **`get_repasses_v2`**: plano ativo agora ordenado por `order by pt.versao desc limit 1`. **Nota para a F2:** `get_saldo_livre` (038/048) tem o mesmo `limit 1` sem `order by` ao buscar o plano ativo (além de ler `balancetes` direto) e ficará para a F2 corrigir junto.
+7. **FKs de `pendencias`**: `pendencias_project_id_fkey` alterada para `on delete restrict` e `pendencias_resolvida_por_fkey` alterada para `on delete set null`.
+8. **Asserção final**: reforçada para conferir `trg_pendencias_sem_cpf`, `_pendencias_sem_cpf()` (definer, `search_path`, sem `EXECUTE` para `public`/`anon`/`authenticated`), `confdeltype` das duas FKs, `pendencias_detalhe_objeto_check` e ausência de qualquer outra policy de escrita em `filtro_visao`.
+9. **Comentários de `v_balancete_vigente` e `get_repasses_v2`**: explicitado que `security_invoker = true` protege leituras diretas da view, enquanto dentro da RPC `security definer` a guarda real de escopo é `assert_project_allowed`.
+
+### Ampliação dos testes e prova dos mutantes (`tests/sql/test_063_redesenho_f1.sql`, `stub-063.sql` e `rodar-063-pglite.mjs`)
+- Adicionados todos os novos cenários pedidos (itens 10–15):
+  - `get_filtro_visao_v2()` de admin sem linha retorna `[]` (não `null`);
+  - `criar_pendencia_v2` recusando projeto inativo, UUID malformado sem ecoar o payload, `detalhe` não-objeto e conflito de `project_id`/`tipo` na mesma chave;
+  - `listar_pendencias_v2`: caso positivo com `p_project_id` para professor (`b1` e `b2`), pendência criada há 200 dias e resolvida há 5 dias aparecendo na janela de 90 dias, pendência aberta de centro inativo visível ao admin e oculta ao professor (`b1`) e fechada de inativo oculta;
+  - `filtro_visao`: admin grava antes do teste de escrita direta do professor e linha sobrevive intacta; getter devolve lista guardada mesmo após desativar um centro oculto;
+  - gatilho `trg_pendencias_sem_cpf` barrado em `insert` direto do admin (com grant de teste) e `update` direto (`23514`);
+  - `resolver_pendencia_v2` com SQLSTATE/mensagem idênticos para id inexistente, centro alheio e geral;
+  - `resumo_projetos_v2` com retorno de cast quebrado no `63.DEF` virando `'sem dado'` / `'falha_saldo_livre'` junto à exceção do sentinela `51.X`;
+  - `get_repasses_v2` escolhendo `versao = 1` em empate de `ativo = true` com `versao = 0`.
+- **Prova dos 4 mutantes (item 16)** executada em `node tools/replica-local/rodar-063-pglite.mjs`:
+  - **Mutante 10** (policy permissiva extra `mutante_aberto` em `filtro_visao`): rejeitado pela asserção da `063` (`063: filtro_visao possui policy de escrita inesperada`) e falhou o roteiro (`063 FALHOU: professor vê 0 linhas em filtro_visao`).
+  - **Mutante 11** (`listar_pendencias_v2(p_project_id)` devolvendo `[]`): falhou o roteiro (`063 FALHOU: listar_pendencias_v2(x) devolve apenas as 4 pendências válidas de 51.X para b1`).
+  - **Mutante 12** (`listar_pendencias_v2` usando `criada_em` no lugar de `coalesce(resolvida_em, criada_em)`): falhou o roteiro (`063 FALHOU: professor A vê 2 abertas + 2 resolvidas recentes (incl. criada 200d/resolvida 5d), sem 91d nem 63.INAT`).
+  - **Mutante 13** (`get_filtro_visao_v2` derivado de centros ativos): falhou o roteiro (`063 FALHOU: get_filtro_visao_v2 devolve a lista guardada mesmo após desativar centro oculto`).
+- **Verificações finais pós-mutantes e pós-edição**:
+  - `node tools/replica-local/rodar-063-pglite.mjs`: **verde (exit 0)** — falha antes da 063 (`42883`), cofre OK (41.685 bytes), 7 blocos + idempotência + BLOCO 1 da 051 + 4 mutantes + conferência final + MD5 idêntico dos 6 helpers protegidos.
+  - `npm.cmd run lint`: **verde (exit 0)**.
+  - `npm.cmd test`: **verde (exit 0)** — 36 arquivos passaram, 571 testes passaram e 5 pulados (fixtures opcionais locais ausentes em `tests/fixtures/pt-html/`).

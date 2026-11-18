@@ -7,6 +7,7 @@ alter table public.projects
   add column if not exists drive_folder_url text;
 
 alter table public.planos_trabalho
+  add column if not exists versao integer not null default 0,
   add column if not exists valor_total_plano numeric(14,2);
 
 alter table public.plano_desembolsos
@@ -74,8 +75,8 @@ begin
          end_date = v_fim_futuro
    where id = v_x;
 
-  insert into public.planos_trabalho (project_id, ativo, valor_total_plano)
-  values (v_x, true, 260000.00)
+  insert into public.planos_trabalho (project_id, ativo, versao, valor_total_plano)
+  values (v_x, true, 1, 260000.00)
   returning id into v_pl_x;
 
   insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto) values

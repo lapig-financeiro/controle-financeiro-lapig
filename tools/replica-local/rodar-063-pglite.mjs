@@ -159,7 +159,116 @@ try {
     throw new Error('063 alterou algum helper protegido!');
   }
 
-  console.log('063 OK em PGlite: falha provada antes; test_063 (7 blocos) + idempotência + barreira 051 + cofre + helpers protegidos verdes.');
+  console.log('8. Provando mutantes dos itens 10–13...');
+  async function esperarFalhaTest063(rotulo, fnMutacao, fnRestaura) {
+    await fnMutacao();
+    let falhou = false;
+    let msg = '';
+    try {
+      await arquivo('tests/sql/test_063_redesenho_f1.sql');
+    } catch (e) {
+      falhou = true;
+      msg = e.message;
+    } finally {
+      await sql('rollback;');
+      await fnRestaura();
+    }
+    if (!falhou) {
+      throw new Error(`Mutante NÃO foi detectado por test_063: ${rotulo}`);
+    }
+    console.log(`  [MUTANTE OK] ${rotulo} -> ${msg}`);
+  }
+
+  // Mutante 10: policy permissiva extra em filtro_visao
+  await esperarFalhaTest063(
+    '10) policy permissiva extra em filtro_visao',
+    async () => {
+      await sql(`create policy mutante_aberto on public.filtro_visao for all to authenticated using (true) with check (true);`);
+      let barrouAssercao = false;
+      try {
+        await arquivo('database/063_redesenho_f1.sql');
+      } catch (e) {
+        barrouAssercao = e.message.includes('policy de escrita inesperada');
+      } finally {
+        await sql('rollback;');
+      }
+      if (!barrouAssercao) {
+        throw new Error('Asserção da 063 não recusou policy permissiva extra em filtro_visao!');
+      }
+    },
+    async () => {
+      await sql(`drop policy if exists mutante_aberto on public.filtro_visao;`);
+    }
+  );
+
+  // Extrai o corpo real de listar_pendencias_v2 da 063 para gerar mutações fiéis (itens 11 e 12)
+  const matchListar = sql063.match(/create or replace function public\.listar_pendencias_v2[\s\S]*?\$\$;/);
+  if (!matchListar) {
+    throw new Error('Não foi possível extrair listar_pendencias_v2 da 063 para os mutantes.');
+  }
+  const listarOrig = matchListar[0];
+
+  // Mutante 11: listar_pendencias_v2(p_project_id) retornando [] quando p_project_id is not null
+  const listarMut11 = listarOrig.replace(
+    'if p_project_id is not null then',
+    `if p_project_id is not null then\n    perform public.assert_project_allowed(p_project_id);\n    return '[]'::jsonb;\n  end if;\n  if false then`
+  );
+  if (listarMut11 === listarOrig) throw new Error('Falha ao montar mutante 11.');
+  await esperarFalhaTest063(
+    '11) listar_pendencias_v2(p_project_id) devolvendo []',
+    async () => sql(listarMut11),
+    async () => arquivo('database/063_redesenho_f1.sql')
+  );
+
+  // Mutante 12: janela de 90 dias usando criada_em em vez de coalesce(resolvida_em, criada_em)
+  const listarMut12 = listarOrig.replace(
+    "coalesce(pe.resolvida_em, pe.criada_em) >= now() - interval '90 days'",
+    "pe.criada_em >= now() - interval '90 days'"
+  );
+  if (listarMut12 === listarOrig) throw new Error('Falha ao montar mutante 12.');
+  await esperarFalhaTest063(
+    '12) listar_pendencias_v2 usando criada_em em vez de coalesce(resolvida_em, criada_em)',
+    async () => sql(listarMut12),
+    async () => arquivo('database/063_redesenho_f1.sql')
+  );
+
+  // Mutante 13: get_filtro_visao_v2 derivado de projects where active = true except centros_visiveis()
+  await esperarFalhaTest063(
+    '13) get_filtro_visao_v2 derivado de centros ativos',
+    async () => sql(`
+      create or replace function public.get_filtro_visao_v2()
+      returns jsonb
+      language plpgsql
+      stable
+      security definer
+      set search_path = public, pg_temp
+      as $$
+      begin
+        if not public.is_admin() then
+          return jsonb_build_object('centros_ocultos', '[]'::jsonb);
+        end if;
+        return jsonb_build_object(
+          'centros_ocultos',
+          coalesce((
+            select jsonb_agg(p.id order by p.id)
+              from public.projects p
+             where p.active = true
+               and p.id not in (select public.centros_visiveis())
+          ), '[]'::jsonb)
+        );
+      end $$;
+    `),
+    async () => arquivo('database/063_redesenho_f1.sql')
+  );
+
+  console.log('9. Conferência final após restauração dos mutantes...');
+  await arquivo('tests/sql/test_063_redesenho_f1.sql');
+  const finalHelpers = (await db.query(helpersQuery)).rows;
+  if (JSON.stringify(antes) !== JSON.stringify(finalHelpers)) {
+    throw new Error('063 alterou algum helper protegido após restauração!');
+  }
+
+  console.log('063 OK em PGlite: falha provada antes; test_063 (7 blocos) + idempotência + barreira 051 + cofre + 4 mutantes + helpers protegidos verdes.');
 } catch (e) {
   console.error('ERRO:', e.message, e.detail || '', e.where || '');
   process.exitCode = 1;
