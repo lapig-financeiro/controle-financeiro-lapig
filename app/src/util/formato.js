@@ -132,3 +132,54 @@ export function iniciaisUsuario(nomeOuEmail) {
   if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
   return `${partes[0][0]}${partes[partes.length - 1][0]}`.toUpperCase();
 }
+
+/**
+ * Devolve a data local no formato ISO `AAAA-MM-DD`.
+ */
+export function hojeISO(referencia = new Date()) {
+  const data = referencia instanceof Date ? referencia : new Date(referencia);
+  if (Number.isNaN(data.getTime())) {
+    return hojeISO(new Date());
+  }
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+/**
+ * Calcula os meses restantes de vigência inclusivos a partir do mês corrente,
+ * seguindo a mesma fórmula da RPC `get_saldo_livre` (048).
+ */
+export function mesesRestantes(endDate, hoje = hojeISO()) {
+  const fim = extrairPartesData(endDate);
+  const atual = extrairPartesData(hoje);
+  if (!fim || !atual) return null;
+  const diff = (fim.ano - atual.ano) * 12 + (fim.mes - atual.mes) + 1;
+  return Math.max(0, diff);
+}
+
+/**
+ * Formata um timestamp em descrição curta relativa para o sino e listas.
+ */
+export function tempoRelativo(isoData, agora = new Date()) {
+  if (!isoData) return '—';
+  const data = isoData instanceof Date ? isoData : new Date(isoData);
+  const ref = agora instanceof Date ? agora : new Date(agora);
+  if (Number.isNaN(data.getTime()) || Number.isNaN(ref.getTime())) return '—';
+
+  const diffMs = ref.getTime() - data.getTime();
+  if (diffMs < 60_000) return 'agora';
+
+  const minutos = Math.floor(diffMs / 60_000);
+  if (minutos < 60) return `há ${minutos} min`;
+
+  const horas = Math.floor(diffMs / 3_600_000);
+  if (horas < 24) return `há ${horas} h`;
+
+  const dias = Math.floor(diffMs / 86_400_000);
+  if (dias === 1) return 'ontem';
+  if (dias <= 30) return `há ${dias} dias`;
+
+  return dataCompleta(data);
+}

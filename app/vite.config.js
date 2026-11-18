@@ -30,4 +30,9 @@ function cspApenasNoBuild() {
 export default defineConfig({
   plugins: [preact(), cspApenasNoBuild()],
   base: '/controle-financeiro-lapig/v2/',
+  server: {
+    fs: {
+      allow: ['..'],
+    },
+  },
 });

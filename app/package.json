@@ -6,6 +6,7 @@
   "description": "Interface v2 do Controle Financeiro (LAPIG / UFG) em Preact + Vite",
   "scripts": {
     "dev": "vite",
+    "dev:exemplo": "vite --mode exemplo",
     "build": "node scripts/verificar-estilo.mjs && vite build",
     "preview": "vite preview",
     "test": "vitest run",

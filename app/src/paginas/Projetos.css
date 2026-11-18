@@ -1,0 +1,40 @@
+.projetos__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.projetos__nome-bloco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+  min-width: 0;
+}
+
+.projetos__nome {
+  font-weight: var(--fw-medio);
+  color: var(--cor-texto);
+  overflow-wrap: anywhere;
+}
+
+.projetos__erro-centro {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.projetos__codigo {
+  color: var(--cor-texto-2);
+  white-space: nowrap;
+}
+
+.projetos__saldo {
+  color: var(--cor-texto);
+}
+
+@media (max-width: 640px) {
+  .projetos__codigo,
+  .projetos__situacao {
+    justify-self: end;
+  }
+}

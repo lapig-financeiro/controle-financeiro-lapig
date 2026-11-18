@@ -486,16 +486,9 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
             contexto="próximo em jan/27"
           />
           <Destaque
-            rotulo="Valor digitado"
-            valor={(
-              <Valor
-                valor={12000}
-                centavos={false}
-                origem={{ tipo: 'digitado', resumo: 'Valor digitado' }}
-                onOrigem={() => abrirArvoreOrigem('Reserva informada', 12000, 'digitado')}
-              />
-            )}
-            contexto="sem documento de origem"
+            rotulo="Pendências"
+            valor="1"
+            contexto="1 aberta neste centro"
           />
         </GradeDestaques>
 
@@ -539,6 +532,17 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
               <div class="componentes__par">
                 <dt>Ausência de dado</dt>
                 <dd><Valor valor={null} motivoSemDado="sem balancete" /></dd>
+              </div>
+              <div class="componentes__par">
+                <dt>Valor digitado (sem documento)</dt>
+                <dd>
+                  <Valor
+                    valor={12000}
+                    centavos={false}
+                    origem={{ tipo: 'digitado', resumo: 'Valor digitado' }}
+                    onOrigem={() => abrirArvoreOrigem('Reserva informada', 12000, 'digitado')}
+                  />
+                </dd>
               </div>
               <div class="componentes__par">
                 <dt>Data compacta e completa</dt>

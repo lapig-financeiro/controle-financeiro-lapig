@@ -9,6 +9,7 @@ export { Documento } from './Documento.jsx';
 export { Chip } from './Chip.jsx';
 export { MenuSuspenso, MenuSuspensoItem, MenuSuspensoSeparador } from './MenuSuspenso.jsx';
 export { Sino } from './Sino.jsx';
+export { FiltroVisao } from './FiltroVisao.jsx';
 export { MenuUsuario } from './MenuUsuario.jsx';
 export { CabecalhoPagina } from './CabecalhoPagina.jsx';
 export { Manutencao } from './Manutencao.jsx';

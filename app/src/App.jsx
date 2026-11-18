@@ -1,28 +1,53 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { AvisoFalha, BarraTopo, Esqueleto, Manutencao } from './componentes/index.js';
-import { EmConstrucao } from './paginas/EmConstrucao.jsx';
 import { Componentes } from './paginas/Componentes.jsx';
+import { EmConstrucao } from './paginas/EmConstrucao.jsx';
 import { Login } from './paginas/Login.jsx';
-import { navegarPara, parsearRota } from './roteador.js';
+import { Projeto } from './paginas/Projeto.jsx';
+import { Projetos } from './paginas/Projetos.jsx';
+import { navegarPara, parsearRota, urlProjeto } from './roteador.js';
+import {
+  modoExemploAtivo,
+  pendencias as buscarPendencias,
+  resumoProjetos,
+  salvarFiltroVisao,
+} from './servicos/dados.js';
 import { consultarManutencao } from './servicos/manutencao.js';
 import { carregarPerfil, sair, supabase } from './servicos/supabase.js';
 
-const PENDENCIAS_EXEMPLO = [
+const PENDENCIAS_CATALOGO = [
   { id: '1', titulo: 'Conta 7.1.3.99 sem rubrica', centro: 'Global Methane Hub · 30.113', tempo: 'há 2 h' },
   { id: '2', titulo: 'Aditivo sem data de evento', centro: 'Remap · 30.105', tempo: 'ontem' },
   { id: '3', titulo: 'Planilha encerraria 4 bolsas', centro: 'Kalungas · 30.XXX', tempo: 'há 3 dias' },
 ];
 
 export function App() {
+  const ehModoExemplo = modoExemploAtivo();
   const [rota, setRota] = useState(() => parsearRota());
-  const [carregandoSessao, setCarregandoSessao] = useState(true);
+  const [carregandoSessao, setCarregandoSessao] = useState(!ehModoExemplo);
   const [carregandoPerfil, setCarregandoPerfil] = useState(false);
-  const [usuario, setUsuario] = useState(null);
-  const [perfil, setPerfil] = useState({ erro: null, role: null, nome: '', email: '' });
+  const [usuario, setUsuario] = useState(() =>
+    ehModoExemplo ? { id: 'exemplo-admin', email: 'exemplo@lapig.ufg.br' } : null
+  );
+  const [perfil, setPerfil] = useState(() =>
+    ehModoExemplo
+      ? {
+          erro: null,
+          role: 'admin',
+          nome: 'Admin de exemplo',
+          email: 'exemplo@lapig.ufg.br',
+        }
+      : { erro: null, role: null, nome: '', email: '' }
+  );
   const [erroLogin, setErroLogin] = useState('');
   const [manutencao, setManutencao] = useState({ ativo: false, mensagem: '' });
   const manutencaoAtivaRef = useRef(false);
   const [filtroDemoAtivo, setFiltroDemoAtivo] = useState(false);
+
+  const [resumoSt, setResumoSt] = useState({ carregando: true, dados: null, erro: null });
+  const [sinoSt, setSinoSt] = useState({ estado: 'consultando', dados: [], erro: null });
+  const [filtroSalvando, setFiltroSalvando] = useState(false);
+  const [filtroErro, setFiltroErro] = useState(null);
 
   const verificarManutencao = useCallback(async () => {
     const estado = await consultarManutencao();
@@ -63,6 +88,8 @@ export function App() {
   }, [verificarManutencao]);
 
   useEffect(() => {
+    if (ehModoExemplo) return undefined;
+
     let ativo = true;
 
     async function verificarSessao() {
@@ -106,10 +133,37 @@ export function App() {
       ativo = false;
       inscricao?.subscription?.unsubscribe();
     };
-  }, [aplicarUsuario]);
+  }, [ehModoExemplo, aplicarUsuario]);
 
   const papelConhecido = !carregandoSessao && !carregandoPerfil && perfil.erro === null && perfil.role !== null;
   const isAdmin = papelConhecido && perfil.role === 'admin';
+
+  const carregarResumo = useCallback(async () => {
+    setResumoSt((prev) => ({ carregando: true, dados: prev.dados, erro: null }));
+    const res = await resumoProjetos();
+    setResumoSt({ carregando: false, dados: res.dados, erro: res.erro });
+  }, []);
+
+  const carregarSino = useCallback(async () => {
+    setSinoSt((prev) => ({ estado: 'consultando', dados: prev.dados, erro: null }));
+    const res = await buscarPendencias(null);
+    if (res.erro) {
+      setSinoSt({ estado: 'indisponivel', dados: [], erro: res.erro });
+    } else {
+      setSinoSt({ estado: 'pronto', dados: res.dados || [], erro: null });
+    }
+  }, []);
+
+  const carregarDadosGlobais = useCallback(async () => {
+    await Promise.all([carregarResumo(), carregarSino()]);
+  }, [carregarResumo, carregarSino]);
+
+  const precisaDadosGlobais = papelConhecido && Boolean(usuario) && rota.pagina !== 'componentes';
+
+  useEffect(() => {
+    if (!precisaDadosGlobais) return;
+    carregarDadosGlobais();
+  }, [precisaDadosGlobais, usuario, carregarDadosGlobais]);
 
   useEffect(() => {
     if (!papelConhecido || !usuario) return;
@@ -120,6 +174,22 @@ export function App() {
       navegarPara('#/projetos');
     }
   }, [papelConhecido, usuario, rota.pagina, isAdmin]);
+
+  const salvarFiltro = useCallback(
+    async (centrosOcultos) => {
+      setFiltroSalvando(true);
+      setFiltroErro(null);
+      const res = await salvarFiltroVisao(centrosOcultos);
+      setFiltroSalvando(false);
+      if (res.erro) {
+        setFiltroErro(res.erro);
+        return { erro: res.erro };
+      }
+      await carregarDadosGlobais();
+      return { erro: null };
+    },
+    [carregarDadosGlobais]
+  );
 
   if (manutencao.ativo) {
     return <Manutencao mensagem={manutencao.mensagem} />;
@@ -140,9 +210,9 @@ export function App() {
           isAdmin={adminCatalogo}
           usuario={usuarioCatalogo}
           centrosVisiveis={filtroDemoAtivo ? { visiveis: 15, total: 17 } : { visiveis: 17, total: 17 }}
-          pendencias={PENDENCIAS_EXEMPLO}
+          pendencias={PENDENCIAS_CATALOGO}
           onAlternarFiltro={(ativar) => setFiltroDemoAtivo(Boolean(ativar))}
-          onSair={usuario ? sair : () => navegarPara('#/projetos')}
+          onSair={usuario && !ehModoExemplo ? sair : () => navegarPara('#/projetos')}
           onNavegar={navegarPara}
         />
         <main>
@@ -177,6 +247,21 @@ export function App() {
     );
   }
 
+  const mapaCentros = new Map();
+  for (const c of resumoSt.dados?.todos || []) mapaCentros.set(c.id, c);
+  for (const c of resumoSt.dados?.centros || []) mapaCentros.set(c.id, c);
+
+  const pendenciasSino = sinoSt.dados.map((item) => {
+    if (!item.project_id) {
+      return { ...item, centro: 'Geral' };
+    }
+    const centro = mapaCentros.get(item.project_id);
+    return {
+      ...item,
+      centro: centro ? `${centro.name} · ${centro.code}` : (item.code || 'Centro'),
+    };
+  });
+
   const renderizarPagina = () => {
     if (perfil.erro) {
       return (
@@ -200,11 +285,18 @@ export function App() {
     }
 
     if (rota.pagina === 'projeto') {
+      const resumoCentro = (resumoSt.dados?.centros || []).find((c) => c.id === rota.id) || null;
       return (
-        <EmConstrucao
-          voltar={{ rotulo: 'Projetos', href: '#/projetos' }}
-          titulo={`Projeto ${rota.id}`}
-          contexto="Visão detalhada do centro de custo"
+        <Projeto
+          projectId={rota.id}
+          abaInicial={rota.aba}
+          resumoCentro={resumoCentro}
+          carregandoResumo={resumoSt.carregando}
+          erroResumo={resumoSt.erro}
+          isAdmin={isAdmin}
+          onNavegar={navegarPara}
+          onMudarPendencias={carregarDadosGlobais}
+          onRecarregarResumo={carregarResumo}
         />
       );
     }
@@ -213,7 +305,17 @@ export function App() {
       return <EmConstrucao titulo="Análise" contexto="Área de trabalho com blocos e origem" />;
     }
 
-    return <EmConstrucao titulo="Projetos" contexto="Centros de custo ativos" />;
+    return (
+      <Projetos
+        carregando={resumoSt.carregando}
+        erro={resumoSt.erro}
+        resumo={resumoSt.dados}
+        isAdmin={isAdmin}
+        onRecarregar={carregarResumo}
+        onMostrarTodos={() => salvarFiltro([])}
+        onNavegar={navegarPara}
+      />
+    );
   };
 
   return (
@@ -222,7 +324,20 @@ export function App() {
         rotaAtiva={rota.menu}
         isAdmin={isAdmin}
         usuario={{ nome: perfil.nome, email: perfil.email }}
-        onSair={sair}
+        todosCentros={isAdmin && Array.isArray(resumoSt.dados?.todos) ? resumoSt.dados.todos : null}
+        filtroSalvando={filtroSalvando}
+        filtroErro={filtroErro}
+        onSalvarFiltro={salvarFiltro}
+        sinoEstado={sinoSt.estado}
+        sinoErro={sinoSt.erro}
+        pendencias={pendenciasSino}
+        onRecarregarSino={carregarSino}
+        onSelecionarPendencia={(item) => {
+          if (item?.project_id) {
+            navegarPara(urlProjeto(item.project_id, 'pendencias'));
+          }
+        }}
+        onSair={ehModoExemplo ? () => navegarPara('#/projetos') : sair}
         onNavegar={navegarPara}
       />
       <main>{renderizarPagina()}</main>

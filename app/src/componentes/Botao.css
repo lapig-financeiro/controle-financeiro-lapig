@@ -9,6 +9,7 @@
   font-size: var(--fs-2);
   line-height: var(--lh-2);
   font-weight: var(--fw-medio);
+  text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
   transition: background-color var(--rapido) var(--curva),
@@ -35,6 +36,7 @@
 .botao--primario:hover:not(:disabled) {
   background-color: var(--cor-acento-hover);
   border-color: var(--cor-acento-hover);
+  color: var(--cor-superficie);
 }
 
 .botao--secundario {
@@ -46,6 +48,7 @@
 .botao--secundario:hover:not(:disabled) {
   background-color: var(--cor-afundado);
   border-color: var(--cor-borda-forte);
+  color: var(--cor-texto);
 }
 
 .botao--fantasma {
