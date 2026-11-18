@@ -125,7 +125,10 @@ Janela "De onde vem este valor": à esquerda o valor conferido e a lista de part
 código/valor/texto" ou "não achei no documento"); à direita o documento. PDF com pdf.js, uma página por vez, faixa
 semitransparente na linha; DOCX com mammoth e `<mark>`; **XLSX (18/11)** com SheetJS (`sheet_to_html`), mesmo caminho do
 DOCX, e a linha `<tr>` com a marca fica destacada. Na planilha, se a parte tem `alvo.texto` (o nome da pessoa), só ele é
-marcado: o valor marcaria também quem tem bolsa igual. API: `OrigemDocumento.abrir({ titulo, valor, documento:
+marcado: o valor marcaria também quem tem bolsa igual. A tabela da planilha é montada à mão só com o texto escapado
+de cada célula (`sheet_to_json`), nunca `sheet_to_html`, que traria hiperlinks `javascript:` da planilha; o HTML do
+mammoth (DOCX) passa por `limparHtml` (tira `on*`, scripts e links que não sejam http/mailto/âncora). Revisão do
+Gemini 4 Hydrogen em 18/11. API: `OrigemDocumento.abrir({ titulo, valor, documento:
 { tipo: 'pdf'|'docx'|'xlsx', nome, carregar: async () => ArrayBuffer }, partes: [{ rotulo, valor, alvo: { conta_codigo?,
 valor?, texto? } }], nota? })`. A busca é pura e testada (`tests/origem-busca.test.js`): `linhasDaPagina` agrupa os
 itens do pdf.js com a mesma regra de `textoDaPagina`; `acharAlvo` tenta, em ordem, código inteiro, código cortado
@@ -165,6 +168,13 @@ para não-admin (`app.js`) e link com `data-admin`.
      guardada, avisa que a bolsa foi cadastrada à mão. **Atenção:** a planilha real tem CPF; a janela mostra a
      planilha inteira (só admin chega aqui).
   6. **Avisos da conta** (fechado).
+- Cenário escolhido igual a um gravado: o motor recebe **o próprio objeto gravado** (ordem das fontes e listas das
+  decisões exatas); só o "Ajuste próprio" é remontado por `cenarioDe`. Fonte `base: 'fixo'` nunca abre balancete,
+  mesmo tendo `cc` (o 30.117 abria o balancete com o caixa no lugar dos R$ 20 mil). "Vencem sem uso" só conta
+  fonte que acaba antes de a falta começar.
+- **Planilhas guardadas (18/11):** só há planilha da FUNAPE em `reconciliacoes` para 30.068, 30.103, 30.110 e
+  30.114 (agosto); nenhuma dos centros do Laerte. Para esses, o clique na bolsa diz "nenhuma planilha guardada"
+  até que a importação de bolsas desses centros seja feita pela aba Reconciliação.
 - Largura: `.main` ganhou `min-width: 0` em `style.css` (sem isso, tabela larga empurrava a página para fora da tela).
 - **Testar antes de publicar**: cópia local em `.claude/harness/planejamento.html` (fora do git), com um cliente
   falso que responde com o caso mascarado e uma planilha inventada; servir a raiz do repo (configuração

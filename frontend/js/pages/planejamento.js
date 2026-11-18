@@ -157,11 +157,13 @@ const PlanejamentoPage = (() => {
 
   function calcular() {
     const P = base.premissas;
-    const cenarios = [
-      ...P.cenarios,
-      cenarioDe(escolha, '_ESC', false),
-      cenarioDe(escolha, '_ESC_SEM', true),
-    ];
+    // Escolha igual a um cenário gravado: usa o gravado tal como está (ordem das fontes e listas
+    // das decisões exatas); só o ajuste próprio é remontado pela tela.
+    const gravado = nomeDaEscolha();
+    const escolhido = gravado ? { ...gravado, codigo: '_ESC', nome: '_ESC' } : cenarioDe(escolha, '_ESC', false);
+    const aEntrar = new Set(P.fontes.itens.filter(f => f.situacao === 'a_entrar').map(f => f.codigo));
+    const escSem = { ...escolhido, codigo: '_ESC_SEM', nome: '_ESC_SEM', fontes: escolhido.fontes.filter(f => !aEntrar.has(f)) };
+    const cenarios = [...P.cenarios, escolhido, escSem];
     return PlanejamentoMotor.calcular(base.dados, { ...P, cenarios });
   }
 
@@ -177,6 +179,11 @@ const PlanejamentoPage = (() => {
       return;
     }
     ultimo = r;
+    if (!r.meses.length) {
+      el.innerHTML = erroCard(`O horizonte das premissas (${base.premissas.horizonte_ate}) já passou. Grave premissas novas.`);
+      lucide.createIcons({ nodes: [el] });
+      return;
+    }
     const v = base.versao;
     el.innerHTML = `
       <div class="plan">
@@ -218,8 +225,9 @@ const PlanejamentoPage = (() => {
         : `<p class="plan-resp__extra"><i data-lucide="hourglass"></i><span>Mesmo sem ${aEntrar.map(f => esc(curto(f))).join(' e ')}, que ainda não ${pl ? 'entraram' : 'entrou'}, o resultado é o mesmo.</span></p>`)
       : '<p class="plan-resp__extra"><i data-lucide="wallet"></i><span>Só com dinheiro que já entrou.</span></p>';
     // Sobra que vence sem uso enquanto falta: o ponto que o cenário das sobras resolve.
+    const inicioFalta = primeiro(c);
     const vencem = base.premissas.fontes.itens.filter(f => escolha.fontes.has(f.codigo) && c.sobra[f.codigo] >= 1
-      && r.fontes[f.codigo].ate_hoje < M[M.length - 1]);
+      && inicioFalta && r.fontes[f.codigo].ate_hoje < inicioFalta);
     const totVence = vencem.reduce((s, f) => s + c.sobra[f.codigo], 0);
     const semFalta = base.premissas.cenarios.find(x => r.cenarios[x.codigo].total_sem === 0);
     const venceLinha = falta > 0 && totVence >= 1
@@ -257,7 +265,7 @@ const PlanejamentoPage = (() => {
       return `<button class="plan-cen ${ativo ? 'plan-cen--ativo' : ''}" data-cenario="${esc(c.codigo)}" aria-pressed="${ativo}">
         <span class="plan-cen__nome">${esc(c.nome)}</span>
         <span class="plan-cen__valor ${x.total_sem > 0 ? 'plan-falta' : 'plan-cen__valor--ok'}">${x.total_sem > 0 ? `falta ${K(x.total_sem)}` : 'não falta dinheiro'}</span>
-        <span class="plan-cen__explica">${esc(c.explica || '')}</span>
+        <span class="plan-cen__explica" title="${esc(c.explica || '')}">${esc(c.explica || '')}</span>
       </button>`;
     }).join('');
     const aj = P.fontes.itens.map(f => `<label class="plan-chk">
@@ -312,7 +320,7 @@ const PlanejamentoPage = (() => {
       const f = pm[m].SEM || 0;
       return `<button class="plan-mes" data-mes="${m}" title="Ver o detalhe de ${rot(m)}">
         <span class="plan-mes__barra">${partes}</span>
-        <span class="plan-mes__falta ${f > 0 ? 'plan-falta' : ''}">${f > 0 ? `${Math.round(f / 1000).toLocaleString('pt-BR')} mil` : ''}</span>
+        <span class="plan-mes__falta ${f > 0 ? 'plan-falta' : ''}">${f > 0 ? (f >= 1000 ? `${Math.round(f / 1000).toLocaleString('pt-BR')} mil` : formatBRL(f)) : ''}</span>
         <span class="plan-mes__rot">${rot(m)}</span></button>`;
     };
     const usadas = ordem.filter(k => M.some(m => pm[m][k] > 0));
@@ -328,7 +336,8 @@ const PlanejamentoPage = (() => {
 
   function rotuloFonte(k) {
     if (k === 'SEM') return 'sem dinheiro';
-    if (k === '_proprio' || !k.startsWith('→')) return 'o próprio centro paga';
+    if (k === '_proprio') return 'o próprio centro paga';
+    if (!k.startsWith('→')) return `${k} (o próprio centro)`;
     const f = base.premissas.fontes.itens.find(x => x.codigo === k.slice(1));
     return f ? curto(f) : k.slice(1);
   }
@@ -346,7 +355,7 @@ const PlanejamentoPage = (() => {
       return `<tr class="${fora ? 'plan-fora' : ''}">
         <th><span class="plan-cor" style="background:${corDe('→' + k)}"></span>${esc(f.nome || fi.nome)}
           <div class="plan-miudo">${fi.situacao === 'a_entrar' ? '<span class="plan-chip plan-chip--entrar">a entrar</span>' : '<span class="plan-chip">em caixa</span>'}
-          certeza ${esc(fi.certeza || '—')}${fora ? ' · fora deste cenário' : ''}</div></th>
+          certeza ${esc({ alta: 'alta', media: 'média', baixa: 'baixa' }[fi.certeza] || fi.certeza || '—')}${fora ? ' · fora deste cenário' : ''}</div></th>
         <td><button class="plan-num" data-fonte="${esc(k)}" title="De onde vem este valor">${formatBRL(f.valor_hoje)}</button></td>
         <td>${rot(f.de_hoje)} a ${rot(f.ate_hoje)}${f.teto_mes ? `<div class="plan-miudo">até ${formatBRL(f.teto_mes)}/mês</div>` : ''}</td>
         <td>${fora ? '—' : `<div class="plan-uso"><i style="width:${pct}%"></i></div>${usado == null ? '—' : formatBRL(usado)}`}</td>
@@ -361,7 +370,7 @@ const PlanejamentoPage = (() => {
           <colgroup><col style="width:38%"><col><col><col style="width:20%"><col></colgroup>
           <thead><tr><th>Fonte</th><th>Disponível</th><th>Pode pagar</th><th>Usado neste cenário</th><th>Sobra</th></tr></thead>
           <tbody>${linhas}</tbody></table></div>
-        ${gc && gc.length ? `<p class="plan-nota">Foram ao guarda-chuva: ${gc.map(([k, x]) => `${esc(k)} ${K(x)}`).join(', ')}.</p>` : ''}
+        ${gc && gc.length ? `<p class="plan-nota">Foram ao guarda-chuva: ${gc.map(([k, x]) => `${esc(rotuloFonte('→' + k))} ${K(x)}`).join(', ')}.</p>` : ''}
       </section>`;
   }
 
@@ -378,7 +387,7 @@ const PlanejamentoPage = (() => {
       const k = x.some(([q]) => q === 'SEM') ? 'SEM' : x[x.length - 1][0];
       return `<td class="plan-cel" title="${esc(rot(m) + ' — ' + dica)}"><i style="background:${corDe(k)}"></i></td>`;
     };
-    const linhas = lista.map(p => `<tr><th>${esc(p.nome)}</th><td>${esc(p.grupo)}</td>
+    const linhas = lista.map(p => `<tr><th title="${esc(p.nome)}">${esc(p.nome)}</th><td>${esc(p.grupo)}</td>
       <td><button class="plan-num" data-pessoa="${esc(p.nome)}" title="De onde vem este valor">${formatBRL(p.alvo)}</button></td>
       ${M.map(m => cel(p, m)).join('')}</tr>`).join('');
     return `
@@ -449,7 +458,7 @@ const PlanejamentoPage = (() => {
     const g = {};
     r.pessoas.forEach(p => p.base_linhas.forEach(([cc, v]) => { g[cc] = g[cc] || { n: 0, v: 0 }; g[cc].n += 1; g[cc].v += v; }));
     const total = r.pessoas.reduce((s, p) => s + p.alvo, 0);
-    modal('A manter por mês', `<p>Soma das bolsas de cada pessoa no mês de referência (${rot(base.dados.ref)}), por centro que paga hoje.
+    modal('A manter por mês', `<p>Soma da bolsa de cada pessoa em ${rot(base.dados.ref)}, por centro. Quem só começa depois entra com o valor do primeiro mês da bolsa.
       Para ver de onde vem cada bolsa, abra "Pessoa a pessoa" e clique no valor.</p>
       <table class="plan-tab"><thead><tr><th>Centro</th><th>Bolsas</th><th>Por mês</th></tr></thead><tbody>
       ${Object.entries(g).sort().map(([cc, x]) => `<tr><th>${esc(cc)} ${esc(base.dados.centros[cc]?.nome || '')}</th><td>${x.n}</td><td>${formatBRL(x.v)}</td></tr>`).join('')}
@@ -475,11 +484,11 @@ const PlanejamentoPage = (() => {
     const fi = base.premissas.fontes.itens.find(x => x.codigo === k) || {};
     const c = f.cc ? base.dados.centros[f.cc] : null;
     const conta = `<p><strong>${esc(f.nome)}</strong>: ${formatBRL(f.valor_hoje)}.</p>
-      ${f.como ? `<p>Como foi lido: ${esc(f.como)}.</p>` : ''}
+      ${f.como && fi.base !== 'fixo' ? `<p>Como foi lido: ${esc(f.como)}.</p>` : ''}
       ${fi.ressalva || f.ressalva ? `<p class="plan-nota">${esc(fi.ressalva || f.ressalva)}</p>` : ''}
       ${fi.base === 'fixo' ? '<p class="plan-nota">Valor fixo gravado nas premissas: não vem de documento do sistema.</p>' : ''}`;
     const balanceteId = f.cc ? base.balancetes[f.cc] : null;
-    if (!c || !balanceteId || typeof OrigemDocumento === 'undefined') { modal('De onde vem este valor', conta); return; }
+    if (fi.base === 'fixo' || !c || !balanceteId || typeof OrigemDocumento === 'undefined') { modal('De onde vem este valor', conta); return; }
     const { data: bal } = await supabaseClient.from('balancetes').select('arquivo_storage_path, arquivo_nome').eq('id', balanceteId).maybeSingle();
     if (!bal?.arquivo_storage_path) { modal('De onde vem este valor', conta + '<p>O PDF deste balancete não está guardado no sistema.</p>'); return; }
     OrigemDocumento.abrir({
@@ -587,7 +596,7 @@ const PlanejamentoPage = (() => {
       .plan-num--falta { color: var(--danger); }
       .plan-link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; font-weight: 600; }
 
-      .plan-cens { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-3); }
+      .plan-cens { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-3); }
       .plan-cen { display: flex; flex-direction: column; gap: var(--sp-1); text-align: left; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-default);
         border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text-primary); font: inherit; cursor: pointer; }
       .plan-cen:hover { border-color: var(--accent); }
@@ -622,7 +631,7 @@ const PlanejamentoPage = (() => {
       .plan-mes:hover, .plan-mes:focus-visible { background: var(--bg-secondary); }
       .plan-mes__barra { height: 150px; display: flex; flex-direction: column-reverse; margin: 0 15%; border-radius: 3px; overflow: hidden; }
       .plan-mes__barra i { display: block; }
-      .plan-mes__falta { font-size: 11px; height: 14px; text-align: center; white-space: nowrap; overflow: hidden; }
+      .plan-mes__falta { font-size: 11px; height: 14px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .plan-mes__rot { font-size: 11px; color: var(--text-secondary); text-align: center; white-space: nowrap; }
 
       .plan-rolagem { overflow-x: auto; max-width: 100%; }
@@ -631,6 +640,7 @@ const PlanejamentoPage = (() => {
       .plan-tab tbody th, .plan-tab thead th:first-child { text-align: left; font-weight: 500; }
       .plan-tab thead th { color: var(--text-secondary); font-weight: 500; font-size: 12px; }
       .plan-tab--pessoas th, .plan-tab--pessoas td { padding: 5px 6px; white-space: nowrap; }
+      .plan-tab--pessoas thead th:first-child { position: sticky; left: 0; background: var(--bg-surface); z-index: 2; }
       .plan-tab--pessoas tbody th { position: sticky; left: 0; background: var(--bg-surface); z-index: 1; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
       .plan-tab--pessoas td.plan-cel { text-align: center; }
       .plan-fora { opacity: 0.5; }

@@ -357,6 +357,7 @@ const STYLES = `
 .odoc-docx {
   width: 100%;
   max-width: 820px;
+  overflow-x: auto;
   margin: 0 auto;
   padding: var(--sp-6);
   font-family: var(--font-base);
@@ -1137,7 +1138,7 @@ export function abrir(opcoes = {}) {
       const resultado = await mammoth.convertToHtml({ arrayBuffer: buffer });
       if (!vivo()) return;
       estado.htmlBruto = resultado && typeof resultado.value === 'string'
-        ? resultado.value
+        ? limparHtml(resultado.value)
         : '';
     }
     if (!estado.htmlBruto.trim()) {
@@ -1347,15 +1348,33 @@ function tipoDoDocumento(documento) {
   return /\.docx$/i.test(nome) ? 'docx' : 'pdf';
 }
 
-// Planilha → HTML, uma tabela por aba. O SheetJS escapa o texto das células
-// (sheet_to_html); o nome da aba passa por escapeAttr.
+// Planilha → HTML, uma tabela por aba, montada aqui só com o TEXTO formatado de
+// cada célula, escapado. Não usa sheet_to_html: ele leva hiperlinks (inclusive
+// javascript:) e HTML rico da célula para a página (revisão Gemini, 18/11/2026).
 function htmlDaPlanilha(buffer) {
   if (typeof XLSX === 'undefined') throw new Error('o leitor de planilhas (XLSX) não está carregado');
   const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
   return wb.SheetNames.map((nome) => {
-    const tabela = XLSX.utils.sheet_to_html(wb.Sheets[nome], { header: '', footer: '' });
-    return `${wb.SheetNames.length > 1 ? `<h4>${escapeAttr(nome)}</h4>` : ''}${tabela}`;
+    const linhas = XLSX.utils.sheet_to_json(wb.Sheets[nome], { header: 1, raw: false, defval: '', blankrows: false });
+    const corpo = linhas.map((l) => `<tr>${l.map((c) => `<td>${escapeAttr(String(c))}</td>`).join('')}</tr>`).join('');
+    return `${wb.SheetNames.length > 1 ? `<h4>${escapeAttr(nome)}</h4>` : ''}<table>${corpo}</table>`;
   }).join('');
+}
+
+// HTML do mammoth: tira atributos on*, e links que não sejam http(s)/mailto/âncora.
+function limparHtml(html) {
+  if (typeof DOMParser === 'undefined') return html;
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  doc.body.querySelectorAll('*').forEach((no) => {
+    [...no.attributes].forEach((a) => {
+      const nome = a.name.toLowerCase();
+      if (nome.startsWith('on')) no.removeAttribute(a.name);
+      if ((nome === 'href' || nome === 'src' || nome === 'xlink:href')
+        && !/^(https?:|mailto:|#|data:image\/)/i.test(a.value.trim())) no.removeAttribute(a.name);
+    });
+  });
+  doc.body.querySelectorAll('script, style, iframe, object, embed').forEach((no) => no.remove());
+  return doc.body.firstElementChild.innerHTML;
 }
 
 // ── Browser bridge ─────────────────────────────────────────
