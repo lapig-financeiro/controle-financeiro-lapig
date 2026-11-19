@@ -593,7 +593,7 @@ begin
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, jsonb_set(base_b, '{fatos,0,trecho}', '"Linha 529/982/247/25 saldo"'::jsonb)::text), '22023');
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, jsonb_set(base_b, '{fatos,0,trecho}', to_jsonb('Linha 529' || chr(160) || '982' || chr(160) || '247' || chr(160) || '25 saldo'))::text), '22023');
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, jsonb_set(base_b, '{fatos,0,trecho}', to_jsonb('Linha 529' || chr(8211) || '982' || chr(8211) || '247' || chr(8211) || '25 saldo'))::text), '22023');
-  perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, jsonb_set(base_b, '{fatos,0,trecho}', to_jsonb('Linha 529    ' || E'\n' || '    982     247     25'))::text), '22023');
+  perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, jsonb_set(base_b, '{fatos,0,trecho}', to_jsonb('Linha 529     ' || E'\n' || '982     247     25'))::text), '22023');
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, jsonb_set(base_b, '{fatos,0,trecho}', '"Valores [\"529.982\",\"247-25\"]"'::jsonb)::text), '22023');
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, jsonb_set(base_b, '{fatos,0,trecho}', '"Par {\"529.982\": \"247-25\"}"'::jsonb)::text), '22023');
   perform pg_temp.falha_com(
@@ -926,7 +926,8 @@ declare
 begin
   perform pg_temp.ok(
     (o -> 'documento' ->> 'arquivo_nome') = 'bal_529/982/247/25.pdf'
-    and (o -> 'documento' ->> 'caminho') = x::text || '/rel_52998224725.pdf',
+    and (o -> 'documento' ->> 'caminho') = x::text || '/rel_52998224725.pdf'
+    and not (o -> 'documento' ? 'nota'),
     'admin lê arquivo_nome legado sem máscara'
   );
 end $$;
@@ -946,8 +947,9 @@ begin
     o := public.get_origem_v2('balancete_lancamentos', bl_leg, 'saldo_atual');
     perform pg_temp.ok(
       (o -> 'documento' ->> 'arquivo_nome') = 'bal_***.***.***-**.pdf'
-      and (o -> 'documento' ->> 'caminho') = x::text || '/rel_52998224725.pdf',
-      'legado mascara arquivo_nome e preserva caminho para ' || u
+      and (o -> 'documento' -> 'caminho') = 'null'::jsonb
+      and (o -> 'documento' ->> 'nota') = 'arquivo com nome que parece CPF: peça ao admin',
+      'legado mascara arquivo_nome e anula caminho com CPF para ' || u
     );
     reset role;
   end loop;
@@ -1138,8 +1140,8 @@ begin
     ver_x, 'balancetes', bal_x, '', 'total_creditos', 315000.00, 2,
     'CRÉD 315.000,00 ref 529.982.247-25 | 529 982 247 25 | 529/982/247/25 | 529'
       || chr(160) || '982' || chr(160) || '247' || chr(160) || '25 | 529'
-      || chr(8211) || '982' || chr(8211) || '247' || chr(8211) || '25 | 529    '
-      || E'\n' || '    982     247     25 | 52998224725 | 5299 8224 725',
+      || chr(8211) || '982' || chr(8211) || '247' || chr(8211) || '25 | 529     '
+      || E'\n' || '982     247     25 | 52998224725',
     null
   );
 end $$;
@@ -1168,7 +1170,7 @@ begin
     set local role authenticated;
     tr := public.get_origem_v2('balancetes', bal_x, 'total_creditos') -> 'fato' ->> 'trecho';
     perform pg_temp.ok(
-      tr = 'CRÉD 315.000,00 ref ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-**',
+      tr = 'CRÉD 315.000,00 ref ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-** | ***.***.***-**',
       u || ' recebe todas as variantes de CPF mascaradas no trecho: ' || coalesce(tr, '<null>')
     );
     reset role;
@@ -1514,13 +1516,14 @@ begin
   ));
   perform pg_temp.ok((p_ok ->> 'criada')::boolean = true, '1ª gravação sem CPF completo aceita');
 
+  -- 065: a pendência existe; a RPC não faz checagem prévia e o gatilho decide (23514).
   perform pg_temp.falha_com(
     format($q$select public.criar_pendencia_v2(%L::jsonb)$q$,
       jsonb_build_object(
         'chave', 'outro:51.X:2grav', 'project_id', x, 'tipo', 'outro',
         'titulo', 'Pendência parte 529.982', 'detalhe', jsonb_build_object('fim', '247-25')
       )::text),
-    '22023'
+    '23514', 'Pendência com CPF%'
   );
   reset role;
   perform pg_temp.falha_com(
