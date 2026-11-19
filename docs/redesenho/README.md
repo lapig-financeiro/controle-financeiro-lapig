@@ -143,6 +143,10 @@ correção dos achados confirmados. Só então a fase seguinte.
 
 ## 7. Como o trabalho é executado
 
+- **Desde 19/11 (Victor):** executa com até **2 DeepSeek V4.1 Flash max** (opencode, um por worktree); testa e
+  revisa com **MiniMax 3.1 Flash max** (em toda revisão) e **GLM 5.3**, além do DeepSeek max. **No máximo 2
+  processos do Ollama ao mesmo tempo.** O Neon (abaixo) só se o Victor pedir.
+
 - **Executor**: Orchestrator (Neon) pelo `agy` (`--model gemini-pro-orchestrator-neon --mode accept-edits`;
   nunca o Argon, `gemini-pro-orchestrator-g1-pro`; até a F0 foi o Gemini 4 Hydrogen High), uma tarefa
   por vez por executor; até dois executores em paralelo só quando as listas "Arquivos" das tarefas não se

@@ -23,6 +23,8 @@
   `gemini-pro-orchestrator-g1-pro`, que é o Argon), desde 18/11 no lugar do Hydrogen (até dois em paralelo, sem arquivo em comum);
   o Claude acompanha e confere; fim de cada etapa = revisão de dois DeepSeek V4.1 Flash **max** (`#max`, pedido de 18/11; sempre, inclusive revisão de SQL para o cofre). Gemini e Ollama
   têm cota sobrando; a do Claude está apertada.
+- **Desde 19/11:** executores = até 2 DeepSeek V4.1 Flash max; testes e revisões = MiniMax 3.1 Flash max (sempre) e
+  GLM 5.3, além do DeepSeek max; no máximo 2 processos do Ollama ao mesmo tempo (cota do Ollama folgada). Neon só a pedido.
 - Migração: só pelo cofre, com ok do Victor no chat para publicar e de novo para aplicar; manutenção ligada
   em toda aplicação.
 
