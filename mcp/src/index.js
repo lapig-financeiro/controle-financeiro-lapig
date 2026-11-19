@@ -145,7 +145,8 @@ tool(
     description:
       'Quanto sobra de fato num centro de custo, por grupo de rubrica: previsto no ' +
       'plano, menos realizado no balancete, menos os compromissos já assumidos até o ' +
-      'fim da vigência (bolsas ativas). O saldo do balancete sozinho parece maior ' +
+      'fim da vigência (bolsas ativas) e menos a taxa da fundação e da universidade ' +
+      'ainda a reter (CIP e DAO), que nunca é dinheiro livre. O saldo do balancete sozinho parece maior ' +
       'do que é.\n\n' +
       '`compromissos_cobertura` diz o que foi descontado: "bolsas" = só ' +
       'compromissos de bolsa (contrato, diária e equipamento futuros não são ' +

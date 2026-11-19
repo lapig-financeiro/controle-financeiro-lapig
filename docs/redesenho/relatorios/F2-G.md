@@ -119,3 +119,16 @@ Para os testes da raiz, `mcp/node_modules` e `app/node_modules` foram instalados
 - Linha da 066 em `docs/migracoes.md` (“ainda não aplicada”): **ok**.
 - Relatório: este arquivo.
 - Commit na branch atual (`redesenho/f2-g-066`), incluindo o arquivo da tarefa `docs/redesenho/tarefas/F2-G-066.md`: **sim**.
+
+## Revisões (MiniMax max e GLM 5.3, 19/11) — conferidas pelo Claude
+
+Nenhum achado alto. Corrigido no commit seguinte:
+- descrição da tool `saldo_livre` nos dois adaptadores (iguais) passa a dizer que a taxa a reter também sai do livre;
+- `comment on function get_saldo_livre` sem atribuir o `greatest(...)` às bolsas;
+- frase do grupo de taxa em `Projeto.jsx` condicionada ao comprometido (> 0: taxa a reter; = 0: taxa já cobrada, excesso sai do livre).
+
+Registrado, sem mudar:
+- `simular_alocacao` (039): compra dirigida a uma rubrica de taxa passa a ter teto 0 na própria letra e cai no pool. É o efeito certo da regra (taxa não é dinheiro para gastar).
+- rubrica de taxa com previsto 0 e realizado negativo (estorno) continua fora do `base`, como na 048; o livre não muda.
+- o Planejamento de bolsas (soma do livre dos grupos) deixa de contar a taxa de cada centro: coerente com a regra.
+- na árvore, previsto e realizado da taxa aparecem no grupo e dentro de "Comprometido — <rubrica>"; a soma fecha.

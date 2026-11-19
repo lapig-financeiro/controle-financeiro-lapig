@@ -337,7 +337,7 @@ end;
 $$;
 
 comment on function public.get_saldo_livre is
-  'Saldo realmente livre por grupo de rubrica até o fim da vigência. Compromissos de bolsas na janela do dia 07 (048) e taxas a reter (CIP/DAO) sempre comprometidas como greatest(previsto − realizado, 0) (066). Guard: assert_project_allowed.';
+  'Saldo realmente livre por grupo de rubrica até o fim da vigência. Compromissos de bolsas na janela do dia 07 (048) e, nas rubricas de taxa a reter (CIP/DAO), o que ainda falta cobrar: greatest(previsto − realizado, 0) (066). Guard: assert_project_allowed.';
 
 create or replace function public.explicar_livre_v2(p_project_id uuid)
 returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
