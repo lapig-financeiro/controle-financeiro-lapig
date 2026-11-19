@@ -198,13 +198,15 @@ export function alvoDaRubrica(rubrica, nomeRubrica) {
 }
 
 /**
- * Nomes que os planos usam para a mesma rubrica do catálogo (4ª rodada).
- * Só as três medidas; qualquer outra continua sem sinônimo.
+ * Nomes que os planos usam para a mesma rubrica do catálogo (4ª e 5ª
+ * rodadas). Só estas três rubricas; qualquer outra continua sem
+ * sinônimo. `Custos indiretos para a UA` já cobre `UA/Órgão` e
+ * `UA / Órgão`, porque a comparação é por trecho de texto.
  */
 export const SINONIMOS_RUBRICA = {
   cip_ufg: ['Custos indiretos para a UFG'],
-  cip_ua: ['Custos indiretos para a UA/Órgão'],
-  dao: ['D.A.O da Fundação'],
+  cip_ua: ['Custos indiretos para a UA', 'Custos indiretos para a Unidade'],
+  dao: ['D.A.O da Fundação', 'D.A.O. da Fundação'],
 };
 
 /**
@@ -225,16 +227,22 @@ export function alvosAlternativosDaRubrica(rubrica, sinonimos = SINONIMOS_RUBRIC
 
 /**
  * Conta no formato cortado que o `acharAlvo` entende: `"<prefixo>#<reduzido>"`,
- * com o prefixo nos cinco primeiros segmentos do código. Sem cinco
- * segmentos (ou com `#` no código), não há alternativa.
+ * com o prefixo nos cinco primeiros segmentos do código mais `.` e o
+ * primeiro caractere do sexto (`7.1.3.02.01.00002` → `7.1.3.02.01.0`).
+ * Sem sexto segmento (ou com `#` no código), não há alternativa; o
+ * prefixo mais estreito é o que separa a linha do lançamento das
+ * agregações (`7.1.3.02.01 25213231 …`) e de um ramo vizinho
+ * (`7.1.3.02.012 2503002 …`).
  */
 export function contaComReduzido(contaCodigo, reduzido) {
   const conta = normalizarEspacos(contaCodigo);
   const red = normalizarEspacos(reduzido);
   if (!conta || !red || conta.includes('#')) return null;
   const partes = conta.split('.').map((parte) => parte.trim()).filter(Boolean);
-  if (partes.length < 5) return null;
-  return `${partes.slice(0, 5).join('.')}#${red}`;
+  if (partes.length < 6) return null;
+  const inicioDoSexto = Array.from(partes[5])[0];
+  if (!inicioDoSexto) return null;
+  return `${partes.slice(0, 5).join('.')}.${inicioDoSexto}#${red}`;
 }
 
 export function alvoDoDesembolso(desembolso) {

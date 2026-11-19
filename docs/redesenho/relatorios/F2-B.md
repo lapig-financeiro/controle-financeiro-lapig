@@ -266,12 +266,47 @@ outras suítes, com o ponta a ponta do pglite executado; `npm run lint` e
 `npx eslint tools/rastreabilidade/` verdes. Nenhum documento real foi baixado e
 nenhuma variável `CF_*` foi usada; os centros e valores dos testes são sintéticos.
 
+## 5ª rodada (revisões MiniMax max e GLM 5.3 do commit 40d2d57)
+
+Nenhum achado alto. Correções pedidas em `docs/redesenho/tarefas/F2-B-rodada5.md`:
+
+1. **Prefixo mais estreito no código cortado.** `contaComReduzido` passou a montar o
+   prefixo com os cinco primeiros segmentos **mais `.` e o primeiro caractere do
+   sexto**: `7.1.3.02.01.00002` → `7.1.3.02.01.0#2503002`. Sem sexto segmento não
+   há alternativa. Assim a agregação `7.1.3.02.01 25213231 …` e um ramo vizinho
+   `7.1.3.02.012 2503002 …` deixam de casar o prefixo. Testes novos: as duas linhas
+   juntas não servem; `7.1.3.02.01.0 2503002` e `7.1.3.02.01.00 2503002` servem,
+   cada uma sozinha; `7.1.3.02.01` (sem sexto segmento) não gera alternativa.
+2. **Sinônimos sem perder a distinção UFG × UA.** `dao` ficou com `D.A.O da
+   Fundação` e `D.A.O. da Fundação`; `cip_ua` passou a `Custos indiretos para a UA`
+   (que já cobre `UA/Órgão` e `UA / Órgão`) e `Custos indiretos para a Unidade`;
+   `cip_ufg` continua só `Custos indiretos para a UFG`. O teste usa o
+   `SINONIMOS_RUBRICA` real, não um alvo escrito à mão: nenhum sinônimo de `cip_ua`
+   casa a linha da UFG e nenhum de `cip_ufg` casa as linhas da UA. Os dois jeitos do
+   DAO também acham cada um a sua linha.
+3. **Testes da rodada anterior conferidos.** `tests/rastreabilidade-fluxo.test.js`
+   agora tem o caso da conta repetida no raw com o **mesmo** reduzido (vale como um
+   só; o mapa continua com `size` 1), que a 4ª rodada dizia estar coberto sem estar.
+   A linha cortada do PDF sintético do ponta a ponta passou a ter as cinco colunas
+   numéricas do layout (`0,00 21.496,58 0,00 21.496,58 21.496,58`), via
+   `linhaContabilCincoColunas` em `tests/helpers/balancete-pdf.js`.
+4. **Continuam como estão (só registrado, sem mudar código).** A linha repetida na
+   quebra de página continua ambígua — na simulação de 19/11 foram 2 ambíguos ao
+   todo. O lançamento de conta redutora (banco negativo, PDF positivo) continua
+   `legado`. A linha única com "UFG e UA" não ocorre nos planos medidos, então não
+   ganhou tratamento.
+
+Verificação: `npx vitest run` — 44 arquivos, **699 testes passaram** e 5 pulos de
+outras suítes, com o ponta a ponta do pglite executado (13 testes, nenhum pulado);
+`npm run lint` e `npx eslint tools/rastreabilidade/` verdes. Nenhum documento real
+foi baixado e nenhuma variável `CF_*` foi usada; centros e valores sintéticos. O
+`parser_versao` continua `1.0.0`.
+
 ## O que ficou em aberto
 
 - Os números que a simulação de 19/11 não achou por **outras** causas continuam
-  `legado` de propósito; esta rodada só tratou código cortado e os três sinônimos de
-  rubrica. Rodar a simulação de novo é o que mede quanto as duas correções
-  resolveram.
+  `legado` de propósito; a 4ª rodada só tratou código cortado e os três sinônimos de
+  rubrica. Rodar a simulação de novo é o que mede quanto as correções resolveram.
 - **Rodar na produção** (operador, primeiro em simulação e depois aplicando, em
   turnos separados) **depois** de a 065 ser aplicada. O script está pronto, mas não
   foi executado contra o Supabase.

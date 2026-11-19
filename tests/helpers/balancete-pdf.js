@@ -97,3 +97,18 @@ export function linhaContabil(y, conta, reduzido, descricao, debitos, creditos, 
     ],
   };
 }
+
+/** Linha no layout real, com as cinco colunas numéricas como o PDF imprime. */
+export function linhaContabilCincoColunas(y, conta, reduzido, descricao, valores, negrito = false) {
+  return {
+    y,
+    tamanho: 9,
+    negrito,
+    colunas: [
+      { x: 42, texto: conta },
+      { x: 145, texto: reduzido },
+      { x: 190, texto: descricao },
+      ...valores.map((texto, indice) => ({ x: 320 + indice * 46, texto })),
+    ],
+  };
+}

@@ -117,6 +117,8 @@ describe('executarBackfill — credencial e escopo', () => {
       data: {
         lancamentos: [
           { conta_codigo: '7.1.3.02.01.00002', conta_reduzido: '2503002' },
+          // Mesma conta repetida com o MESMO reduzido: vale como um só.
+          { conta_codigo: '7.1.3.02.01.00002', conta_reduzido: '2503002' },
           // Mesma conta com outro reduzido: sem alternativa.
           { conta_codigo: '7.1.3.02.01.00003', conta_reduzido: '2503003' },
           { conta_codigo: '7.1.3.02.01.00003', conta_reduzido: '2503999' },

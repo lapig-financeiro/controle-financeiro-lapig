@@ -93,23 +93,27 @@ na listagem de balancetes: é lido por documento, com `select` só dele.
 - **Código cortado no PDF:** o lançamento é procurado primeiro pelo **código
   completo**. Só quando nenhuma linha serve, o script usa o mapa
   `conta_codigo → conta_reduzido` do `raw_extraction` daquele balancete e procura
-  `"<prefixo>#<reduzido>"` (prefixo = os cinco primeiros segmentos do código), que é
-  a regra 2 do `acharAlvo` — prefixo no começo da linha e reduzido como palavra
-  inteira, sempre com o valor na linha. Conta com reduzido vazio ou com dois
-  reduzidos diferentes no `raw_extraction` fica **sem alternativa**. A regra de
-  ambiguidade não muda: mais de uma linha servindo = ambíguo, sem fato. Esses fatos
-  entram na contagem `por_reduzido` do detalhe, do resumo e do terminal. O
-  `busca`/`ref` do legado no banco continua como está.
+  `"<prefixo>#<reduzido>"` (prefixo = os cinco primeiros segmentos do código mais
+  `.` e o **primeiro caractere do sexto**; `7.1.3.02.01.00002` vira
+  `7.1.3.02.01.0#2503002`), que é a regra 2 do `acharAlvo` — prefixo no começo da
+  linha e reduzido como palavra inteira, sempre com o valor na linha. O prefixo mais
+  estreito é o que impede a agregação `7.1.3.02.01 25213231 …` e um ramo vizinho
+  (`7.1.3.02.012 2503002 …`) de casarem por engano. Conta sem sexto segmento, com
+  reduzido vazio ou com dois reduzidos diferentes no `raw_extraction` fica **sem
+  alternativa**. A regra de ambiguidade não muda: mais de uma linha servindo =
+  ambíguo, sem fato. Esses fatos entram na contagem `por_reduzido` do detalhe, do
+  resumo e do terminal. O `busca`/`ref` do legado no banco continua como está.
 - Para rubrica, o alvo do `acharAlvo` é `{ texto }` (descrição livre ou nome da
   rubrica), com o valor só como desempate.
-- **Sinônimos de rubrica no plano:** só `cip_ufg`, `cip_ua` e `dao` têm nome fixo
-  usado pelos documentos (`Custos indiretos para a UFG`, `Custos indiretos para a
-  UA/Órgão`, `D.A.O da Fundação`). Quando a rubrica **não tem** `descricao_livre` e
-  o nome do catálogo não acha nenhuma linha, o script tenta os sinônimos, na ordem,
-  sempre com o valor na linha. `cip_ufg` e `cip_ua` costumam ter o mesmo valor; é o
-  texto ("para a UFG" × "para a UA/Órgão") que distingue. Se um sinônimo casar nas
-  duas linhas, é ambíguo e não vira fato. Nenhuma outra rubrica ganha sinônimo nesta
-  rodada.
+- **Sinônimos de rubrica no plano:** só `cip_ufg`, `cip_ua` e `dao` têm nomes fixos
+  usados pelos documentos. `cip_ufg`: `Custos indiretos para a UFG`. `cip_ua`:
+  `Custos indiretos para a UA` (cobre `UA/Órgão` e `UA / Órgão`) e `Custos
+  indiretos para a Unidade`. `dao`: `D.A.O da Fundação` e `D.A.O. da Fundação`.
+  Quando a rubrica **não tem** `descricao_livre` e o nome do catálogo não acha
+  nenhuma linha, o script tenta os sinônimos, na ordem, sempre com o valor na linha.
+  `cip_ufg` e `cip_ua` costumam ter o mesmo valor; é o texto ("para a UFG" × "para
+  a UA" ou "para a Unidade") que distingue. Se um sinônimo casar nas duas linhas, é
+  ambíguo e não vira fato. Nenhuma outra rubrica ganha sinônimo.
 - **Pré-validação de valor:** antes da RPC, o script extrai o número **do trecho**
   (parsing do texto como o documento imprime, incluindo negativos entre parênteses)
   e confere se ele é o valor do fato. Não é uma comparação do valor com ele mesmo.
@@ -209,10 +213,16 @@ npx eslint tools/rastreabilidade/
   partir par substituto), bbox, divergência descartada, `sem_valor`, saída do
   terminal e filtros `in.(...)` em blocos de 50 (200 ids viram 4 requisições).
 - Código cortado: as três linhas (lançamento com reduzido + duas agregações) provam
-  que só a do reduzido serve; mapa com dois reduzidos e com reduzido vazio prova a
-  falta de alternativa; duas linhas iguais continuam ambíguas. Sinônimos: `cip_ufg`
-  e `cip_ua` com o mesmo valor acham cada um a sua linha, e um sinônimo que casa nas
-  duas é ambíguo.
+  que só a do reduzido serve. O prefixo estreito é testado com a agregação
+  `7.1.3.02.01 …` e o ramo vizinho `7.1.3.02.012 …` (nenhum serve), com
+  `7.1.3.02.01.0 …` e com `7.1.3.02.01.00 …` (cada uma serve sozinha); conta sem
+  sexto segmento não gera alternativa. O mapa aceita a conta repetida com o mesmo
+  reduzido e descarta a conta com dois reduzidos ou com reduzido vazio. Duas linhas
+  iguais continuam ambíguas. Sinônimos: o teste usa o `SINONIMOS_RUBRICA` real e
+  confere que nenhum sinônimo de `cip_ua` casa a linha da UFG e nenhum de `cip_ufg`
+  casa as linhas da UA; `cip_ufg` e `cip_ua` com o mesmo valor acham cada um a sua
+  linha, os dois jeitos do DAO acham a sua, e um sinônimo que casa nas duas é
+  ambíguo.
 - O cliente falso também cobre o download: 403 na URL assinada refaz a assinatura
   uma vez; dois 403 recusam o arquivo sem virar "login expirou".
 - Ponta a ponta (pglite): um PDF de balancete **e** um DOCX de plano, ambos
@@ -221,9 +231,9 @@ npx eslint tools/rastreabilidade/
   `pagina` nula), rodar duas vezes não cria versão nova e a simulação não chama a
   RPC. A linha de total tem dois casos: repetir código e valor fica ambíguo (sem
   fato); repetir só o valor deixa o fato na linha do lançamento. Também há um PDF
-  com o **código cortado** (o fato chega à RPC pelo reduzido e conta em
-  `por_reduzido`) e um DOCX com os **três sinônimos** de rubrica, cada um na sua
-  linha com o mesmo valor nos dois CIPs.
+  com o **código cortado** (a linha no layout de cinco colunas numéricas; o fato
+  chega à RPC pelo reduzido e conta em `por_reduzido`) e um DOCX com os **três
+  sinônimos** de rubrica, cada um na sua linha com o mesmo valor nos dois CIPs.
 
 ## Versão
 

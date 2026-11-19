@@ -15,6 +15,7 @@ import {
   escolherLinhaComAlternativas,
   linhaServe,
   montarFato,
+  textoNaLinha,
   valorLidoDoTrecho,
   valorNaLinha,
 } from '../tools/rastreabilidade/alvo.mjs';
@@ -214,7 +215,7 @@ describe('alvo — escolha da linha', () => {
   });
 });
 
-describe('alvo — código cortado e sinônimos de rubrica (4ª rodada)', () => {
+describe('alvo — código cortado e sinônimos de rubrica (4ª e 5ª rodadas)', () => {
   const LINHAS_CORTADAS = [
     '7.1.3.02.01.0 2503002 BOLSA PESQUISA 0,00 21.496,58 0,00 21.496,58 21.496,58',
     '7.1.3.02 2521323 TOTAL DA CONTA 0,00 21.496,58 0,00 21.496,58 21.496,58',
@@ -228,7 +229,7 @@ describe('alvo — código cortado e sinônimos de rubrica (4ª rodada)', () => 
     const alvo = alvoDoLancamento({ conta_codigo: CONTA_COMPLETA, saldo_atual: VALOR });
 
     expect(escolherLinha(paginas, alvo).status).toBe('nao_achado');
-    expect(contaComReduzido(CONTA_COMPLETA, '2503002')).toBe('7.1.3.02.01#2503002');
+    expect(contaComReduzido(CONTA_COMPLETA, '2503002')).toBe('7.1.3.02.01.0#2503002');
 
     const { selecao, alternativa } = escolherLinhaComAlternativas(paginas, alvo, [{
       conta_codigo: contaComReduzido(CONTA_COMPLETA, '2503002'),
@@ -253,7 +254,7 @@ describe('alvo — código cortado e sinônimos de rubrica (4ª rodada)', () => 
       saldo_atual: 15000,
     });
     const { selecao, alternativa } = escolherLinhaComAlternativas(paginas, alvo, [{
-      conta_codigo: '7.1.3.05.01#2506027',
+      conta_codigo: '7.1.3.05.01.0#2506027',
       valor: 15000,
     }]);
 
@@ -267,17 +268,58 @@ describe('alvo — código cortado e sinônimos de rubrica (4ª rodada)', () => 
     const { selecao, alternativa } = escolherLinhaComAlternativas(
       paginas,
       alvoDoLancamento({ conta_codigo: CONTA_COMPLETA, saldo_atual: VALOR }),
-      [{ conta_codigo: '7.1.3.02.01#2503002', valor: VALOR }],
+      [{ conta_codigo: '7.1.3.02.01.0#2503002', valor: VALOR }],
     );
 
     expect(alternativa).toBe(0);
     expect(selecao.status).toBe('ambiguo');
   });
 
-  it('conta com menos de cinco segmentos não gera alternativa', () => {
+  it('conta sem sexto segmento não gera alternativa', () => {
     expect(contaComReduzido('7.1.3', '2503002')).toBeNull();
+    expect(contaComReduzido('7.1.3.02.01', '2503002')).toBeNull();
     expect(contaComReduzido('7.1.3.02.01.0#2503002', '2503002')).toBeNull();
     expect(contaComReduzido('7.1.3.02.01.00002', '')).toBeNull();
+  });
+
+  it('com o prefixo estreito, a agregação e o ramo vizinho não servem', () => {
+    const paginas = paginasDe([
+      '7.1.3.02.01 25213231 TOTAL DA CONTA 0,00 21.496,58 0,00 21.496,58 21.496,58',
+      '7.1.3.02.012 2503002 CONTA VIZINHA 0,00 21.496,58 0,00 21.496,58 21.496,58',
+    ]);
+    const alvo = {
+      conta_codigo: contaComReduzido(CONTA_COMPLETA, '2503002'),
+      valor: VALOR,
+    };
+
+    expect(alvo.conta_codigo).toBe('7.1.3.02.01.0#2503002');
+    expect(escolherLinha(paginas, alvo).status).toBe('nao_achado');
+  });
+
+  it('a linha com o sexto segmento começando pelo mesmo dígito serve', () => {
+    const paginas = paginasDe([
+      '7.1.3.02.01.0 2503002 BOLSA PESQUISA 0,00 21.496,58 0,00 21.496,58 21.496,58',
+    ]);
+    const selecao = escolherLinha(paginas, {
+      conta_codigo: contaComReduzido(CONTA_COMPLETA, '2503002'),
+      valor: VALOR,
+    });
+
+    expect(selecao.status).toBe('achado');
+    expect(selecao.linha).toBe(0);
+  });
+
+  it('a linha com o sexto segmento de dois dígitos também serve', () => {
+    const paginas = paginasDe([
+      '7.1.3.02.01.00 2503002 BOLSA PESQUISA 0,00 21.496,58 0,00 21.496,58 21.496,58',
+    ]);
+    const selecao = escolherLinha(paginas, {
+      conta_codigo: contaComReduzido(CONTA_COMPLETA, '2503002'),
+      valor: VALOR,
+    });
+
+    expect(selecao.status).toBe('achado');
+    expect(selecao.linha).toBe(0);
   });
 
   it('o mapa de sinônimos tem só as três rubricas medidas', () => {
@@ -291,7 +333,10 @@ describe('alvo — código cortado e sinônimos de rubrica (4ª rodada)', () => 
       rubrica_code: 'dao',
       descricao_livre: '  ',
       valor_previsto: 600,
-    })).toEqual([{ texto: 'D.A.O da Fundação', valor: 600 }]);
+    })).toEqual([
+      { texto: 'D.A.O da Fundação', valor: 600 },
+      { texto: 'D.A.O. da Fundação', valor: 600 },
+    ]);
     expect(alvosAlternativosDaRubrica({
       rubrica_code: 'a.bolsas',
       descricao_livre: null,
@@ -302,6 +347,40 @@ describe('alvo — código cortado e sinônimos de rubrica (4ª rodada)', () => 
       descricao_livre: 'Texto livre do plano',
       valor_previsto: 1000,
     })).toEqual([]);
+  });
+
+  it('nenhum sinônimo de cip_ua casa a UFG, nenhum de cip_ufg casa a UA', () => {
+    const linhaUfg = 'Custos indiretos para a UFG 1.000,00';
+    const linhasUa = [
+      'Custos indiretos para a UA/Órgão 1.000,00',
+      'Custos indiretos para a UA 1.000,00',
+      'Custos indiretos para a Unidade 1.000,00',
+    ];
+
+    // O mapa real, não um alvo escrito à mão.
+    for (const sinonimo of SINONIMOS_RUBRICA.cip_ua) {
+      expect(textoNaLinha(linhaUfg, sinonimo)).toBe(false);
+    }
+    for (const sinonimo of SINONIMOS_RUBRICA.cip_ufg) {
+      for (const linha of linhasUa) {
+        expect(textoNaLinha(linha, sinonimo)).toBe(false);
+      }
+    }
+  });
+
+  it('os dois jeitos de escrever o DAO acham cada um a sua linha', () => {
+    const dao = { rubrica_code: 'dao', descricao_livre: null, valor_previsto: 600 };
+    const semPonto = escolherLinha(
+      paginasDe(['D.A.O da Fundação 600,00']),
+      alvosAlternativosDaRubrica(dao)[0],
+    );
+    const comPonto = escolherLinha(
+      paginasDe(['D.A.O. da Fundação 600,00']),
+      alvosAlternativosDaRubrica(dao)[1],
+    );
+
+    expect(semPonto.status).toBe('achado');
+    expect(comPonto.status).toBe('achado');
   });
 
   it('cip_ufg e cip_ua com o mesmo valor acham cada um a sua linha', () => {

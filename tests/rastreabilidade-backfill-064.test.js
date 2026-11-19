@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { linhaContabil, montarPdfBytes } from './helpers/balancete-pdf.js';
+import { linhaContabil, linhaContabilCincoColunas, montarPdfBytes } from './helpers/balancete-pdf.js';
 import { docxSintetico } from './helpers/plano-sintetico.js';
 import { lerDocx, lerPdf } from '../tools/rastreabilidade/documento.mjs';
 import { VERSAO, executarBackfill } from '../tools/rastreabilidade/executar.mjs';
@@ -431,7 +431,10 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
     lancamentoReduzidoId = lancamentoReduzido.rows[0].id;
     const paginaReduzido = [[
       { x: 42, y: 790, tamanho: 12, negrito: true, texto: 'BALANCETE SINTETICO - CODIGO CORTADO' },
-      linhaContabil(760, '7.1.3.02.01.0', '2503002', 'BOLSA PESQUISA', '0,00', '21.496,58', '21.496,58'),
+      linhaContabilCincoColunas(
+        760, '7.1.3.02.01.0', '2503002', 'BOLSA PESQUISA',
+        ['0,00', '21.496,58', '0,00', '21.496,58', '21.496,58'],
+      ),
       linhaContabil(736, '7.1.3.02', '2521323', 'TOTAL DA CONTA', '0,00', '21.496,58', '21.496,58'),
       linhaContabil(712, '7.1.3.02.01', '25213231', 'TOTAL DA CONTA', '0,00', '21.496,58', '21.496,58'),
     ]];
