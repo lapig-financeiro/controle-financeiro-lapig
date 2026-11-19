@@ -35,12 +35,13 @@ const p = (text, bold = false) => '<w:p><w:r>' + (bold ? '<w:rPr><w:b/></w:rPr>'
   '<w:t>' + xml(text) + '</w:t></w:r></w:p>';
 const row = (name, value, bold = false) => '<w:tr><w:tc>' + p(name, bold) +
   '</w:tc><w:tc>' + p(value) + '</w:tc></w:tr>';
-export function docxSintetico({ total = '1.200,00', totalLabel = 'Total', modelo = 'proad' } = {}) {
+export function docxSintetico({ total = '1.200,00', totalLabel = 'Total', modelo = 'proad', linhasExtras = [] } = {}) {
+  const extras = linhasExtras.map(([nome, valor]) => row(nome, valor)).join('');
   const content = modelo === 'proad'
     ? '<w:tbl>' + row('Plano de Aplicação dos Recursos Financeiros', 'Valor (R$)') +
       row('a- Pessoal', '800,00', true) + row('Bolsas', '800,00') +
       row('b- Serviços de Terceiros P. Jurídica', '400,00', true) +
-      row('Serviço sintético', '400,00') + row(totalLabel, total) + '</w:tbl>'
+      row('Serviço sintético', '400,00') + extras + row(totalLabel, total) + '</w:tbl>'
     : p('Termo de Fomento — Prefeitura. 10. Custos. 16. Cronograma de Desembolso. Documento sintético para testar o modelo fora do padrão.');
   return zip({
     '[Content_Types].xml': '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
