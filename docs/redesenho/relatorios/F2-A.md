@@ -113,3 +113,33 @@ Resultado das execuções finais após todas as edições da 2ª rodada:
 - **`npm.cmd run lint`** — **verde (exit 0)**.
 - **`npm.cmd test`** — **verde (exit 0)**: `37 passed (37)` arquivos, `575 passed | 5 skipped (580)` testes (5 pulados pré-existentes de fixtures opcionais em `tests/fixtures/pt-html/`).
 - **`.\node_modules\.bin\vitest.cmd run tests/origem-busca-064.test.js`** — **verde (exit 0)**: `1 passed (1)` arquivo, `4 passed (4)` testes (0 pulados).
+
+## 8. 3ª rodada (revisão final DeepSeek max — `F2-A-rodada3.md`)
+
+### Tamanho final da migração
+- **`database/064_rastreabilidade.sql`**: **88.760 bytes** em UTF-8 (1.992 linhas com LF; `begin;` como primeiro comando e `commit;` como último), abaixo do limite de 90 KB. O espaço extra veio de `_cpfs` (novo helper interno) e das checagens da 3ª rodada; nenhuma checagem anterior foi removida.
+
+### Correções na migração, testes e roteiro (itens 1–8)
+1. **`busca.texto` com máscara**: `_resolver_origem_alvo` agora aplica `_mascarar_cpf` em `busca.texto` sempre que `p_mascarar` (cobre `descricao_livre` de `plano_rubricas` e qualquer `texto` livre futuro). Teste novo em BLOCO 3 cria um plano inativo de 51.X com `descricao_livre = 'Consultoria 529.982.247-25'` e confere: admin lê o texto cru; b1 (professor) e c1 (agente) recebem `'Consultoria ***.***.***-**'` com `tipo = 'legado'` e `documento = null`.
+2. **Caminho canônico**: o primeiro segmento de `caminho` passou a ser comparado como **texto** com `v_project_id::text` (minúsculo), não mais como `uuid`. UUID maiúsculo agora falha com a mensagem `Primeiro segmento do caminho deve ser o project_id em minúsculas: …`. O teste da 2ª rodada foi ajustado: `v2` usa caminho minúsculo e um novo caso com `upper(x)` espera `22023` e a mensagem clara.
+3. **Pré-checagem de `pendencias`**: o `do $$` anterior aos `ADD CONSTRAINT` agora lista também linhas com `chave` ou `titulo` nulos (`where chave is null or titulo is null or btrim(...) = ''`) e a mensagem virou `pendencias possui chave/titulo nulo ou em branco (ids: …)`. O roteiro (`rodar-064-pglite.mjs`) remove temporariamente o `NOT NULL` local, insere uma linha com `chave` nula e outra com `titulo` nulo, confirma que a 064 falha listando **os dois ids** e restaura o `NOT NULL`/apaga as linhas de teste.
+4. **Gatilho de CPF de `pendencias` — troca de CPF**: novo helper interno `_cpfs(text)` (`security definer`, `search_path = public, pg_temp`, sem grant) extrai os CPFs válidos de um texto (mesmo padrão largo de `_mascarar_cpf`, dígito verificador da 052, sem repetir). No `UPDATE`, `_pendencias_sem_cpf` recusa quando o texto novo contém algum CPF que não estava no texto antigo (`exists … unnest(_cpfs(v_novo)) c where not (c = any(_cpfs(v_antigo)))`), o que bloqueia trocar um CPF por outro e continua permitindo limpar CPF legado e editar campo alheio. Teste novo: a linha legada com `529 982 247 25` no `detalhe` recusa a troca para `111.444.777-35` com `23514`; limpar o detalhe continua permitido.
+5. **Índice `idx_fatos_versao`**: criado em `public.fatos (versao_id)` (além do `idx_fatos_alvo`). A asserção da 064 e o BLOCO 5 do teste conferem a presença dos dois índices (`idx_fatos_alvo`, `idx_fatos_versao`) e de `idx_pendencias_resolvida_por`.
+6. **Plano/balancete existentes mesmo com `fatos: []`**: `registrar_documento_v2`, depois de validar a chave canônica, exige: para `tipo = 'balancete'`, um `balancetes` do `project_id` na `data_referencia` da chave (`22023`, `Não existe balancete do projeto … na data … da chave.`); para `tipo = 'plano'`, um `planos_trabalho` com o `id` da chave e do `project_id` (`22023`, `Plano … não encontrado no projeto …`). Dois testes novos com `fatos: []` cobrem plano inexistente e data sem balancete.
+7. **`parser`/`parser_versao` com CPF**: ambos entraram no bloco de metadados que chama `_tem_cpf`, junto de `titulo` e `arquivo_nome` (mesma mensagem `Metadados do documento contêm CPF…`, `22023`). Testes novos com CPF pontuado no `parser` e espaçado no `parser_versao`.
+8. **Asserção do `qual` robusta ao deparse**: tanto na 064 quanto no BLOCO 5, os dois lados são normalizados com `lower`, remoção de todo espaço/parenteses (`regexp_replace(..., '[\s()]', '', 'g')`) e remoção de `public.` antes da igualdade. Os mutantes 7 (`fatos_select_admin … or true`) e 8 (`documentos_select_escopo … using (true)`) continuam reprovando com a mesma mensagem (`policy … com qual inesperada`).
+
+### Verificação das correções novas
+Além dos **8 mutantes** oficiais (todos continuam reprovando no roteiro: 5 da 1ª rodada + 3 da 2ª rodada), as cinco correções com teste novo foram conferidas contra versões estragadas em memória (script descartável, sem alterar arquivos do repositório):
+- sem a máscara em `busca.texto` → `064 FALHOU: b1 recebe busca.texto de rubrica mascarado`;
+- gatilho sem a comparação de CPFs (`_cpfs`) → `064 FALHOU: operação deveria falhar mas passou: update … 111.444.777-35`;
+- `registrar_documento_v2` sem a existência de plano/balancete → `064 FALHOU: operação deveria falhar mas passou` nos dois casos com `fatos: []`;
+- caminho comparado como `uuid` (maiúsculo aceito) → `064 FALHOU: operação deveria falhar mas passou`;
+- `parser` sem `_tem_cpf` → `064 FALHOU: operação deveria falhar mas passou`.
+A pré-checagem de `pendencias` com `chave`/`titulo` nulos foi provada diretamente pelo roteiro, que lista os dois ids antes de restaurar a tabela.
+
+### Resultado das execuções finais da 3ª rodada
+- **`node tools/replica-local/rodar-064-pglite.mjs`** — **verde (exit 0)**: falha pré-064 (`42P01`), pré-checagem `E'\t'` + linhas com `chave`/`titulo` nulos, cofre OK (`88760 bytes`), 5 blocos + idempotência + BLOCO 1 da 051 + MD5 dos 6 helpers protegidos + **8 mutantes** + conferência final verdes.
+- **`npm run lint`** — **verde (exit 0)**.
+- **`npx vitest run`** — **verde (exit 0)**: `37 passed (37)` arquivos, `575 passed | 5 skipped (580)` testes (os 5 pulados são fixtures opcionais pré-existentes em `tests/fixtures/pt-html/`).
+- **Sem push e sem aplicar em produção**, conforme a tarefa.

@@ -202,6 +202,7 @@ begin
   foreach fn in array array[
     'public._tem_cpf(text)',
     'public._mascarar_cpf(text)',
+    'public._cpfs(text)',
     'public._fmt_brl_num(numeric)',
     'public._texto_pendencia(text, text, jsonb)',
     'public._resolver_origem_alvo(text, uuid, text, boolean)',
@@ -418,6 +419,28 @@ begin
     '22023'
   );
 
+  -- Item 6 (3ª rodada): a chave exige plano/balancete existente mesmo com fatos: []
+  perform pg_temp.falha_com(
+    format($q$select public.registrar_documento_v2(%L::jsonb)$q$,
+      jsonb_build_object(
+        'project_id', x, 'tipo', 'plano', 'chave', 'plano:' || x::text || ':99999999-9999-4999-8999-999999999998',
+        'titulo', 'Plano inexistente sem fatos', 'sha256', repeat('e', 64), 'bucket', 'plano-trabalho-docs',
+        'caminho', x::text || '/sem_plano.docx', 'formato', 'docx', 'paginas', null, 'parser', 'pt-parser', 'parser_versao', '1',
+        'origem', 'site', 'fatos', '[]'::jsonb
+      )::text),
+    '22023', 'Plano % não encontrado%'
+  );
+  perform pg_temp.falha_com(
+    format($q$select public.registrar_documento_v2(%L::jsonb)$q$,
+      jsonb_build_object(
+        'project_id', x, 'tipo', 'balancete', 'chave', 'balancete:' || x::text || ':2020-01-01',
+        'titulo', 'Balancete sem data', 'sha256', repeat('e', 64), 'bucket', 'balancete-pdfs',
+        'caminho', x::text || '/sem_balancete.pdf', 'formato', 'pdf', 'paginas', 1, 'parser', 'p', 'parser_versao', '1',
+        'origem', 'site', 'fatos', '[]'::jsonb
+      )::text),
+    '22023', 'Não existe balancete%'
+  );
+
   -- Matriz tipo x bucket x formato x caminho x tabela x campo
   perform pg_temp.falha_com(
     format($q$select public.registrar_documento_v2(%L::jsonb)$q$, (base_b || jsonb_build_object('bucket', 'plano-trabalho-docs'))::text),
@@ -585,6 +608,9 @@ begin
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, (base_b || jsonb_build_object('arquivo_nome', 'arq_52998224725.pdf'))::text), '22023');
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, (base_b || jsonb_build_object('caminho', x::text || '/sub/529_982_247_25.pdf'))::text), '22023');
   perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, (base_b || jsonb_build_object('chave', 'balancete:529.982.247-25', 'fatos', '[]'::jsonb))::text), '22023');
+  -- Item 7 (3ª rodada): parser e parser_versao também passam por _tem_cpf
+  perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, (base_b || jsonb_build_object('parser', 'parser 529.982.247-25'))::text), '22023', 'Metadados do documento contêm CPF%');
+  perform pg_temp.falha_com(format($q$select public.registrar_documento_v2(%L::jsonb)$q$, (base_b || jsonb_build_object('parser_versao', 'v1 529 982 247 25'))::text), '22023', 'Metadados do documento contêm CPF%');
 
   -- DV inválido (123.456.789-00) NÃO é CPF e é aceito
   r1 := public.registrar_documento_v2(
@@ -608,12 +634,12 @@ begin
     'repetir sha256 devolve criada=false sem duplicar versão ou fatos'
   );
 
-  -- Itens 8 e 11: sha novo atualiza documentos.titulo e aceita UUID maiúsculo em caminho
+  -- Itens 8 e 11: sha novo atualiza documentos.titulo; caminho exige o UUID minúsculo
   r3 := public.registrar_documento_v2(
     base_b || jsonb_build_object(
       'sha256', repeat('1', 64),
       'titulo', 'Titulo atualizado v2',
-      'caminho', upper(x::text) || '/MAIUSCULO_v2.pdf'
+      'caminho', x::text || '/v2.pdf'
     )
   );
   perform pg_temp.ok(
@@ -621,7 +647,12 @@ begin
     and (r3 ->> 'versao')::int = 2
     and (r3 ->> 'documento_id') = (r1 ->> 'documento_id')
     and (select titulo from public.documentos where id = (r1 ->> 'documento_id')::uuid) = 'Titulo atualizado v2',
-    'sha256 novo cria versao 2, atualiza titulo e aceita UUID maiúsculo no caminho'
+    'sha256 novo cria versao 2 e atualiza titulo'
+  );
+  perform pg_temp.falha_com(
+    format($q$select public.registrar_documento_v2(%L::jsonb)$q$,
+      (base_b || jsonb_build_object('sha256', repeat('6', 64), 'caminho', upper(x::text) || '/MAIUSCULO_v3.pdf'))::text),
+    '22023', 'Primeiro segmento do caminho deve ser o project_id em minúsculas%'
   );
 
   -- Conflito de chave com outro projeto ou outro tipo falha
@@ -805,6 +836,56 @@ begin
   perform pg_temp.falha_com(format($q$select public.get_origem_v2('balancetes', %L::uuid, 'campo_fake')$q$, bal_x), '22023');
 end $$;
 reset role;
+
+-- Item 1 (3ª rodada): busca.texto vindo de descricao_livre também passa pela máscara de CPF
+do $$
+declare
+  x uuid := current_setting('test064.x')::uuid;
+  v_pl uuid;
+  v_pr uuid;
+begin
+  insert into public.planos_trabalho (project_id, ativo, versao, tipo, valor_total_plano)
+  values (x, false, 9, 'remanejamento', 1000.00)
+  returning id into v_pl;
+
+  insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto, descricao_livre)
+  values (v_pl, 'b', 1000.00, 'Consultoria 529.982.247-25')
+  returning id into v_pr;
+
+  perform set_config('test064.pl_cpf', v_pl::text, true);
+  perform set_config('test064.pr_cpf', v_pr::text, true);
+end $$;
+
+do $$
+declare
+  u text;
+  v_pr uuid := current_setting('test064.pr_cpf')::uuid;
+  o jsonb;
+begin
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
+  set local role authenticated;
+  o := public.get_origem_v2('plano_rubricas', v_pr, 'valor_previsto');
+  perform pg_temp.ok(
+    o ->> 'tipo' = 'legado'
+    and (o -> 'busca' ->> 'texto') = 'Consultoria 529.982.247-25',
+    'admin lê busca.texto livre sem máscara'
+  );
+  reset role;
+
+  foreach u in array array['00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000c1'] loop
+    perform set_config('request.jwt.claim.sub', u, true);
+    set local role authenticated;
+    o := public.get_origem_v2('plano_rubricas', v_pr, 'valor_previsto');
+    perform pg_temp.ok(
+      o ->> 'tipo' = 'legado'
+      and (o -> 'busca' ->> 'texto') = 'Consultoria ***.***.***-**'
+      and o -> 'documento' = 'null'::jsonb,
+      u || ' recebe busca.texto de rubrica mascarado'
+    );
+    reset role;
+  end loop;
+  perform set_config('request.jwt.claim.sub', '', true);
+end $$;
 
 -- Correção #14 + Item 7: legado sem extensão no caminho, sem arquivo_nome e máscara em arquivo_nome
 update public.balancetes
@@ -1489,6 +1570,12 @@ begin
     '23514', 'Pendência com CPF%'
   );
 
+  -- Item 4 (3ª rodada): trocar um CPF por outro no detalhe também falha
+  perform pg_temp.falha_com(
+    format($q$update public.pendencias set detalhe = '{"obs":"111.444.777-35"}'::jsonb where id = %L::uuid$q$, v_id),
+    '23514', 'Pendência com CPF%'
+  );
+
   -- Limpar CPF legado no detalhe é permitido
   update public.pendencias set detalhe = '{}'::jsonb where id = v_id;
   perform pg_temp.ok(
@@ -1521,6 +1608,13 @@ begin
     ),
     'idx_pendencias_resolvida_por presente'
   );
+  perform pg_temp.ok(
+    exists (
+      select 1 from pg_indexes
+       where schemaname = 'public' and tablename = 'fatos' and indexname = 'idx_fatos_versao'
+    ),
+    'idx_fatos_versao presente'
+  );
 
   for tb, exp_q in
     select * from (values
@@ -1530,14 +1624,14 @@ begin
       ('pendencias',        '(is_admin() OR ((project_id IS NOT NULL) AND (project_id = ANY (allowed_project_ids()))))')
     ) as x(t, q)
   loop
-    select replace(regexp_replace(btrim(coalesce(qual, '')), '\s+', ' ', 'g'), 'public.', '')
+    select replace(regexp_replace(lower(coalesce(qual, '')), '[\s()]', '', 'g'), 'public.', '')
       into pol_q
       from pg_policies
      where schemaname = 'public' and tablename = tb and cmd = 'SELECT';
 
     perform pg_temp.ok(
       (select count(*) = 1 from pg_policies where schemaname = 'public' and tablename = tb)
-      and pol_q = exp_q
+      and pol_q = replace(regexp_replace(lower(exp_q), '[\s()]', '', 'g'), 'public.', '')
       and exists (
         select 1 from pg_trigger t
          where t.tgrelid = ('public.' || tb)::regclass

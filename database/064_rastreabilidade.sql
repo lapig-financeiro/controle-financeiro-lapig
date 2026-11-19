@@ -1,6 +1,6 @@
 -- CONTROLE FINANCEIRO DE PROJETOS — Migração 064 (F2-A: rastreabilidade + pendências 063)
 -- Aditiva/idempotente: documentos, documento_versoes, fatos (chave estável alvo_pai_id+alvo_chave);
--- helpers internos sem grant (_tem_cpf, _mascarar_cpf, _fmt_brl_num, _texto_pendencia, _resolver_origem_alvo);
+-- helpers internos sem grant (_tem_cpf, _mascarar_cpf, _cpfs, _fmt_brl_num, _texto_pendencia, _resolver_origem_alvo);
 -- RPCs registrar_documento_v2, get_origem_v2, explicar_livre_v2 e ajustes em pendencias.
 -- Máscara protege trecho/metadados via RPC; o arquivo inteiro em storage segue o escopo da 062.
 
@@ -189,6 +189,7 @@ alter table public.fatos drop constraint if exists fatos_versao_alvo_campo_uniqu
 alter table public.fatos add constraint fatos_versao_alvo_campo_unique unique (versao_id, alvo_tabela, alvo_pai_id, alvo_chave, campo);
 
 create index if not exists idx_fatos_alvo on public.fatos (alvo_tabela, alvo_pai_id, alvo_chave, campo);
+create index if not exists idx_fatos_versao on public.fatos (versao_id);
 comment on table public.fatos is 'Fatos com alvo estável; leitura direta só admin (não agente); professor/agente usam get_origem_v2 mascarado (arquivo segue 062).';
 
 alter table public.fatos enable row level security;
@@ -300,6 +301,44 @@ comment on function public._mascarar_cpf(text) is
   'Mascara sequências no formato de CPF (3-3-3-2 largos, 11 dígitos e qualquer caso detectado por _tem_cpf) para usuários não-admin/agente (mig. 064).';
 
 revoke all on function public._mascarar_cpf(text) from public, anon, authenticated;
+
+create or replace function public._cpfs(t text)
+returns text[]
+language plpgsql
+immutable
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  m text[];
+  v text[] := '{}'::text[];
+  d text;
+begin
+  if t is null then
+    return v;
+  end if;
+
+  for m in
+    select regexp_matches(
+      t,
+      E'(?<![0-9])((?:[0-9](?:[^0-9]{0,4}|[ \\t\\n\\r\\u00A0._/\\u2013\\u2014-]{5,})?){10}[0-9])(?![0-9])',
+      'g'
+    )
+  loop
+    d := regexp_replace(m[1], '[^0-9]', '', 'g');
+    if public.contem_cpf(d) and not (d = any(v)) then
+      v := v || d;
+    end if;
+  end loop;
+
+  return v;
+end;
+$$;
+
+comment on function public._cpfs(text) is
+  'Extrai CPFs válidos (dígito verificador da 052) de um texto, na ordem, sem repetir; usada pelo gatilho de pendencias (mig. 064).';
+
+revoke all on function public._cpfs(text) from public, anon, authenticated;
 
 create or replace function public._fmt_brl_num(p_val numeric)
 returns text
@@ -459,6 +498,10 @@ begin
     if not found then return null; end if;
   else
     return null;
+  end if;
+
+  if p_mascarar and v_busca ? 'texto' then
+    v_busca := jsonb_set(v_busca, '{texto}', to_jsonb(public._mascarar_cpf(v_busca ->> 'texto')));
   end if;
 
   if nullif(btrim(v_storage_path, E' \t\n\r'), '') is not null then
@@ -630,6 +673,22 @@ begin
     v_chave_plano_id := split_part(v_chave, ':', 3)::uuid;
   end if;
 
+  if v_tipo = 'balancete' then
+    if not exists (
+      select 1 from public.balancetes b
+       where b.project_id = v_project_id and b.data_referencia = v_chave_data
+    ) then
+      raise exception 'Não existe balancete do projeto % na data % da chave.',
+        v_project_id, v_chave_data_txt using errcode = '22023';
+    end if;
+  elsif not exists (
+    select 1 from public.planos_trabalho pt
+     where pt.id = v_chave_plano_id and pt.project_id = v_project_id
+  ) then
+    raise exception 'Plano % não encontrado no projeto %.', v_chave_plano_id, v_project_id
+      using errcode = '22023';
+  end if;
+
   if jsonb_typeof(p -> 'titulo') is distinct from 'string' then
     raise exception 'Campo titulo é obrigatório.' using errcode = '22023';
   end if;
@@ -678,8 +737,9 @@ begin
     raise exception 'Campo caminho deve começar com <project_id>/ e conter o nome do arquivo.'
       using errcode = '22023';
   end if;
-  if v_cam_seg::uuid is distinct from v_project_id then
-    raise exception 'Campo caminho pertence a outro projeto.' using errcode = '22023';
+  if v_cam_seg is distinct from v_project_id::text then
+    raise exception 'Primeiro segmento do caminho deve ser o project_id em minúsculas: %.',
+      v_project_id::text using errcode = '22023';
   end if;
   if public._tem_cpf(v_cam_rel) then
     raise exception 'Caminho do documento contém CPF e não pode ser gravado.' using errcode = '22023';
@@ -868,7 +928,9 @@ begin
   end loop;
 
   if public._tem_cpf(v_titulo)
-     or (v_arquivo_nome is not null and public._tem_cpf(v_arquivo_nome)) then
+     or (v_arquivo_nome is not null and public._tem_cpf(v_arquivo_nome))
+     or public._tem_cpf(v_parser)
+     or public._tem_cpf(v_parser_versao) then
     raise exception 'Metadados do documento contêm CPF e não podem ser gravados.' using errcode = '22023';
   end if;
 
@@ -1340,11 +1402,12 @@ begin
   select string_agg(id::text, ', ' order by criada_em, id)
     into v_ids
     from public.pendencias
-   where btrim(chave, E' \t\n\r') = ''
+   where chave is null or titulo is null
+      or btrim(chave, E' \t\n\r') = ''
       or btrim(titulo, E' \t\n\r') = '';
 
   if v_ids is not null then
-    raise exception '064: pendencias possui chave ou titulo em branco (ids: %). Corrija antes de aplicar.', v_ids;
+    raise exception '064: pendencias possui chave/titulo nulo ou em branco (ids: %). Corrija antes de aplicar.', v_ids;
   end if;
 end $$;
 
@@ -1384,7 +1447,11 @@ begin
   v_antigo := public._texto_pendencia(old.chave, old.titulo, old.detalhe);
   if (public._tem_cpf(v_novo) and not public._tem_cpf(v_antigo))
      or (new.chave is distinct from old.chave and public._tem_cpf(new.chave))
-     or (new.titulo is distinct from old.titulo and public._tem_cpf(new.titulo)) then
+     or (new.titulo is distinct from old.titulo and public._tem_cpf(new.titulo))
+     or exists (
+       select 1 from unnest(public._cpfs(v_novo)) c
+        where not (c = any(public._cpfs(v_antigo)))
+     ) then
     raise exception 'Pendência com CPF não pode ser gravada.'
       using errcode = '23514';
   end if;
@@ -1700,7 +1767,7 @@ begin
       raise exception '064: % deve ter exatamente 1 policy', v_tname;
     end if;
 
-    select replace(regexp_replace(btrim(coalesce(qual, '')), '\s+', ' ', 'g'), 'public.', '')
+    select replace(regexp_replace(lower(coalesce(qual, '')), '[\s()]', '', 'g'), 'public.', '')
       into v_got_q
       from pg_policies
      where schemaname = 'public'
@@ -1711,7 +1778,7 @@ begin
        and roles = array['authenticated']::name[]
        and with_check is null;
 
-    if v_got_q is distinct from v_qual then
+    if v_got_q is distinct from replace(regexp_replace(lower(v_qual), '[\s()]', '', 'g'), 'public.', '') then
       raise exception '064: policy % de % com qual inesperada: %', v_pol, v_tname, coalesce(v_got_q, '<ausente>');
     end if;
 
@@ -1820,13 +1887,17 @@ begin
   ) or not exists (
     select 1 from pg_indexes
      where schemaname = 'public' and tablename = 'pendencias' and indexname = 'idx_pendencias_resolvida_por'
+  ) or not exists (
+    select 1 from pg_indexes
+     where schemaname = 'public' and tablename = 'fatos' and indexname = 'idx_fatos_versao'
   ) then
-    raise exception '064: índice idx_fatos_alvo ou idx_pendencias_resolvida_por ausente';
+    raise exception '064: índice idx_fatos_alvo, idx_pendencias_resolvida_por ou idx_fatos_versao ausente';
   end if;
 
   foreach v_fn_sig in array array[
     'public._tem_cpf(text)',
     'public._mascarar_cpf(text)',
+    'public._cpfs(text)',
     'public._fmt_brl_num(numeric)',
     'public._texto_pendencia(text, text, jsonb)',
     'public._resolver_origem_alvo(text, uuid, text, boolean)',

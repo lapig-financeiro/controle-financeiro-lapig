@@ -619,7 +619,7 @@ async function main() {
     try {
       await arquivo('database/064_rastreabilidade.sql');
     } catch (e) {
-      barrouTabPre064 = e.message.includes('pendencias possui chave ou titulo em branco') && e.message.includes(tabRowId);
+      barrouTabPre064 = e.message.includes('pendencias possui chave/titulo nulo ou em branco') && e.message.includes(tabRowId);
       console.log(`  [PRE-064 OK] CHECK bloqueou linha E'\\t' com lista de ids -> ${e.message}`);
     } finally {
       await sql('rollback;');
@@ -632,6 +632,36 @@ async function main() {
       throw new Error('Pré-checagem alterou ou apagou a linha antiga de pendencias!');
     }
     await db.query(`delete from public.pendencias where id = $1`, [tabRowId]);
+
+    console.log('3b. Conferindo chave/titulo nulos em pendencias antes da 064 (Item 3)...');
+    await db.exec(`
+      alter table public.pendencias alter column chave drop not null;
+      alter table public.pendencias alter column titulo drop not null;
+    `);
+    const nullIds = (await db.query(`
+      insert into public.pendencias (chave, project_id, tipo, titulo) values
+        (null, null, 'outro', 'Sem chave'),
+        ('outro:geral:null-titulo', null, 'outro', null)
+      returning id
+    `)).rows.map((r) => r.id);
+    let barrouNulos = false;
+    try {
+      await arquivo('database/064_rastreabilidade.sql');
+    } catch (e) {
+      barrouNulos = e.message.includes('pendencias possui chave/titulo nulo ou em branco')
+        && nullIds.every((id) => e.message.includes(id));
+      console.log(`  [PRE-064 OK] pré-checagem listou linhas com chave/titulo nulos -> ${e.message}`);
+    } finally {
+      await sql('rollback;');
+    }
+    await db.query(`delete from public.pendencias where id = $1 or id = $2`, nullIds);
+    await db.exec(`
+      alter table public.pendencias alter column chave set not null;
+      alter table public.pendencias alter column titulo set not null;
+    `);
+    if (!barrouNulos) {
+      throw new Error('064 não listou as linhas com chave/titulo nulos antes do ADD CONSTRAINT em pendencias!');
+    }
 
     console.log('4. Conferindo regras estáticas do cofre e aplicando 064 (1ª vez)...');
     const bytes = conferirRegrasCofre(sql064);
