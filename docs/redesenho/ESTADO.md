@@ -58,6 +58,16 @@ Baixos: gatilho de CPF revalida campos não alterados no UPDATE; índice em `res
 `; erro de `p_id` nulo em `resolver_pendencia_v2`. Relatório completo no scratchpad da sessão
 de 18/11 (`rev-063-max.jsonl`); refazer a revisão se ele sumir.
 
+## Para uma 065 (antes do backfill da F2-B)
+Revisões da 064 final (19/11: DeepSeek max e MiniMax 3.1 Flash max, nenhum achado alto). Médios: `_tem_cpf`/`_mascarar_cpf`
+não pegam CPF com 5+ separadores fora da classe fixa (colapsar qualquer sequência de não dígitos entre dígitos antes do
+`contem_cpf`, nas duas funções); `caminho` legado sai sem máscara junto com o `arquivo_nome` mascarado; a 1ª passada da
+máscara troca qualquer 11 dígitos sem conferir o DV (atrapalha o `acharAlvo` no legado); `criar_pendencia_v2` recusa limpar
+pendência legada com CPF (recusar só CPF novo, como o gatilho). Baixos: chave estável de `plano_rubricas` muda ao editar a
+descrição (a folha volta a legado em silêncio); asserção "exatamente 1 policy" deve listar as que sobram; `explicar_livre_v2`
+resolve origem folha a folha (lote por tabela); `max(versao)+1` sem trava; unificar mensagens de alvo inválido.
+Pré-existente: `get_saldo_livre` (048) ignora rubrica só com previsto negativo ou só com estorno.
+
 ## Pendências com o Victor
 - Nenhuma no momento.
 
