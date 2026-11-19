@@ -305,11 +305,10 @@ Página em cartões para uso no celular, com três abas: **Propostas**, **Tarefa
   `revisar_mensagem(p_msg,p_fila)`; a auditoria dos últimos 7 dias fica recolhida,
   com ação para devolver à revisão. Operações compostas são sequenciais: uma
   falha preserva os efeitos já gravados, recarrega o cartão e mostra o erro.
-- **Saúde do vigia** usa a última `vigia_execucoes` de tipo `checagem` com
-  `terminada_em` preenchida; mais de 2 horas destaca atraso, ausência real destaca
-  que nunca rodou, e falha de consulta tem banner. A 054 só permite ao admin ler
-  execuções: professores veem explicitamente a saúde indisponível para seu perfil,
-  sem interpretar a lista vazia do RLS como executor parado.
+- **Vigia encerrado (19/11/2026):** a barra da página mostra "Vigia encerrado em
+  19/11/2026" e não consulta mais `vigia_execucoes` — sem isso, a página acusaria
+  atraso para sempre. A aba Triagem continua lendo o histórico já gravado (nada
+  novo entra).
 
 Consultas de tarefas e filas são paginadas. Ações recarregam só o cartão afetado;
 erros ficam no cartão e consultas parciais da triagem informam qual fonte falhou.
@@ -388,5 +387,6 @@ Aba de conversa sobre os dados. A página é fina de propósito: junta o laço (
 
 ### Usuários — Buriti operador (055)
 Professor (não o próprio admin) pode virar **Buriti operador** (`set_automacao(..., 'vigia', true)`), com confirmação:
-perde os centros de custo e não volta a professor pela tela. Para o operador, o modal só liga/desliga. Na aba Tarefas
+perde os centros de custo e não volta a professor pela tela. O interruptor do modal libera/revoga as RPCs `vigia_*`
+(o Vigia foi encerrado em 19/11/2026); o operador segue administrando as tarefas. Na aba Tarefas
 e em Minhas tarefas, passo com `executor='buriti'` não tem "Registrar que fiz"; a linha do tempo mostra "Buriti".

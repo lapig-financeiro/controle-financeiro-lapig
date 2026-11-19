@@ -221,21 +221,17 @@ describe('Triagem, saúde e propostas', () => {
     admin = false;
     await page.load(root);
     expect(root.querySelector('[role="tablist"]').textContent).not.toContain('Triagem');
-    expect(root.textContent).toContain('saúde indisponível');
+    expect(root.textContent).toContain('Vigia encerrado');
     expect(chamadas.some(c => c[0] === 'vigia_execucoes')).toBe(false);
     await page.trocarSecao('triagem');
     await window.BuritiTarefasUI.triagem(root);
     expect(chamadas.some(c => c[0] === 'vigia_mensagens')).toBe(false);
   });
-  it('saúde distingue nunca rodou de consulta com falha e filtra checagens concluídas', async () => {
+  it('Vigia encerrado não consulta vigia_execucoes nem acusa atraso', async () => {
     await window.BuritiTarefasUI.saude(root);
-    expect(root.textContent).toContain('vigia nunca rodou');
-    expect(chamadas[0]).toContainEqual(['eq', 'tipo', 'checagem']);
-    expect(chamadas[0]).toContainEqual(['not', 'terminada_em', 'is', null]);
-    erros.vigia_execucoes = { message: 'sem rede' };
-    await window.BuritiTarefasUI.saude(root);
-    expect(root.textContent).toContain('Não foi possível consultar a saúde');
-    expect(root.textContent).not.toContain('nunca rodou');
+    expect(root.textContent).toContain('Vigia encerrado');
+    expect(root.textContent).not.toContain('atrasado');
+    expect(chamadas.some(c => c[0] === 'vigia_execucoes')).toBe(false);
   });
   it('proposta de tarefa exibe passos e aplica pela RPC 054', async () => {
     db.propostas_agente = [{ id: 'prop', tipo: 'tarefa', status: 'pendente', resumo: 'Implantar bolsa', payload: { passos: [{ descricao: 'Cadastrar no Conecta' }] } }];

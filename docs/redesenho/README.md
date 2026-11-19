@@ -29,7 +29,7 @@ de bibliotecas e 58 scripts, mesmo para ver um saldo.
    valor é clicável até o documento; análises salvas e exportáveis (XLSX/imagem). **Modelo: DeepSeek V4.1
    Flash, esforço high**, pelo Ollama Cloud, num **Cloudflare Worker**.
 6. **Base nova com build** e **identidade visual de verdade**, seguida à risca ([`estetica.md`](estetica.md)).
-7. Vigia de e-mails **pausado** (18/11). A rotina diária que funciona é o "Como estamos" com o Buriti.
+7. Vigia de e-mails **encerrado** (19/11). A rotina diária que funciona é o "Como estamos" com o Buriti.
    Cruzar a mesma pessoa em dois planos é rotina do Buriti/Claude, que gera pendência para o Victor.
 
 ## 3. Arquitetura alvo

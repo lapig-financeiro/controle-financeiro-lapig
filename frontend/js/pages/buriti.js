@@ -66,7 +66,7 @@ const BuritiPage = (() => {
     secao = nova;
     containerEl.innerHTML = `<div class="buriti-pagina">
       <p class="buriti-intro">O <strong>Buriti</strong> propõe; você revisa, aplica e acompanha.</p>
-      <div data-saude><p class="buriti-sub">Consultando saúde do vigia…</p></div>
+      <div data-saude><p class="buriti-sub">Vigia encerrado em 19/11/2026.</p></div>
       <div class="buriti-abas" role="tablist" aria-label="Buriti">
         ${[['propostas', 'Propostas'], ...(Auth.isAdmin() ? [['triagem', 'Triagem']] : [])].map(([s, nome]) =>
           `<button role="tab" aria-selected="${secao === s}" class="btn ${secao === s ? 'btn--primary' : 'btn--ghost'}" onclick="BuritiPage.trocarSecao('${s}')">${nome}</button>`).join('')}

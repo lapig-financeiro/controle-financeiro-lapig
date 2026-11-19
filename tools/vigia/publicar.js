@@ -11,6 +11,8 @@ const { build } = require('./build');
 
 const PALCO = path.join(__dirname, '.publicar');
 const SECO = process.argv.indexOf('--seco') >= 0;
+const ENCERRADO = path.join(__dirname, 'ENCERRADO.md');
+const REVIVER = process.argv.indexOf('--reviver') >= 0;
 
 function clasp(args) {
   return execSync('clasp ' + args, { cwd: PALCO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -24,6 +26,12 @@ function lerJson(f, padrao) {
 }
 
 function main() {
+  if (fs.existsSync(ENCERRADO) && !REVIVER) {
+    console.log('Vigia encerrado em 19/11/2026 (veja ENCERRADO.md). Nada foi publicado.');
+    console.log('Para reviver de propósito: node tools/vigia/publicar.js --reviver');
+    process.exitCode = 1;
+    return;
+  }
   const destino = build();
   fs.mkdirSync(PALCO, { recursive: true });
   fs.copyFileSync(destino, path.join(PALCO, 'Vigia.gs'));

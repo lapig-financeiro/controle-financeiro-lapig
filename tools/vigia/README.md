@@ -1,6 +1,10 @@
 # Vigia do Buriti
 
-O vigia acompanha e-mails e prazos, registra tudo para revisão e **sugere** passos. A confirmação é do
+> **Encerrado em 19/11/2026** por decisão do Victor (não teve uso). Ele não roda mais; o restante deste
+> documento fica como registro histórico. O que foi desligado, o que falta revogar e como religar (se
+> algum dia fizer sentido) estão em [ENCERRADO.md](ENCERRADO.md).
+
+O vigia acompanhava e-mails e prazos, registrava tudo para revisão e **sugeria** passos. A confirmação é do
 Victor na página Buriti. Funciona no Google Apps Script com o computador desligado, a cada 30 minutos.
 Modelo e ntfy são opcionais e começam desligados. Esta entrega é código + testes; depende das RPCs
 da migração 054 com o formato de [CONTRATO.md](CONTRATO.md). Não aplique este script antes desse banco estar pronto.
@@ -119,17 +123,29 @@ gravar, o resumo fica `falhou` com motivo `envio_falhou` e é reenviado na execu
 painel nunca derruba o vigia.
 O expurgo de assuntos/trechos após 90 dias é responsabilidade de `vigia_expurgar`.
 
-## Desligar ou atualizar
+## Encerrado em 19/11/2026
 
-> **Pausado desde 18/11/2026** a pedido do Victor (o vigia não teve uso). A versão publicada naquele dia
-> troca `checar`/`resumoDiario` por `pausarVigia_`, que apaga os dois acionadores na primeira execução e
-> marca as rotinas como pausadas no Painel. O código deste repositório não mudou: para religar, rode
-> `node tools/vigia/publicar.js` e depois `instalarGatilhos` no editor.
+> **Encerrado a pedido do Victor.** O Vigia não roda mais. A versão publicada em 18/11 era um stub que
+> apagava os próprios acionadores (`checar` e `resumoDiario`) na primeira execução e marcava as rotinas
+> como pausadas no Painel. Nada foi apagado do banco. O código fica como registro histórico e
+> `publicar.js` **recusa publicar** enquanto `ENCERRADO.md` existir.
 
-Para desligar tudo, abra **Acionadores**, exclua os gatilhos `checar` e `resumoDiario`; não exclua tarefas
-ou mensagens. O administrador pode revogar o login de automação. Para desligar apenas modelo/ntfy,
-apague os valores de `OLLAMA_API_KEY`/`NTFY_TOPICO` nas propriedades.
-Para atualizar, gere novamente o `.gs`, substitua todo `Código.gs` e execute `testarConfiguracao` e `checar`.
+Falta, fora do repositório, um admin desativar o login de automação no Supabase:
+
+```sql
+select public.set_automacao('<uuid do login>', 'vigia', false);
+```
+
+Isso corta só as RPCs `vigia_*`. **Não troque a senha**: o mesmo login serve ao Buriti operador
+(tarefas), que continua funcionando.
+
+Para religar de propósito: `node tools/vigia/publicar.js --reviver`, corrija o login (`login_http_*`),
+execute `testarConfiguracao` e `checar`, e então `instalarGatilhos`. Se religar, tire o `avisarFalha()`
+de `apps-script/main.js`: o painel de rotinas já avisa `FALHOU`/`ATRASADA`, e o e-mail do Vigia
+duplicava o mesmo incidente.
+
+O resto deste documento (instalação, propriedades, avisos, recuperação) descreve o que ele fazia e
+serve para consulta, não para operação.
 
 ## Desenvolvimento e conferência
 

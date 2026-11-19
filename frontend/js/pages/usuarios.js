@@ -91,7 +91,7 @@ const UsuariosPage = (() => {
         : u.role === 'agente'
           ? '<span class="badge badge--warning">Agente (Buriti)</span>'
           : u.role === 'automacao'
-            ? `<span class="badge badge--warning">Buriti operador${u._ativo === false ? ' (desligado)' : ''}</span>`
+            ? `<span class="badge badge--warning">Buriti operador${u._ativo === false ? ' · Vigia desligado' : ''}</span>`
             : '<span class="badge badge--info">Professor</span>';
       const name = u.display_name || nameFromEmail(u.email) || '—';
       return `
@@ -164,19 +164,20 @@ const UsuariosPage = (() => {
     if (user.role === 'automacao') {
       createModal({
         title: 'Buriti operador',
-        bodyHTML: `<p>Login de automação do Buriti: administra as tarefas e lê os e-mails pelo vigia. Não vê saldos,
-          bolsistas nem arquivos.</p>
+        bodyHTML: `<p>Login de automação do Buriti: administra as tarefas. Não vê saldos, bolsistas ou arquivos.</p>
+          <p style="font-size:0.85rem;color:var(--text-secondary);margin-top:4px;">O <strong>Vigia</strong> (leitura de
+          e-mails) foi encerrado em 19/11/2026. O interruptor libera as RPCs <code>vigia_*</code>; deixe desligado
+          para revogar esse acesso. As tarefas continuam funcionando.</p>
           <label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" id="user-automacao-ativo"
-            ${user._ativo === false ? '' : 'checked'} style="width:18px;height:18px;accent-color:var(--accent);"> Ligado</label>
-          <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:8px;">Desligar corta na hora o acesso do Buriti às tarefas.</p>`,
+            ${user._ativo === false ? '' : 'checked'} style="width:18px;height:18px;accent-color:var(--accent);"> Vigia liberado</label>`,
         saveLabel: 'Salvar',
         onSave: async () => {
           // Sem a leitura de automacoes não se sabe o estado atual: não grava às cegas (falha fechada).
-          if (user._ativo === undefined) throw new Error('Não foi possível ler se o Buriti operador está ligado. Recarregue a página.');
+          if (user._ativo === undefined) throw new Error('Não foi possível ler se o Vigia está liberado. Recarregue a página.');
           const ativo = document.getElementById('user-automacao-ativo').checked;
           const { error } = await supabaseClient.rpc('set_automacao', { p_user: userId, p_nome: 'vigia', p_ativo: ativo });
           if (error) throw new Error('Erro ao salvar: ' + error.message);
-          showToast(ativo ? 'Buriti operador ligado.' : 'Buriti operador desligado.', 'success');
+          showToast(ativo ? 'Vigia liberado.' : 'Vigia desligado (acesso às RPCs vigia_* revogado).', 'success');
           await refresh();
         },
       });

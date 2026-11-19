@@ -87,7 +87,11 @@ gh workflow run migracao.yml -R $R --ref main -f modo=aplicar \
 
 ## Escritas automáticas (vigia) e quando disparar
 
-O vigia grava nas `vigia_*` (pelo menos `vigia_execucoes` e `vigia_mensagens`) a cada 30 min. **Ele começa sempre às
+> **Vigia encerrado em 19/11/2026:** ele não grava mais nas `vigia_*`. O horário :10:47/:40:47 abaixo é
+> histórico (até 18/11) e só volta a valer se o vigia for religado. O alerta sobre tabelas que mudam
+> sozinhas continua valendo para qualquer outra automação.
+
+O vigia gravava nas `vigia_*` (pelo menos `vigia_execucoes` e `vigia_mensagens`) a cada 30 min. **Ele começa sempre às
 :10:47 e às :40:47 de cada hora** (UTC, a hora do log do GitHub; conferido em `vigia_execucoes.iniciada_em` em
 17/11/2026) e leva uns segundos.
 
@@ -102,7 +106,7 @@ O que acontece: se o vigia gravar entre a cópia e a conferência, o `aplicar` p
 tabelas no fim do log (ex.: `public.vigia_execucoes|1/0/...`). Foi o que houve na primeira tentativa da 061
 (run 44155346333, cópia às 19:11 UTC, o vigia começou às 19:10:47).
 
-**Como disparar até o cofre ser corrigido:**
+**Como disparar se uma automação voltar a gravar durante a janela:**
 1. Ver a hora UTC (`date -u +%H:%M`). O `aplicar` leva uns 5 min da partida à conferência (na 061: partida
    19:13:53, aplicado às ~19:18).
 2. Disparar só quando houver pelo menos 8 min até o próximo :10:47 ou :40:47. Na dúvida, conferir o horário das

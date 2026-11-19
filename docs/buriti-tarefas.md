@@ -1,6 +1,9 @@
 # Buriti · Tarefas e vigia (especificação do protótipo)
 
-Status: protótipo em `feat/buriti-tarefas` (06/10/2026). Nada aplicado em produção.
+Status: especificação histórica (06/10/2026). As migrações 054/055 foram aplicadas, mas o **Vigia foi
+encerrado em 19/11/2026** por decisão do Victor (não teve uso): acionadores apagados e rotinas pausadas
+no Painel. O código fica em `tools/vigia/` como registro; o login de automação deve ser desativado com
+`set_automacao(<id>, 'vigia', false)`. Nada aqui descreve o sistema em operação.
 
 ## Para que serve
 O Victor delega trâmites à equipe (ex.: "implantar 2 meses de bolsa do Otávio no 30.068": o Arthur atualiza

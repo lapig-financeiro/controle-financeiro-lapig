@@ -41,24 +41,10 @@ window.BuritiTarefasUI = (() => {
     lucide.createIcons();
   }
 
+  // O Vigia foi encerrado em 19/11/2026 e não roda mais. A barra fica neutra e não
+  // consulta vigia_execucoes: senão a página acusaria "vigia atrasado" para sempre.
   async function saude(node) {
-    // A 054 permite SELECT de vigia_execucoes só ao admin. Lista vazia via RLS
-    // para professor NÃO significa que o executor nunca rodou.
-    if (!Auth.isAdmin()) {
-      node.innerHTML = '<p class="buriti-sub">Vigia: saúde indisponível para este perfil.</p>';
-      return;
-    }
-    try {
-      const rows = await ler(supabaseClient.from('vigia_execucoes').select('terminada_em,erros')
-        .eq('tipo', 'checagem').not('terminada_em', 'is', null)
-        .order('terminada_em', { ascending: false }).limit(1));
-      const s = f().saudeVigia(rows[0]);
-      node.innerHTML = s.atrasado ? aviso(s.texto) : `<p class="buriti-sub">${escapeAttr(s.texto)}</p>`;
-      if (rows[0]?.erros?.length) node.innerHTML += aviso('A última checagem do vigia terminou com falhas.');
-    } catch (e) {
-      node.innerHTML = aviso('Não foi possível consultar a saúde do vigia.', e);
-    }
-    lucide.createIcons();
+    node.innerHTML = '<p class="buriti-sub">Vigia encerrado em 19/11/2026.</p>';
   }
 
   function link(thread) {
