@@ -1,8 +1,8 @@
 -- CONTROLE FINANCEIRO DE PROJETOS — Migração 065 (F2-E: ajustes da 064 antes do backfill)
 -- Só create or replace das funções da 064 e asserções; nenhuma tabela nova, nenhuma linha inserida.
 -- Itens: regra de CPF única (contem_cpf OU candidato 3-3-3-2 com vão de 0 a 6 não dígito/não letra e DV);
--- máscara só com DV válido; caminho legado com CPF anulado e nota em documento; criar_pendencia_v2 só
--- recusa CPF novo; explicar_livre_v2 resolve origem em lote; versão com unique_violation vira 40001;
+-- máscara só com DV válido; caminho com CPF anulado e nota em documento (ramos legado e documento);
+-- criar_pendencia_v2: nova recusa qualquer CPF, existente deixa o gatilho decidir; explicar_livre_v2 resolve origem em lote; versão com unique_violation vira 40001;
 -- alvo nulo de não-admin em get_origem_v2 devolve 42501; asserção de policy lista as que sobram.
 -- As funções antigas do site não mudam.
 
