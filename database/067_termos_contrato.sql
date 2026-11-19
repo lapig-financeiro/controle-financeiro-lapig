@@ -198,7 +198,7 @@ alter table public.termos_contrato
   check (conferido_por is null or conferido_em is not null);
 
 comment on table public.termos_contrato is
-  'Histórico só insert dos termos do contrato (vigência e taxas). O vigente é o mais recente por (project_id, termo); escrita só pelas RPCs v2 (mig. 067).';
+  'Histórico só insert dos termos do contrato (vigência, taxa total e taxas por rubrica). O vigente é o mais recente por (project_id, termo); escrita e leitura só pelas RPCs v2 — authenticated sem acesso direto (mig. 067).';
 comment on column public.termos_contrato.termo is
   'vigencia_inicio, vigencia_fim, taxa_total, taxa_cip_ufg, taxa_cip_ua ou taxa_dao (os códigos de taxa por rubrica são os das rubricas da 066).';
 comment on column public.termos_contrato.documento_id is
@@ -222,8 +222,12 @@ create index if not exists idx_termos_contrato_documento
 
 alter table public.termos_contrato enable row level security;
 revoke all on public.termos_contrato from public, anon, authenticated;
-grant select on public.termos_contrato to authenticated;
 
+-- Nenhum acesso direto à tabela: `nota` é análise interna e vazaria
+-- por `GET /rest/v1/termos_contrato?select=nota` se `authenticated`
+-- tivesse SELECT. A leitura é só pela `get_termos_contrato_v2`
+-- (definer). A policy de SELECT continua existindo como defesa em
+-- profundidade caso alguém conceda o privilégio no futuro.
 drop policy if exists termos_contrato_select_escopo on public.termos_contrato;
 create policy termos_contrato_select_escopo on public.termos_contrato
   for select to authenticated
@@ -942,9 +946,9 @@ begin
   if has_table_privilege('anon', v_tab, 'SELECT,INSERT,UPDATE,DELETE') then
     raise exception '067: anon possui acesso a termos_contrato';
   end if;
-  if not has_table_privilege('authenticated', v_tab, 'SELECT')
+  if has_table_privilege('authenticated', v_tab, 'SELECT')
      or has_table_privilege('authenticated', v_tab, 'INSERT,UPDATE,DELETE,TRUNCATE') then
-    raise exception '067: ACL incorreta para authenticated em termos_contrato';
+    raise exception '067: authenticated não pode ter acesso direto a termos_contrato';
   end if;
 
   select string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod), ', ' order by a.attnum)

@@ -236,15 +236,17 @@ async function main() {
     );
 
     await esperarFalhaTest067(
-      '4) policy de SELECT aberta',
+      '4) get_termos_contrato_v2 devolvendo o caminho do documento para o agente',
       async () => {
-        await sql(`
-          drop policy termos_contrato_select_escopo on public.termos_contrato;
-          create policy termos_contrato_select_escopo on public.termos_contrato
-            for select to authenticated using (true);
-        `);
+        const fn = extrairFuncao(texto067, 'get_termos_contrato_v2');
+        const mut = fn.replace(
+          'or public.is_agente()',
+          'or false',
+        );
+        if (mut === fn) throw new Error('Falha ao montar mutante 4.');
+        await sql(mut);
       },
-      'professor do 51.Y não pode ler linha do 51.X',
+      'agente não pode receber o caminho do documento do plano',
     );
 
     await esperarFalhaTest067(
@@ -290,6 +292,14 @@ async function main() {
       'termos_contrato_documento_fonte_check',
     );
 
+    await esperarFalhaTest067(
+      '8) grant select direto para authenticated',
+      async () => {
+        await sql('grant select on public.termos_contrato to authenticated;');
+      },
+      'operação deveria falhar',
+    );
+
     console.log('8. Conferência final depois dos mutantes...');
     await arquivo(sql067);
     await rodarTeste(test067);
@@ -299,7 +309,7 @@ async function main() {
       throw new Error('Mutantes deixaram helper protegido alterado!');
     }
 
-    console.log('067 OK em PGlite: base real + 064/stub-064 + test_067 falhando antes + test_067 + idempotência + barreira 051 + helpers intactos + 7 mutantes + roteiro final.');
+    console.log('067 OK em PGlite: base real + 064/stub-064 + test_067 falhando antes + test_067 + idempotência + barreira 051 + helpers intactos + 8 mutantes + roteiro final.');
   } catch (e) {
     console.error('ERRO:', e.message, e.detail || '', e.where || '');
     process.exitCode = 1;

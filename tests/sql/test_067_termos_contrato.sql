@@ -81,6 +81,15 @@ language sql immutable as $$
   )
 $$;
 
+create or replace function pg_temp.total_termos067(p_termos jsonb) returns integer
+language sql immutable as $$
+  select coalesce(
+    sum(1 + coalesce(jsonb_array_length(t.value -> 'versoes_anteriores'), 0)),
+    0
+  )::integer
+    from jsonb_each(coalesce(p_termos, '{}'::jsonb)) as t
+$$;
+
 begin;
 
 -- ------------------------------------------------------------
@@ -331,7 +340,7 @@ begin
 
   -- Nenhuma dessas tentativas gravou nada.
   perform pg_temp.ok067(
-    (select count(*) from public.termos_contrato) = 0,
+    public.get_termos_contrato_v2(x) -> 'termos' = '{}'::jsonb,
     'validações não podem gravar linha'
   );
 
@@ -424,12 +433,15 @@ begin
   perform pg_temp.ok067((v_t2 ->> 'criado')::boolean, 'taxa_cip_ua deveria ser criada');
   perform pg_temp.ok067((v_t3 ->> 'criado')::boolean, 'taxa_dao deveria ser criada');
 
-  v_count := (select count(*) from public.termos_contrato where project_id = x);
+  v_count := pg_temp.total_termos067(public.get_termos_contrato_v2(x) -> 'termos');
   perform pg_temp.ok067(v_count = 6, format('deveriam existir 6 registros no 51.X, há %s', v_count));
+  -- Contagem como dono da tabela: authenticated não lê direto (BLOCO 4).
+  reset role;
   perform pg_temp.ok067(
     (select count(*) from public.termos_contrato where project_id = x and criado_por = '00000000-0000-0000-0000-0000000000a1') = 6,
     'criado_por deveria ser o admin que registrou'
   );
+  set local role authenticated;
 
   -- Mesmo conteúdo: devolve o mesmo id e não insere.
   v_payload := pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null,
@@ -440,7 +452,7 @@ begin
   v_id_2 := (v_novo ->> 'id')::uuid;
   perform pg_temp.ok067(v_id_2 = v_id_fim, 'idempotência deveria devolver o mesmo id');
   perform pg_temp.ok067(not (v_novo ->> 'criado')::boolean, 'idempotência deveria devolver criado=false');
-  v_count := (select count(*) from public.termos_contrato where project_id = x);
+  v_count := pg_temp.total_termos067(public.get_termos_contrato_v2(x) -> 'termos');
   perform pg_temp.ok067(v_count = 6, format('idempotência não pode inserir (há %s registros)', v_count));
 
   -- Regra diferente = versão nova (o texto que explica a data mudou).
@@ -452,7 +464,7 @@ begin
   v_id_3 := (v_novo ->> 'id')::uuid;
   perform pg_temp.ok067(v_id_3 <> v_id_fim, 'regra diferente deveria criar uma versão nova');
   perform pg_temp.ok067((v_novo ->> 'criado')::boolean, 'versão com regra nova deveria ser criada');
-  v_count := (select count(*) from public.termos_contrato where project_id = x);
+  v_count := pg_temp.total_termos067(public.get_termos_contrato_v2(x) -> 'termos');
   perform pg_temp.ok067(v_count = 7, format('deveriam existir 7 registros no 51.X, há %s', v_count));
 
   -- Conferência: marca uma vez e não muda a data na segunda chamada.
@@ -567,18 +579,29 @@ begin
   perform pg_temp.ok067(r -> 'termos' -> 'taxa_total' -> 'documento' = 'null'::jsonb,
     'agente não pode receber o caminho do documento do plano');
 
-  -- Escopo direto na tabela: b1 (51.X) não vê o 51.Y; b2 (51.Y) não vê o 51.X.
-  perform pg_temp.ok067(
-    (select count(*) from public.termos_contrato where project_id = x) = 7,
-    'professor do 51.X deveria ler as 7 linhas do próprio centro'
+  -- Nenhum papel humano lê a tabela direto: a nota sairia por
+  -- GET /rest/v1/termos_contrato?select=nota. Agente, professores e
+  -- admin recebem 42501; a leitura é só pela RPC definer.
+  perform pg_temp.falha_com067(
+    'select count(*) from public.termos_contrato',
+    '42501'
+  );
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);
+  perform pg_temp.falha_com067(
+    'select count(*) from public.termos_contrato',
+    '42501'
   );
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b2', true);
-  perform pg_temp.ok067(
-    (select count(*) from public.termos_contrato where project_id = x) = 0,
-    'professor do 51.Y não pode ler linha do 51.X'
+  perform pg_temp.falha_com067(
+    'select count(*) from public.termos_contrato',
+    '42501'
   );
 
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
+  perform pg_temp.falha_com067(
+    'select count(*) from public.termos_contrato',
+    '42501'
+  );
 
   perform pg_temp.falha_com067(
     'select public.get_termos_contrato_v2(null)',
@@ -695,7 +718,11 @@ do $$
 declare
   total integer;
 begin
+  -- Contagem como dono da tabela; o BLOCO 4 prova que authenticated
+  -- (inclusive admin) não tem SELECT direto.
+  reset role;
   total := (select count(*) from public.termos_contrato);
+  set local role authenticated;
   perform pg_temp.ok067(total = 10, format('admin deveria ver 10 linhas (7 do 51.X + 2 do 51.Y + 1 do 63.INAT), viu %s', total));
 end $$;
 

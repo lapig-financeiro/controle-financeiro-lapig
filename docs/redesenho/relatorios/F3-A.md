@@ -4,9 +4,9 @@ Branch: `redesenho/f3-a-termos` (worktree `C:/Users/amara/dev/cf-f2-e`). Commit 
 **Nada foi aplicado em produção**, nenhuma variável `CF_*` real foi usada, nenhuma outra IA foi chamada e o
 runner só tocou no PGlite em memória.
 
-> Este relatório foi escrito na 1ª rodada e atualizado na 2ª. As seções 1–6 são o retrato da 1ª rodada
+> Este relatório foi escrito na 1ª rodada e atualizado na 2ª e na 3ª. As seções 1–6 são o retrato da 1ª rodada
 > (5 mutantes, 111 testes); a **seção 7** é a 2ª rodada (taxa total, fonte em `documentos`, 7 mutantes,
-> 114 testes).
+> 114 testes); a **seção 8** é a 3ª rodada (a `nota` não vaza pela tabela, 8 mutantes).
 
 ## 1. Tamanho dos arquivos
 
@@ -323,3 +323,73 @@ A migração continua abaixo de 90 KB, com `begin;`/`commit;` nas pontas e sem t
 - Linha da 067 em `docs/migracoes.md` atualizada: **ok**.
 - Relatório com esta seção: **ok**.
 - Commit novo incluindo `docs/redesenho/tarefas/F3-A-rodada2.md`: **ok** (local, sem push).
+
+## 8. 3ª rodada — a `nota` não vaza pela tabela (19/11/2026)
+
+Achado do Claude na leitura da 067: a RPC `get_termos_contrato_v2` devolvia `nota` null para quem não é admin
+humano, mas a tabela tinha `grant select on public.termos_contrato to authenticated` com a policy de escopo.
+Um professor (ou o agente) podia ler a coluna direto pelo PostgREST:
+`GET /rest/v1/termos_contrato?select=nota`. A regra "nota só para admin" ficava furada na única coluna que
+o desenho queria proteger.
+
+### 8.1. Correção escolhida
+
+- **Nenhum acesso direto à tabela para `authenticated`**: `revoke all ... from public, anon, authenticated`
+  e **sem** `grant select`. A leitura é só pela `get_termos_contrato_v2` (definer); a escrita continua só
+  pelas RPCs definer.
+- **A RLS e a policy de SELECT foram mantidas** como defesa em profundidade. Se alguém conceder SELECT no
+  futuro, a policy ainda limita ao escopo (e a nota continuaria exigindo a RPC admin). A alternativa de
+  remover a policy foi descartada: sobraria menos defesa para um erro futuro de grant.
+- As asserções do fim da 067 mudaram: `authenticated` **não pode** ter SELECT nem INSERT/UPDATE/DELETE/
+  TRUNCATE na tabela; `anon` continua sem nada; a policy única de SELECT continua conferida.
+- Nenhuma RPC mudou de corpo: todas já eram `security definer` e leem/escrevem como dona da tabela. O
+  `trg_bloqueia_agente` continua barrando o agente em qualquer caminho.
+- **O app não lê a tabela direto**: grep em `app/src` só encontra o nome da RPC (`get_termos_contrato_v2`),
+  a constante de exemplo e as ordens/rótulos da tela. Nenhuma chamada `.from('termos_contrato')` ou
+  equivalente. Não foi necessário mudar o app.
+
+### 8.2. Roteiro e runner
+
+- `test_067` agora prova o SELECT direto negado (`42501`) para:
+  - `anon` (já existia);
+  - agente do 51.X;
+  - professor do próprio centro (51.X);
+  - professor de outro centro (51.Y);
+  - admin humano (a1) — ele lê pela RPC, não pela tabela.
+- As contagens internas do roteiro deixaram de usar `select count(*) from termos_contrato` como
+  `authenticated`: onde dá, usa `get_termos_contrato_v2` + `total_termos067(jsonb)` (soma o vigente e as
+  `versoes_anteriores`); a contagem de `criado_por` e o total geral usam `reset role` só como dono da
+  tabela, com comentário no teste.
+- O runner ganhou o mutante **8) `grant select` direto para `authenticated`**: com o grant, o SELECT direto
+  deixa de falhar e o roteiro reprova. O antigo mutante de "policy aberta" foi substituído — sem grant,
+  ninguém alcança a policy, então ele não provava mais nada; o novo mutante **4) `get` devolvendo o caminho
+  do documento para o agente** cobre a outra máscara.
+- Resultado: **8 mutantes**, todos detectados.
+
+### 8.3. Tamanhos e resultados
+
+| Arquivo | Bytes | Linhas |
+|---|---:|---:|
+| `database/067_termos_contrato.sql` | **40.830** | 1.005 |
+| `tests/sql/test_067_termos_contrato.sql` | **31.810** | 730 |
+| `tools/replica-local/rodar-067-pglite.mjs` | **12.394** | 323 |
+
+| Comando | Resultado |
+|---|---|
+| `node tools/replica-local/rodar-067-pglite.mjs` | **verde** (8 mutantes) |
+| `npx vitest run` | **44 arquivos, 699 passed, 5 skipped** |
+| `npm run lint` | **verde** |
+| `npm test --prefix app` | **15 arquivos, 114 passed** |
+| `npm run build --prefix app` | **verde** |
+
+### 8.4. Observações
+
+- **Não foi usada uma view/RPC nova.** A tabela continua existindo e as RPCs definer continuam sendo o
+  único caminho de leitura. A policy de SELECT é defesa em profundidade, não a barreira principal.
+- **A `nota` deixa de ser alcançável por REST** mesmo com a anon key e um JWT de professor/agente: o
+  privilégio de tabela foi revogado; o PostgREST responde 42501.
+- **Nada de produção**: sem `ensaiar`/`aplicar`, sem push, sem `CF_*` real e sem outra IA. A 067 segue não
+  aplicada.
+- **Pronto quando (3ª rodada)**: runner com 8 mutantes **ok**; `npx vitest run`, `npm run lint`, testes e
+  build de `app/` **ok**; linha da 067 em `docs/migracoes.md` atualizada **ok**; commit novo incluindo
+  `docs/redesenho/tarefas/F3-A-rodada3.md` **ok** (local, sem push).
