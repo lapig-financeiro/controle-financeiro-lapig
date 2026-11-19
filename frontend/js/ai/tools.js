@@ -268,7 +268,9 @@ export const TOOLS = [
       'do que é.\n\n' +
       '`compromissos_cobertura` diz o que foi descontado: "bolsas" = só ' +
       'compromissos de bolsa (contrato, diária e equipamento futuros não são ' +
-      'previstos por tabela nenhuma); "nenhuma" = nada.',
+      'previstos por tabela nenhuma); "taxas" = só taxas a reter da fundação ' +
+      'e da universidade (CIP e DAO); "bolsas e taxas" = as duas coisas; ' +
+      '"nenhuma" = nada.',
     parametros: {
       type: 'object',
       required: ['centro_de_custo'],

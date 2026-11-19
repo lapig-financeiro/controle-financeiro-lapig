@@ -525,7 +525,8 @@ const PlanoTrabalhoPage = (() => {
     });
   }
 
-  function renderDetalheRubrica(r, detalhes, contas, temCompromisso) {
+  function renderDetalheRubrica(r, detalhes, contas, comp) {
+    const temCompromisso = !!comp && Number(comp.compromissos || 0) > 0;
     const somaDet = detalhes.reduce((acc, d) => acc + Number(d.previsto || 0), 0);
     // O plano pode ter linha sem descrição: ela soma no total da rubrica mas
     // não vira item. Declarar o resto evita a subtração silenciosa.
@@ -542,6 +543,26 @@ const PlanoTrabalhoPage = (() => {
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:${cor};margin-bottom:4px;">${titulo}</div>
         ${corpo}
       </div>`;
+
+    // Compromisso por rubrica vem pronto de get_saldo_livre (bolsas na janela
+    // e taxa a reter). Só a rubrica de bolsas lista os bolsistas; a taxa é um
+    // valor único — o rótulo anterior ("já contratados") não serve para ela.
+    const bolsas = (saldoLivre && Array.isArray(saldoLivre.bolsas_ativas))
+      ? saldoLivre.bolsas_ativas : [];
+    const blocoCompromisso = !temCompromisso ? '' : (r.rubrica_code === 'a.bolsas'
+      ? (bolsas.length === 0 ? '' : secao(
+          `Compromissos até ${formatDate(saldoLivre.compromissos_fim)} — já contratados`,
+          'var(--warning)',
+          bolsas.map(b => linhaDet(
+            `${escapeAttr(b.bolsista)} <span style="color:var(--text-secondary);">— ${b.meses} × ${formatBRL(b.valor_mensal)}</span>`,
+            b.compromisso
+          )).join('')
+        ))
+      : secao(
+          'Taxa a reter — previsto menos realizado',
+          'var(--warning)',
+          linhaDet('Taxa a reter pela fundação/universidade (CIP/DAO)', comp.compromissos)
+        ));
 
     // Por item (mig. 053): previsto, realizado e saldo de cada linha do plano,
     // no formato da tabela que vai para o professor. Antes da 053 os itens
@@ -581,19 +602,10 @@ const PlanoTrabalhoPage = (() => {
             c.realizado
           )).join('')}
         </details>`;
-      const bolsasI = (saldoLivre && Array.isArray(saldoLivre.bolsas_ativas)) ? saldoLivre.bolsas_ativas : [];
-      const blocoCompromissoI = (!temCompromisso || bolsasI.length === 0) ? '' : secao(
-        `Compromissos até ${formatDate(saldoLivre.compromissos_fim)} — já contratados`,
-        'var(--warning)',
-        bolsasI.map(b => linhaDet(
-          `${escapeAttr(b.bolsista)} <span style="color:var(--text-secondary);">— ${b.meses} × ${formatBRL(b.valor_mensal)}</span>`,
-          b.compromisso
-        )).join('')
-      );
       return `
         <tr>
           <td colspan="5" class="pxr-detalhe" style="background:var(--bg-elevated);font-size:13px;">
-            ${blocoItens}${blocoContas}${blocoCompromissoI}
+            ${blocoItens}${blocoContas}${blocoCompromisso}
           </td>
         </tr>`;
     }
@@ -614,17 +626,6 @@ const PlanoTrabalhoPage = (() => {
       contas.map(c => linhaDet(
         `<code style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);">${escapeAttr(c.conta_codigo)}</code>&nbsp;${escapeAttr(c.conta_descricao || '—')}`,
         c.realizado
-      )).join('')
-    );
-
-    const bolsas = (saldoLivre && Array.isArray(saldoLivre.bolsas_ativas))
-      ? saldoLivre.bolsas_ativas : [];
-    const blocoCompromisso = (!temCompromisso || bolsas.length === 0) ? '' : secao(
-      `Compromissos até ${formatDate(saldoLivre.compromissos_fim)} — já contratados`,
-      'var(--warning)',
-      bolsas.map(b => linhaDet(
-        `${escapeAttr(b.bolsista)} <span style="color:var(--text-secondary);">— ${b.meses} × ${formatBRL(b.valor_mensal)}</span>`,
-        b.compromisso
       )).join('')
     );
 
@@ -732,7 +733,7 @@ const PlanoTrabalhoPage = (() => {
         </tr>`;
 
       if (!temDetalhe || !aberta) return linhaPrincipal;
-      return linhaPrincipal + renderDetalheRubrica(r, detalhes, contas, temCompromisso);
+      return linhaPrincipal + renderDetalheRubrica(r, detalhes, contas, comp);
     }).join('');
 
     const avisoCompromisso = !saldoLivreErro ? '' : `

@@ -1387,7 +1387,11 @@ export function Projeto({
       <p class="texto-corrido projeto__cobertura">
         {grupo.compromissos_cobertura === 'bolsas'
           ? 'Compromissos de bolsas incluídos até o fim da vigência.'
-          : 'Nenhum compromisso futuro descontado neste grupo além do já realizado.'}
+          : grupo.compromissos_cobertura === 'taxas'
+            ? 'Taxas da fundação e da universidade ainda a reter contam como comprometidas.'
+            : grupo.compromissos_cobertura === 'bolsas e taxas'
+              ? 'Compromissos de bolsas e taxas da fundação e da universidade ainda a reter contam como comprometidos.'
+              : 'Nenhum compromisso futuro descontado neste grupo além do já realizado.'}
       </p>
 
       {rubricasGrupo.length > 0 && (
