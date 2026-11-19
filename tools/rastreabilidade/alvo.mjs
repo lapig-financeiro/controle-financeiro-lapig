@@ -182,14 +182,67 @@ export function alvoDoTotalPlano(valor) {
   return { texto: 'valor total', valor };
 }
 
+/** A descrição livre, sem as aspas/espaços que o banco às vezes guarda. */
+export function descricaoLivreDaRubrica(rubrica) {
+  return String(rubrica && rubrica.descricao_livre != null ? rubrica.descricao_livre : '')
+    .replace(/^[ \t\n\r"]+|[ \t\n\r"]+$/g, '');
+}
+
 /** Espelha o `texto` de `_resolver_origem_alvo` para plano_rubricas. */
 export function alvoDaRubrica(rubrica, nomeRubrica) {
-  const descricao = String(rubrica && rubrica.descricao_livre != null ? rubrica.descricao_livre : '')
-    .replace(/^[ \t\n\r"]+|[ \t\n\r"]+$/g, '');
+  const descricao = descricaoLivreDaRubrica(rubrica);
   return {
     texto: descricao || normalizarEspacos(nomeRubrica) || normalizarEspacos(rubrica && rubrica.rubrica_code),
     valor: rubrica && rubrica.valor_previsto,
   };
+}
+
+/**
+ * Nomes que os planos usam para a mesma rubrica do catálogo (4ª e 5ª
+ * rodadas). Só estas três rubricas; qualquer outra continua sem
+ * sinônimo. `Custos indiretos para a UA` já cobre `UA/Órgão` e
+ * `UA / Órgão`, porque a comparação é por trecho de texto.
+ */
+export const SINONIMOS_RUBRICA = {
+  cip_ufg: ['Custos indiretos para a UFG'],
+  cip_ua: ['Custos indiretos para a UA', 'Custos indiretos para a Unidade'],
+  dao: ['D.A.O da Fundação', 'D.A.O. da Fundação'],
+};
+
+/**
+ * Alvos alternativos da rubrica: só quando não há `descricao_livre` e o
+ * `rubrica_code` tem sinônimo fixo. A execução tenta o nome do catálogo
+ * primeiro; estes entram na ordem, só se ele não achar linha.
+ */
+export function alvosAlternativosDaRubrica(rubrica, sinonimos = SINONIMOS_RUBRICA) {
+  if (!rubrica || descricaoLivreDaRubrica(rubrica)) return [];
+  const code = normalizarEspacos(rubrica.rubrica_code);
+  if (!Array.isArray(sinonimos[code])) return [];
+  const valor = rubrica.valor_previsto;
+  return sinonimos[code]
+    .map((texto) => normalizarEspacos(texto))
+    .filter(Boolean)
+    .map((texto) => ({ texto, valor }));
+}
+
+/**
+ * Conta no formato cortado que o `acharAlvo` entende: `"<prefixo>#<reduzido>"`,
+ * com o prefixo nos cinco primeiros segmentos do código mais `.` e o
+ * primeiro caractere do sexto (`7.1.3.02.01.00002` → `7.1.3.02.01.0`).
+ * Sem sexto segmento (ou com `#` no código), não há alternativa; o
+ * prefixo mais estreito é o que separa a linha do lançamento das
+ * agregações (`7.1.3.02.01 25213231 …`) e de um ramo vizinho
+ * (`7.1.3.02.012 2503002 …`).
+ */
+export function contaComReduzido(contaCodigo, reduzido) {
+  const conta = normalizarEspacos(contaCodigo);
+  const red = normalizarEspacos(reduzido);
+  if (!conta || !red || conta.includes('#')) return null;
+  const partes = conta.split('.').map((parte) => parte.trim()).filter(Boolean);
+  if (partes.length < 6) return null;
+  const inicioDoSexto = Array.from(partes[5])[0];
+  if (!inicioDoSexto) return null;
+  return `${partes.slice(0, 5).join('.')}.${inicioDoSexto}#${red}`;
 }
 
 export function alvoDoDesembolso(desembolso) {
@@ -281,6 +334,29 @@ export function escolherLinha(paginas, alvo) {
     trecho,
     linhaObj: escolhido.linhaObj,
   };
+}
+
+/**
+ * Tenta o alvo principal e, SÓ quando ele não acha nenhuma linha
+ * (`nao_achado`), os alternativos na ordem. Ambiguidade do principal
+ * não é contornada pela alternativa: continua sem fato.
+ *
+ * Devolve { selecao, alternativa }, com `alternativa` = índice do alvo
+ * alternativo usado (null quando o principal decidiu).
+ */
+export function escolherLinhaComAlternativas(paginas, alvo, alternativas = []) {
+  const principal = escolherLinha(paginas, alvo);
+  const lista = Array.isArray(alternativas) ? alternativas : [];
+  if (principal.status !== 'nao_achado' || !lista.length) {
+    return { selecao: principal, alternativa: null };
+  }
+
+  for (let indice = 0; indice < lista.length; indice += 1) {
+    const selecao = escolherLinha(paginas, lista[indice]);
+    if (selecao.status !== 'nao_achado') return { selecao, alternativa: indice };
+  }
+
+  return { selecao: principal, alternativa: null };
 }
 
 /**

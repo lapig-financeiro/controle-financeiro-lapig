@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { docxSintetico } from './helpers/plano-sintetico.js';
 import { ClienteSupabase } from '../tools/rastreabilidade/cliente.mjs';
 import { ErroFatal, ErroRpc } from '../tools/rastreabilidade/erros.mjs';
-import { executarBackfill, lancamentosEsperados } from '../tools/rastreabilidade/executar.mjs';
+import {
+  executarBackfill,
+  lancamentosEsperados,
+  reduzidosPorConta,
+} from '../tools/rastreabilidade/executar.mjs';
 
 const PROJETO = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -106,6 +110,31 @@ describe('executarBackfill — credencial e escopo', () => {
     expect(lancamentosEsperados('{"data":{"lancamentos":[{}]}}')).toBe(1);
     expect(lancamentosEsperados({ data: { lancamentos: 'nao-e-lista' } })).toBe(0);
     expect(lancamentosEsperados(null)).toBe(0);
+  });
+
+  it('mapa conta → reduzido aceita os dois formatos e descarta conta ambígua', () => {
+    const mapa = reduzidosPorConta({
+      data: {
+        lancamentos: [
+          { conta_codigo: '7.1.3.02.01.00002', conta_reduzido: '2503002' },
+          // Mesma conta repetida com o MESMO reduzido: vale como um só.
+          { conta_codigo: '7.1.3.02.01.00002', conta_reduzido: '2503002' },
+          // Mesma conta com outro reduzido: sem alternativa.
+          { conta_codigo: '7.1.3.02.01.00003', conta_reduzido: '2503003' },
+          { conta_codigo: '7.1.3.02.01.00003', conta_reduzido: '2503999' },
+          // Reduzido vazio: sem alternativa.
+          { conta_codigo: '7.1.3.02.01.00004', conta_reduzido: '' },
+          // Código que já vem cortado do parser: não entra.
+          { conta_codigo: '7.1.3.02.01.0#2503005', conta_reduzido: '2503005' },
+        ],
+      },
+    });
+
+    expect(mapa.get('7.1.3.02.01.00002')).toBe('2503002');
+    expect(mapa.has('7.1.3.02.01.00003')).toBe(false);
+    expect(mapa.has('7.1.3.02.01.00004')).toBe(false);
+    expect(mapa.has('7.1.3.02.01.0#2503005')).toBe(false);
+    expect(mapa.size).toBe(1);
   });
 
   function conferirRecusaPorInconsistencia(resultado, cliente) {
