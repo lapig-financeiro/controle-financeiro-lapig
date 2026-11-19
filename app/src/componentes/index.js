@@ -5,6 +5,7 @@ export { Situacao } from './Situacao.jsx';
 export { Lista, LinhaDeLista } from './LinhaDeLista.jsx';
 export { Tabela } from './Tabela.jsx';
 export { PainelLateral } from './PainelLateral.jsx';
+export { DeOndeVem } from './DeOndeVem.jsx';
 export { Documento } from './Documento.jsx';
 export { Chip } from './Chip.jsx';
 export { MenuSuspenso, MenuSuspensoItem, MenuSuspensoSeparador } from './MenuSuspenso.jsx';

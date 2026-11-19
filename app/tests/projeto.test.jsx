@@ -9,6 +9,9 @@ const {
   planosMock,
   pendenciasMock,
   resolverPendenciaMock,
+  explicarLivreMock,
+  origemMock,
+  arquivoDeOrigemMock,
 } = vi.hoisted(() => ({
   saldoLivreMock: vi.fn(),
   repassesMock: vi.fn(),
@@ -16,6 +19,9 @@ const {
   planosMock: vi.fn(),
   pendenciasMock: vi.fn(),
   resolverPendenciaMock: vi.fn(),
+  explicarLivreMock: vi.fn(),
+  origemMock: vi.fn(),
+  arquivoDeOrigemMock: vi.fn(),
 }));
 
 vi.mock('../src/servicos/dados.js', () => ({
@@ -25,6 +31,29 @@ vi.mock('../src/servicos/dados.js', () => ({
   planos: planosMock,
   pendencias: pendenciasMock,
   resolverPendencia: resolverPendenciaMock,
+  explicarLivre: explicarLivreMock,
+  origem: origemMock,
+  arquivoDeOrigem: arquivoDeOrigemMock,
+}));
+
+vi.mock('../src/servicos/leitoresDocumento.js', () => ({
+  carregarPdfJs: vi.fn(async () => ({
+    Util: { transform: (m1, m2) => [1, 0, 0, 1, m2[4], m2[5]] },
+    getDocument: vi.fn(() => ({
+      promise: Promise.resolve({
+        numPages: 1,
+        getPage: vi.fn(async () => ({
+          getViewport: ({ scale }) => ({ width: 595 * scale, height: 842 * scale, transform: [scale, 0, 0, -scale, 0, 842 * scale] }),
+          getTextContent: vi.fn(async () => ({ items: [] })),
+          render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })),
+        })),
+        destroy: vi.fn(),
+      }),
+    })),
+  })),
+  carregarMammoth: vi.fn(async () => ({
+    convertToHtml: vi.fn(async () => ({ value: '<p>Plano de trabalho</p>' })),
+  })),
 }));
 
 import { Projeto } from '../src/paginas/Projeto.jsx';
@@ -43,6 +72,9 @@ beforeEach(() => {
   planosMock.mockReset();
   pendenciasMock.mockReset();
   resolverPendenciaMock.mockReset();
+  explicarLivreMock.mockReset();
+  origemMock.mockReset();
+  arquivoDeOrigemMock.mockReset();
 });
 
 function configurarPadrao({
@@ -134,6 +166,106 @@ function configurarPadrao({
     ],
     erro: null,
   });
+
+  explicarLivreMock.mockResolvedValue({
+    dados: {
+      valor: 84300,
+      motivo: null,
+      data_referencia: '2026-10-15',
+      rotulo: 'Livre para gastar',
+      tipo: 'calculo',
+      conta: 'soma dos grupos',
+      chave: 'livre',
+      sinal: 1,
+      ref: null,
+      nota: null,
+      partes: [
+        {
+          rotulo: 'Pessoal',
+          valor: 60000,
+          tipo: 'calculo',
+          chave: 'grupo:a',
+          conta: 'previsto − realizado − comprometido',
+          sinal: 1,
+          ref: null,
+          nota: null,
+          partes: [
+            {
+              rotulo: 'Previsto — Bolsas',
+              valor: 800000,
+              tipo: 'legado',
+              chave: 'rubrica:a:previsto',
+              conta: null,
+              sinal: 1,
+              ref: null,
+              nota: null,
+              partes: [],
+            },
+            {
+              rotulo: 'Realizado — Bolsas',
+              valor: 600000,
+              tipo: 'documento',
+              chave: 'rubrica:a:realizado',
+              conta: null,
+              sinal: -1,
+              ref: { alvo_tabela: 'balancete_lancamentos', alvo_id: 'bl-1', campo: 'saldo_atual' },
+              nota: null,
+              partes: [],
+            },
+            {
+              rotulo: 'Comprometido — Bolsas',
+              valor: 140000,
+              tipo: 'digitado',
+              chave: 'rubrica:a:comprometido',
+              conta: null,
+              sinal: -1,
+              ref: { alvo_tabela: 'scholarships', alvo_id: 'b1', campo: 'amount' },
+              nota: null,
+              partes: [],
+            },
+          ],
+        },
+        {
+          rotulo: 'Serviços',
+          valor: 24300,
+          tipo: 'calculo',
+          chave: 'grupo:b',
+          conta: 'previsto − realizado',
+          sinal: 1,
+          ref: null,
+          nota: 'compromissos fora de bolsas não são rastreados',
+          partes: [
+            {
+              rotulo: 'Previsto — Serviços',
+              valor: 100000,
+              tipo: 'legado',
+              chave: 'rubrica:b:previsto',
+              conta: null,
+              sinal: 1,
+              ref: null,
+              nota: null,
+              partes: [],
+            },
+            {
+              rotulo: 'Realizado — Serviços',
+              valor: 75700,
+              tipo: 'legado',
+              chave: 'rubrica:b:realizado',
+              conta: null,
+              sinal: -1,
+              ref: null,
+              nota: null,
+              partes: [],
+            },
+          ],
+        },
+      ],
+    },
+    erro: null,
+  });
+
+  origemMock.mockResolvedValue({ dados: null, erro: 'Não configurado no teste.' });
+  arquivoDeOrigemMock.mockResolvedValue({ dados: new Uint8Array([37, 80, 68, 70]).buffer, erro: null });
 }
 
 describe('página do Projeto', () => {
@@ -193,16 +325,32 @@ describe('página do Projeto', () => {
     expect(document.querySelector('.abas__painel').textContent).toContain('Bolsista Encerrada');
     expect(document.querySelector('.abas__painel').textContent).toContain('encerrada em out/26');
 
-    // Abre painel "De onde vem este valor" ao clicar no destaque principal.
+    // Abre painel "De onde vem este valor" (árvore DeOndeVem) ao clicar no destaque principal.
     destaques[0].querySelector('button.valor--origem').click();
     await tick();
     const painel = document.querySelector('.painel-lateral');
     expect(painel.textContent).toContain('De onde vem este valor');
     expect(painel.textContent).toContain('84.300,00');
+    expect(painel.textContent).toContain('Pessoal');
+    expect(painel.textContent).toContain('Serviços');
     expect(painel.querySelector('.aviso-falha')).toBeNull();
+    document.querySelector('.painel-lateral__fechar').click();
+    await tick();
+
+    // Aba Dinheiro: clicar na linha de grupo abre DeOndeVem no nó do grupo.
+    Array.from(document.querySelectorAll('[role="tab"]'))
+      .find((t) => t.textContent.includes('Dinheiro'))
+      .click();
+    await tick();
+    document.querySelector('.abas__painel .tabela__gatilho').click();
+    await tick();
+    const painelGrupo = document.querySelector('.painel-lateral');
+    expect(painelGrupo.textContent).toContain('Pessoal');
+    expect(painelGrupo.textContent).toContain('60.000,00');
+    expect(painelGrupo.textContent).toContain('Realizado — Bolsas');
   });
 
-  it('oculta Pasta no Drive para professor mesmo com URL preenchida e acusa divergência no painel', async () => {
+  it('oculta Pasta no Drive para professor mesmo com URL preenchida e acusa divergência na árvore DeOndeVem', async () => {
     configurarPadrao({
       grupos: [
         {
@@ -215,6 +363,34 @@ describe('página do Projeto', () => {
           compromissos_cobertura: 'bolsas',
         },
       ],
+    });
+    explicarLivreMock.mockResolvedValue({
+      dados: {
+        valor: 50000,
+        motivo: null,
+        data_referencia: '2026-10-15',
+        rotulo: 'Livre para gastar',
+        tipo: 'calculo',
+        conta: 'soma dos grupos',
+        chave: 'livre',
+        sinal: 1,
+        ref: null,
+        nota: null,
+        partes: [
+          {
+            rotulo: 'Pessoal',
+            valor: 50000,
+            tipo: 'calculo',
+            chave: 'grupo:a',
+            conta: 'previsto − realizado − comprometido',
+            sinal: 1,
+            ref: null,
+            nota: null,
+            partes: [],
+          },
+        ],
+      },
+      erro: null,
     });
 
     render(
@@ -377,12 +553,51 @@ describe('página do Projeto', () => {
     expect(destaques[2].textContent).toContain('1 parcela parcial');
     expect(destaques[2].textContent).not.toContain('próximo em fev/27');
 
-    // Painel acusa grupo com valor nulo e mostra — em "Soma das partes".
+    explicarLivreMock.mockResolvedValue({
+      dados: {
+        valor: 60000,
+        motivo: null,
+        data_referencia: '2026-10-15',
+        rotulo: 'Livre para gastar',
+        tipo: 'calculo',
+        conta: 'soma dos grupos',
+        chave: 'livre',
+        sinal: 1,
+        ref: null,
+        nota: null,
+        partes: [
+          {
+            rotulo: 'Pessoal',
+            valor: 60000,
+            tipo: 'calculo',
+            chave: 'grupo:a',
+            conta: null,
+            sinal: 1,
+            ref: null,
+            nota: null,
+            partes: [],
+          },
+          {
+            rotulo: 'Serviços',
+            valor: null,
+            tipo: 'calculo',
+            chave: 'grupo:b',
+            conta: null,
+            sinal: 1,
+            ref: null,
+            nota: null,
+            partes: [],
+          },
+        ],
+      },
+      erro: null,
+    });
+
+    // Painel acusa nó sem valor válido na árvore DeOndeVem.
     destaques[0].querySelector('button.valor--origem').click();
     await tick();
     const painel = document.querySelector('.painel-lateral');
-    expect(painel.querySelector('.aviso-falha').textContent).toContain('grupo sem valor válido');
-    expect(painel.querySelector('.projeto__par--total').textContent).toContain('—');
+    expect(painel.querySelector('.aviso-falha').textContent).toContain('sem valor válido');
     document.querySelector('.painel-lateral__fechar').click();
     await tick();
 
@@ -544,9 +759,50 @@ describe('página do Projeto', () => {
     const destaquesSemBal = Array.from(document.querySelectorAll('.destaque'));
     expect(destaquesSemBal[0].textContent).toContain('—');
     expect(destaquesSemBal[0].textContent).toContain('sem balancete');
+    expect(destaquesSemBal[0].querySelector('button.valor--origem')).toBeNull();
     expect(destaquesSemBal[2].textContent).toContain('—');
     expect(destaquesSemBal[2].textContent).toContain('sem balancete');
     expect(destaquesSemBal[2].textContent).not.toContain('0 de 1');
+
+    // Centro com plano e balancete mas sem números: destaque fica — e não abre árvore.
+    saldoLivreMock.mockResolvedValue({
+      dados: {
+        has_plano: true,
+        has_balancete: true,
+        project_id: 'p-sem-num',
+        project_name: 'Centro Sem Números',
+        end_date: '2027-12-31',
+        bolsas_ativas: [],
+        grupos: [],
+        rubricas: [],
+        avisos: [],
+      },
+      erro: null,
+    });
+    render(null, document.body);
+    render(
+      <Projeto
+        projectId="p-sem-num"
+        hoje="2026-11-18"
+        resumoCentro={{
+          id: 'p-sem-num',
+          code: '30.910',
+          name: 'Centro Sem Números',
+          end_date: '2027-12-31',
+          livre: null,
+          situacao: 'sem números',
+          data_referencia: '2026-10-15',
+        }}
+      />,
+      document.body
+    );
+    await tick();
+
+    const destaqueSemNum = document.querySelector('.destaque--principal');
+    expect(destaqueSemNum.textContent).toContain('—');
+    expect(destaqueSemNum.textContent).toContain('sem números');
+    expect(destaqueSemNum.querySelector('button.valor--origem')).toBeNull();
+    expect(explicarLivreMock).not.toHaveBeenCalled();
   });
 
   it('abre na aba pendencias, confirma inline sem window.confirm e trata erro parcial em Documentos', async () => {
@@ -612,5 +868,193 @@ describe('página do Projeto', () => {
     } finally {
       window.confirm = confirmOriginal;
     }
+  });
+
+  it('mostra carregamento, usa o painel por grupo como fallback quando explicarLivre falha e recarrega com Tentar de novo', async () => {
+    configurarPadrao({
+      grupos: [
+        {
+          grupo_code: 'a',
+          grupo_name: 'Pessoal',
+          previsto: 800000,
+          realizado: 600000,
+          compromissos: 140000,
+          saldo_livre: 60000,
+          compromissos_cobertura: 'bolsas',
+        },
+        {
+          grupo_code: 'b',
+          grupo_name: 'Serviços',
+          previsto: 100000,
+          realizado: 75700,
+          compromissos: 0,
+          saldo_livre: null,
+          compromissos_cobertura: 'nenhuma',
+        },
+      ],
+    });
+
+    let resolverExplicar;
+    explicarLivreMock.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolverExplicar = r;
+        })
+    );
+
+    render(
+      <Projeto
+        projectId="p-1"
+        hoje="2026-11-18"
+        resumoCentro={{
+          id: 'p-1',
+          code: '30.901',
+          name: 'Bacia do Cerrado',
+          end_date: '2027-08-31',
+          livre: 84300,
+          situacao: 'em dia',
+          data_referencia: '2026-10-15',
+        }}
+      />,
+      document.body
+    );
+    await tick();
+
+    // Clica no destaque principal -> exibe esqueleto enquanto explicarLivre carrega.
+    document.querySelector('.destaque--principal button.valor--origem').click();
+    await tick();
+    const painel = document.querySelector('.painel-lateral');
+    expect(painel.querySelector('[role="status"]')).not.toBeNull();
+
+    // Quando explicarLivre falha (ex. 064 ainda não no ar) -> AvisoFalha + painel de grupos reserva.
+    resolverExplicar({ dados: null, erro: 'Função explicar_livre_v2 indisponível.' });
+    await tick();
+    expect(painel.querySelector('.aviso-falha').textContent).toContain('indisponível');
+    expect(painel.querySelector('.projeto__par--total').textContent).toContain('—');
+    expect(painel.textContent).toContain('Pessoal');
+
+    // Fecha e clica na linha do grupo Pessoal -> também exibe AvisoFalha + detalhe reserva do grupo.
+    document.querySelector('.painel-lateral__fechar').click();
+    await tick();
+    document.querySelector('.abas__painel .tabela__gatilho').click();
+    await tick();
+    const painelGrupo = document.querySelector('.painel-lateral');
+    expect(painelGrupo.querySelector('.aviso-falha').textContent).toContain('indisponível');
+    expect(painelGrupo.textContent).toContain('Compromissos de bolsas incluídos até o fim da vigência.');
+
+    // "Tentar de novo" recarrega explicarLivre e substitui pelo DeOndeVem quando responder.
+    explicarLivreMock.mockResolvedValueOnce({
+      dados: {
+        valor: 84300,
+        motivo: null,
+        data_referencia: '2026-10-15',
+        rotulo: 'Livre para gastar',
+        tipo: 'calculo',
+        conta: 'soma dos grupos',
+        chave: 'livre',
+        sinal: 1,
+        ref: null,
+        nota: null,
+        partes: [
+          {
+            rotulo: 'Pessoal',
+            valor: 60000,
+            tipo: 'calculo',
+            chave: 'grupo:a',
+            conta: 'previsto − realizado − comprometido',
+            sinal: 1,
+            ref: null,
+            nota: null,
+            partes: [],
+          },
+        ],
+      },
+      erro: null,
+    });
+    painelGrupo.querySelector('.aviso-falha button').click();
+    await tick();
+    expect(painelGrupo.querySelector('.de-onde-vem')).not.toBeNull();
+  });
+
+  it('aba Documentos abre balancete e plano preservando o id do banco na chamada de origem', async () => {
+    configurarPadrao();
+    origemMock
+      .mockResolvedValueOnce({
+        dados: {
+          tipo: 'documento',
+          valor: 184250.4,
+          documento: {
+            id: 'doc-bal',
+            tipo: 'balancete',
+            titulo: 'Balancete out',
+            arquivo_nome: 'balancete-out.pdf',
+            formato: 'pdf',
+            bucket: 'balancete-pdfs',
+            caminho: 'p-1/balancete-out.pdf',
+          },
+          fato: { pagina: 1, trecho: 'SALDO DISPONIVEL: 184.250,40', bbox: null, parser: 'bp', parser_versao: '1' },
+          busca: null,
+          nota: null,
+        },
+        erro: null,
+      })
+      .mockResolvedValueOnce({
+        dados: {
+          tipo: 'legado',
+          valor: 750000,
+          documento: null,
+          fato: null,
+          busca: null,
+          nota: 'Plano sem arquivo disponível para visualização.',
+        },
+        erro: null,
+      });
+
+    render(
+      <Projeto
+        projectId="p-1"
+        abaInicial="documentos"
+        hoje="2026-11-18"
+        resumoCentro={{
+          id: 'p-1',
+          code: '30.901',
+          name: 'Bacia do Cerrado',
+          end_date: '2027-08-31',
+          livre: 84300,
+          situacao: 'em dia',
+          data_referencia: '2026-10-15',
+        }}
+      />,
+      document.body
+    );
+    await tick();
+
+    const botoesDocs = Array.from(document.querySelectorAll('.abas__painel .tabela__gatilho'));
+    expect(botoesDocs).toHaveLength(3);
+
+    // Ordem mais recente primeiro: bal-1 (2026-10-15), pl-2 (2026-06-10), pl-1 (2025-11-01).
+    botoesDocs[0].click();
+    await tick();
+    expect(origemMock).toHaveBeenNthCalledWith(1, {
+      alvo_tabela: 'balancetes',
+      alvo_id: 'bal-1',
+      campo: 'saldo_disponivel',
+    });
+    expect(document.querySelector('.documento')).not.toBeNull();
+
+    document.querySelector('.documento__fechar').click();
+    await tick();
+
+    botoesDocs[1].click();
+    await tick();
+    expect(origemMock).toHaveBeenNthCalledWith(2, {
+      alvo_tabela: 'planos_trabalho',
+      alvo_id: 'pl-2',
+      campo: 'valor_total_plano',
+    });
+    expect(document.querySelector('.documento')).toBeNull();
+    expect(document.querySelector('.abas__painel .aviso-falha').textContent).toContain(
+      'Plano sem arquivo disponível'
+    );
   });
 });

@@ -208,6 +208,7 @@ export function Projetos({
                           valor={centro.livre}
                           centavos={false}
                           problema={situacao === 'problema'}
+                          semOrigem="Resumo do centro (abra o projeto para ver a origem)"
                         />{' '}
                         livres
                         {centro.end_date ? (
@@ -225,6 +226,7 @@ export function Projetos({
                             ? 'Não foi possível calcular o saldo deste centro'
                             : situacao
                         }
+                        semOrigem="Centro sem saldo calculado"
                       />
                     )}
                   </span>

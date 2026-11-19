@@ -73,9 +73,57 @@ function pesoPermitido(valor) {
   return PESOS_PERMITIDOS.has(limpo);
 }
 
-function styleJsxPermitido(conteudo, indiceStyle) {
+function dividirEntradasObjeto(miolo) {
+  const entradas = [];
+  let atual = '';
+  let paren = 0;
+  let colchete = 0;
+  let chave = 0;
+  let aspa = null;
+  let escapado = false;
+
+  for (let i = 0; i < miolo.length; i += 1) {
+    const c = miolo[i];
+    if (escapado) {
+      atual += c;
+      escapado = false;
+      continue;
+    }
+    if (c === '\\' && aspa) {
+      atual += c;
+      escapado = true;
+      continue;
+    }
+    if (aspa) {
+      atual += c;
+      if (c === aspa) aspa = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      aspa = c;
+      atual += c;
+      continue;
+    }
+    if (c === '(') paren += 1;
+    else if (c === ')' && paren > 0) paren -= 1;
+    else if (c === '[') colchete += 1;
+    else if (c === ']' && colchete > 0) colchete -= 1;
+    else if (c === '{') chave += 1;
+    else if (c === '}' && chave > 0) chave -= 1;
+    else if (c === ',' && paren === 0 && colchete === 0 && chave === 0) {
+      if (atual.trim()) entradas.push(atual.trim());
+      atual = '';
+      continue;
+    }
+    atual += c;
+  }
+  if (atual.trim()) entradas.push(atual.trim());
+  return entradas;
+}
+
+function lerObjetoStyleJsx(conteudo, indiceStyle) {
   const aposIgual = conteudo.slice(indiceStyle).replace(/^style\s*=\s*/, '');
-  if (!aposIgual.startsWith('{{')) return false;
+  if (!aposIgual.startsWith('{{')) return null;
 
   let profundidade = 0;
   let fim = -1;
@@ -89,22 +137,54 @@ function styleJsxPermitido(conteudo, indiceStyle) {
       }
     }
   }
-  if (fim === -1) return false;
+  if (fim === -1) return null;
 
-  const miolo = aposIgual.slice(2, fim).trim();
-  if (!miolo) return false;
+  const miolo = aposIgual.slice(2, fim).replace(/\}\s*$/, '').trim();
+  if (!miolo) return null;
 
-  const entradas = miolo.split(',').map((item) => item.trim()).filter(Boolean);
-  return entradas.every((entrada) => /^['"]--[a-zA-Z0-9-]+['"]\s*:/.test(entrada));
+  const entradas = dividirEntradasObjeto(miolo);
+  if (entradas.length === 0) return null;
+
+  const nomes = [];
+  for (const entrada of entradas) {
+    const m = entrada.match(/^['"](--[a-zA-Z0-9-]+)['"]\s*:/);
+    if (!m) return null;
+    nomes.push(m[1]);
+  }
+  return nomes;
 }
 
-function verificarTokensReferenciados(arquivo, conteudoSemComentarios, tokensDefinidos, problemas) {
+function styleJsxPermitido(conteudo, indiceStyle) {
+  return lerObjetoStyleJsx(conteudo, indiceStyle) !== null;
+}
+
+export function extrairCustomPropsJsx(conteudo) {
+  const semComentarios = removerComentariosJs(conteudo);
+  const props = new Set();
+  const regexStyle = /\bstyle\s*=/g;
+  let match;
+  while ((match = regexStyle.exec(semComentarios)) !== null) {
+    const nomes = lerObjetoStyleJsx(semComentarios, match.index);
+    if (nomes) {
+      for (const n of nomes) props.add(n);
+    }
+  }
+  return props;
+}
+
+function verificarTokensReferenciados(
+  arquivo,
+  conteudoSemComentarios,
+  tokensDefinidos,
+  problemas,
+  propsDinamicas = null
+) {
   if (!tokensDefinidos || tokensDefinidos.size === 0) return;
   const regexVar = /var\(\s*(--[a-zA-Z0-9-]+)\s*(?:,|\))/g;
   let match;
   while ((match = regexVar.exec(conteudoSemComentarios)) !== null) {
     const token = match[1];
-    if (!tokensDefinidos.has(token)) {
+    if (!tokensDefinidos.has(token) && !propsDinamicas?.has(token)) {
       problemas.push({
         arquivo,
         linha: linhaDoIndice(conteudoSemComentarios, match.index),
@@ -135,7 +215,12 @@ function verificarMediaQueries(arquivo, semComentarios, problemas) {
   }
 }
 
-export function verificarArquivo(caminhoRelativo, conteudo, tokensDefinidos = null) {
+export function verificarArquivo(
+  caminhoRelativo,
+  conteudo,
+  tokensDefinidos = null,
+  propsDinamicas = null
+) {
   const normalizado = caminhoRelativo.replace(/\\/g, '/');
   const problemas = [];
   const ext = path.extname(normalizado);
@@ -148,7 +233,13 @@ export function verificarArquivo(caminhoRelativo, conteudo, tokensDefinidos = nu
 
   if (ext === '.css') {
     const semComentarios = removerComentariosCss(conteudo);
-    verificarTokensReferenciados(normalizado, semComentarios, tokensDefinidos, problemas);
+    verificarTokensReferenciados(
+      normalizado,
+      semComentarios,
+      tokensDefinidos,
+      problemas,
+      propsDinamicas
+    );
     verificarMediaQueries(normalizado, semComentarios, problemas);
 
     const regexCor = /(#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\s*\()/g;
@@ -212,7 +303,13 @@ export function verificarArquivo(caminhoRelativo, conteudo, tokensDefinidos = nu
     }
   } else if (ext === '.js' || ext === '.jsx') {
     const semComentarios = removerComentariosJs(conteudo);
-    verificarTokensReferenciados(normalizado, semComentarios, tokensDefinidos, problemas);
+    verificarTokensReferenciados(
+      normalizado,
+      semComentarios,
+      tokensDefinidos,
+      problemas,
+      propsDinamicas
+    );
 
     const regexStyle = /\bstyle\s*=/g;
     let match;
@@ -260,12 +357,25 @@ export function verificarEstilo(diretorioSrc, caminhoTokens = path.join(diretori
     : null;
 
   const arquivos = listarArquivos(diretorioSrc);
-  const problemas = [];
+  const conteudos = new Map();
+  const propsDinamicas = new Set();
 
   for (const arquivo of arquivos) {
-    const relativo = path.relative(diretorioSrc, arquivo);
     const conteudo = fs.readFileSync(arquivo, 'utf8');
-    problemas.push(...verificarArquivo(relativo, conteudo, tokensDefinidos));
+    conteudos.set(arquivo, conteudo);
+    if (/\.(js|jsx)$/.test(arquivo)) {
+      for (const prop of extrairCustomPropsJsx(conteudo)) {
+        propsDinamicas.add(prop);
+      }
+    }
+  }
+
+  const problemas = [];
+  for (const arquivo of arquivos) {
+    const relativo = path.relative(diretorioSrc, arquivo);
+    problemas.push(
+      ...verificarArquivo(relativo, conteudos.get(arquivo), tokensDefinidos, propsDinamicas)
+    );
   }
 
   return problemas;

@@ -1,0 +1,134 @@
+.de-onde-vem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+}
+
+.de-onde-vem__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+}
+
+.de-onde-vem__lista--aninhada {
+  margin-top: var(--esp-2);
+  padding-left: var(--esp-4);
+  border-left: var(--borda);
+}
+
+.de-onde-vem__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+  padding: var(--esp-2) 0;
+}
+
+.de-onde-vem__lista--raiz > .de-onde-vem__item {
+  border-bottom: var(--borda);
+  padding-bottom: var(--esp-3);
+}
+
+.de-onde-vem__lista--raiz > .de-onde-vem__item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.de-onde-vem__linha {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--esp-3);
+}
+
+.de-onde-vem__cabeca {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--esp-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.de-onde-vem__alternar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--altura-chip);
+  height: var(--altura-chip);
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--raio-1);
+  color: var(--cor-texto-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--rapido) var(--curva), color var(--rapido) var(--curva);
+}
+
+.de-onde-vem__alternar:hover {
+  background-color: var(--cor-afundado);
+  color: var(--cor-texto);
+}
+
+.de-onde-vem__rotulos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+  min-width: 0;
+}
+
+.de-onde-vem__rotulo {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto);
+  overflow-wrap: anywhere;
+}
+
+.de-onde-vem__rotulo--grupo {
+  font-weight: var(--fw-medio);
+}
+
+.de-onde-vem__sinal {
+  margin-right: var(--esp-1);
+  color: var(--cor-texto-2);
+  font-weight: var(--fw-medio);
+}
+
+.de-onde-vem__conta {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-2);
+}
+
+.de-onde-vem__nota {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.de-onde-vem__valor {
+  flex-shrink: 0;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-medio);
+  text-align: right;
+}
+
+.de-onde-vem__status-folha {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-2);
+}
+
+.de-onde-vem__nota-folha {
+  margin-top: var(--esp-1);
+  padding: var(--esp-2) var(--esp-3);
+  background-color: var(--cor-afundado);
+  border-radius: var(--raio-1);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-2);
+}
+
+.de-onde-vem__aviso-no {
+  margin-top: var(--esp-1);
+}
