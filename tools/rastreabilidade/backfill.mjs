@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /* ============================================================
    backfill.mjs
    CLI do backfill da F2-B.

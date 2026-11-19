@@ -30,14 +30,47 @@
     {
       "name": "app-v2",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "app", "run", "preview", "--", "--port", "4173", "--strictPort"],
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "run",
+        "preview",
+        "--",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
       "port": 4173
     },
     {
       "name": "app-v2-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "app", "run", "dev", "--", "--port", "5173", "--strictPort"],
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
       "port": 5173
+    },
+    {
+      "name": "f1b-exemplo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "C:/Users/amara/dev/cf-f1-b/app",
+        "run",
+        "dev:exemplo",
+        "--",
+        "--port",
+        "5174",
+        "--strictPort"
+      ],
+      "port": 5174
     },
     {
       "name": "site-local",
@@ -52,6 +85,36 @@
         "frontend"
       ],
       "port": 8080
+    },
+    {
+      "name": "f2c-exemplo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "C:/Users/amara/dev/cf-f2-c/app",
+        "run",
+        "dev:exemplo",
+        "--",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
+      "port": 5175
+    },
+    {
+      "name": "f2c-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "C:/Users/amara/dev/cf-f2-c/app",
+        "run",
+        "preview",
+        "--",
+        "--port",
+        "4175",
+        "--strictPort"
+      ],
+      "port": 4175
     }
   ]
 }
