@@ -226,6 +226,8 @@ create index if not exists idx_termos_contrato_documento
 
 alter table public.termos_contrato enable row level security;
 revoke all on public.termos_contrato from public, anon, authenticated;
+-- Versões de ensaio da 067 criavam esta policy; garante que ela não sobra.
+drop policy if exists termos_contrato_select_escopo on public.termos_contrato;
 
 -- Nenhum acesso direto à tabela: `nota` é análise interna e vazaria
 -- por `GET /rest/v1/termos_contrato?select=nota` se `authenticated`
