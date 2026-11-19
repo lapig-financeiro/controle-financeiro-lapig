@@ -72,6 +72,39 @@ export function valorNaLinha(texto, valor) {
   return formasDoValor(numero).some((forma) => regexDoValor(forma).test(String(texto)));
 }
 
+// Número monetário como o documento imprime: "1.234,56", "(1.234,56)",
+// "-1.234,56" ou "380,00". Sem milhar também vale ("800,00").
+const RE_NUMERO_DOCUMENTO = /\(?-?(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}\)?/g;
+
+/** Números monetários do texto, já convertidos para número. */
+export function valoresDoTrecho(texto) {
+  const t = String(texto == null ? '' : texto);
+  const valores = [];
+
+  for (const achado of t.matchAll(RE_NUMERO_DOCUMENTO)) {
+    const bruto = achado[0];
+    const negativo = (bruto.startsWith('(') && bruto.endsWith(')')) || bruto.startsWith('-');
+    const numero = Number(
+      bruto.replace(/[()\-]/g, '').replace(/\./g, '').replace(',', '.'),
+    );
+    if (Number.isFinite(numero)) valores.push(negativo ? -numero : numero);
+  }
+
+  return valores;
+}
+
+/**
+ * Pré-validação da correção 7 da 2ª rodada: lê o valor do TRECHO
+ * (parsing do número como está escrito na linha, não do valor do
+ * banco) e devolve o número correspondente, ou null quando o trecho
+ * não traz esse valor formatado.
+ */
+export function valorLidoDoTrecho(texto, valor) {
+  const numero = paraNumero(valor);
+  if (numero == null) return null;
+  return valoresDoTrecho(texto).find((lido) => Math.abs(lido - numero) < 0.005) ?? null;
+}
+
 /** Cópia da regra de código inteiro de origem-busca.js. */
 function regexDoCodigo(codigo) {
   const partes = normalizarEspacos(codigo)

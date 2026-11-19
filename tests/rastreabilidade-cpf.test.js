@@ -104,6 +104,15 @@ describe('temCpf — Regra de CPF única (065)', () => {
     expect(temCpf('529 e 982 e 247 e 25')).toBe(false);
     expect(temCpfLargo064('529 e 982 e 247 e 25')).toBe(true);
   });
+
+  it('a regra larga da 064 espelha as quatro checagens, inclusive vãos de 4 letras', () => {
+    const comVaoDeQuatroLetras = '529abcd982efgh247ijkl25';
+    expect(temCpf(comVaoDeQuatroLetras)).toBe(false);
+    expect(contemCpf(comVaoDeQuatroLetras)).toBe(false);
+    expect(temCpfLargo064(comVaoDeQuatroLetras)).toBe(true);
+    expect(temCpfLargo064('529abc982def247ghi25')).toBe(true); // 3 letras
+    expect(temCpfLargo064('529abcde982def247ghi25')).toBe(false); // 5 letras
+  });
 });
 
 describe('CPF partido entre trechos (bissecção)', () => {

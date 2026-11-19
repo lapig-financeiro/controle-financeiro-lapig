@@ -1,11 +1,13 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { lerPdf } from '../tools/rastreabilidade/documento.mjs';
+import { docxSintetico } from './helpers/plano-sintetico.js';
+import { lerDocx, lerPdf } from '../tools/rastreabilidade/documento.mjs';
 import { VERSAO, executarBackfill } from '../tools/rastreabilidade/executar.mjs';
 
 const ADMIN_ID = '00000000-0000-0000-0000-0000000000a1';
 const CODIGO_CENTRO = '99.E2E';
+const CODIGO_CENTRO_PLANO = '99.E2D';
 
 // ── PDF sintético (mesma ideia de app/scripts/gerar-pdf-exemplo.mjs) ──
 
@@ -155,7 +157,7 @@ function numeroOuNulo(valor) {
   return valor == null ? null : Number(valor);
 }
 
-function criarClientePglite(db, { pdfBytes, chamadas }) {
+function criarClientePglite(db, { arquivos, chamadas }) {
   return {
     async lerPapel() {
       return 'admin';
@@ -243,10 +245,9 @@ function criarClientePglite(db, { pdfBytes, chamadas }) {
       return rows;
     },
     async baixarArquivo(bucket, caminho) {
-      if (bucket !== 'balancete-pdfs' || !caminho.endsWith('/balancete.pdf')) {
-        throw new Error('caminho inesperado no teste');
-      }
-      return pdfBytes;
+      const bytes = arquivos.get(caminho);
+      if (!bytes) throw new Error(`arquivo inesperado no teste: ${bucket}`);
+      return bytes;
     },
     async registrarDocumento(payload) {
       chamadas.push(payload);
@@ -298,9 +299,15 @@ if (!temPglite) {
 describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite', () => {
   let db;
   let pdfBytes;
+  let docxBytes;
   let projetoId;
   let balanceteId;
+  let planoProjetoId;
+  let planoId;
+  let rubricaBolsasId;
+  let rubricaServicoId;
   let ano;
+  const arquivos = new Map();
 
   beforeAll(async () => {
     const { PGlite } = await import(pgliteEntryUrl.href);
@@ -341,8 +348,45 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
     }
 
     pdfBytes = montarPdfBytes(definicaoPaginas());
+    arquivos.set(`${projetoId}/balancete.pdf`, pdfBytes);
     const lido = await lerPdf(pdfBytes);
     expect(lido.totalPaginas).toBe(2);
+
+    // Plano em DOCX, gerado no teste — sem dado real.
+    const projetoPlano = await db.query(`
+      insert into public.projects (name, code, start_date, end_date, active)
+      values ('Projeto E2E Plano', $1, '2025-01-01', '2027-12-31', true)
+      returning id
+    `, [CODIGO_CENTRO_PLANO]);
+    planoProjetoId = projetoPlano.rows[0].id;
+
+    const plano = await db.query(`
+      insert into public.planos_trabalho (
+        project_id, versao, tipo, ativo, valor_total_plano, arquivo_storage_path, arquivo_nome
+      ) values ($1, 1, 'original', true, 1200.00, $2, 'plano.docx')
+      returning id
+    `, [planoProjetoId, `${planoProjetoId}/plano.docx`]);
+    planoId = plano.rows[0].id;
+
+    const rubricaBolsas = await db.query(`
+      insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto, descricao_livre)
+      values ($1, 'a.bolsas', 800.00, 'Bolsas')
+      returning id
+    `, [planoId]);
+    rubricaBolsasId = rubricaBolsas.rows[0].id;
+
+    const rubricaServico = await db.query(`
+      insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto, descricao_livre)
+      values ($1, 'b', 400.00, 'Serviço sintético')
+      returning id
+    `, [planoId]);
+    rubricaServicoId = rubricaServico.rows[0].id;
+
+    docxBytes = docxSintetico({ total: '1.200,00', totalLabel: 'Valor total' });
+    arquivos.set(`${planoProjetoId}/plano.docx`, docxBytes);
+    const lidoDocx = await lerDocx(docxBytes);
+    expect(lidoDocx.totalPaginas).toBeNull();
+    expect(lidoDocx.paginas[0].some((linha) => linha.texto.includes('Bolsas') && linha.texto.includes('800,00'))).toBe(true);
   }, 60000);
 
   afterAll(async () => {
@@ -351,7 +395,7 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
 
   it('simulação baixa, acha 9 fatos e não chama a RPC', async () => {
     const chamadas = [];
-    const cliente = criarClientePglite(db, { pdfBytes, chamadas });
+    const cliente = criarClientePglite(db, { arquivos, chamadas });
     const detalhe = await executarBackfill({
       cliente,
       opcoes: { aplicar: false, centro: CODIGO_CENTRO, ano },
@@ -377,7 +421,7 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
 
   it('aplicar registra a versão e get_origem_v2 devolve documento com a página certa', async () => {
     const chamadas = [];
-    const cliente = criarClientePglite(db, { pdfBytes, chamadas });
+    const cliente = criarClientePglite(db, { arquivos, chamadas });
     const detalhe = await executarBackfill({
       cliente,
       opcoes: { aplicar: true, centro: CODIGO_CENTRO, ano },
@@ -418,7 +462,7 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
 
   it('rodar de novo não cria versão nova (mesmo sha256)', async () => {
     const chamadas = [];
-    const cliente = criarClientePglite(db, { pdfBytes, chamadas });
+    const cliente = criarClientePglite(db, { arquivos, chamadas });
     const detalhe = await executarBackfill({
       cliente,
       opcoes: { aplicar: true, centro: CODIGO_CENTRO, ano },
@@ -438,7 +482,7 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
 
   it('simulação depois de registrado avisa que os fatos seriam ignorados', async () => {
     const chamadas = [];
-    const cliente = criarClientePglite(db, { pdfBytes, chamadas });
+    const cliente = criarClientePglite(db, { arquivos, chamadas });
     const detalhe = await executarBackfill({
       cliente,
       opcoes: { aplicar: false, centro: CODIGO_CENTRO, ano },
@@ -450,10 +494,89 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
   }, 30000);
 
   it('--centro que não acha exatamente um projeto aborta', async () => {
-    const cliente = criarClientePglite(db, { pdfBytes, chamadas: [] });
+    const cliente = criarClientePglite(db, { arquivos, chamadas: [] });
     await expect(executarBackfill({
       cliente,
       opcoes: { centro: '99.NAO.EXISTE', ano },
     })).rejects.toThrow(/--centro/);
   }, 30000);
+
+  describe('plano em DOCX', () => {
+    it('simulação passa pela saída real do lerDocx e acha 3 fatos sem RPC', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: false, centro: CODIGO_CENTRO_PLANO, ano },
+      });
+
+      expect(detalhe.resumo.documentos).toBe(1);
+      expect(detalhe.resumo.achados).toBe(3);
+      expect(detalhe.resumo.sem_fatos).toBe(0);
+      expect(chamadas).toHaveLength(0);
+
+      const documento = detalhe.centros[0].documentos[0];
+      expect(documento.tipo).toBe('plano');
+      expect(documento.formato).toBe('docx');
+      expect(documento.paginas).toBeNull();
+      expect(documento.status).toBe('simulado');
+      expect(documento.fatos.every((fato) => fato.pagina === null && fato.bbox === null)).toBe(true);
+      expect(documento.fatos.every((fato) => typeof fato.trecho === 'string' && fato.trecho.length > 0)).toBe(true);
+    }, 30000);
+
+    it('aplicar é aceito pela 064 e get_origem_v2 devolve documento (pagina nula)', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: true, centro: CODIGO_CENTRO_PLANO, ano },
+      });
+
+      expect(detalhe.resumo.aplicados).toBe(1);
+      expect(chamadas).toHaveLength(1);
+
+      const payload = chamadas[0];
+      expect(payload.tipo).toBe('plano');
+      expect(payload.formato).toBe('docx');
+      expect(payload.paginas).toBeNull();
+      expect(payload.fatos).toHaveLength(3);
+      expect(payload.fatos.every((fato) => fato.pagina === null && fato.bbox === null)).toBe(true);
+
+      const total = await origemComoAdmin(db, 'planos_trabalho', planoId, 'valor_total_plano');
+      expect(total.tipo).toBe('documento');
+      expect(total.fato.pagina).toBeNull();
+      expect(total.fato.trecho).toContain('1.200,00');
+
+      const bolsas = await origemComoAdmin(db, 'plano_rubricas', rubricaBolsasId, 'valor_previsto');
+      expect(bolsas.tipo).toBe('documento');
+      expect(bolsas.fato.trecho).toContain('800,00');
+
+      const servico = await origemComoAdmin(db, 'plano_rubricas', rubricaServicoId, 'valor_previsto');
+      expect(servico.tipo).toBe('documento');
+      expect(servico.fato.trecho).toContain('400,00');
+    }, 30000);
+
+    it('rodar de novo no DOCX não cria versão nova', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: true, centro: CODIGO_CENTRO_PLANO, ano },
+      });
+
+      expect(detalhe.resumo.aplicados).toBe(0);
+      expect(detalhe.resumo.ja_registrados).toBe(1);
+      expect(chamadas).toHaveLength(1);
+      expect(detalhe.centros[0].documentos[0].status).toBe('ja_registrado');
+      expect(detalhe.centros[0].documentos[0].fatos_ignorados).toBe(3);
+
+      const versoes = await db.query(`
+        select count(*)::int as n
+          from public.documento_versoes dv
+          join public.documentos d on d.id = dv.documento_id
+         where d.chave = $1
+      `, [`plano:${planoProjetoId}:${planoId}`]);
+      expect(versoes.rows[0].n).toBe(1);
+    }, 30000);
+  });
 });

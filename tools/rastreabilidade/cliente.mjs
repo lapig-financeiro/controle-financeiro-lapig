@@ -12,13 +12,24 @@
    permite o ponta a ponta no pglite sem PostgREST.
    ============================================================ */
 
-import { ErroRpc, ErroSeguro, ErroUso } from './erros.mjs';
+import { ErroFatal, ErroRpc, ErroSeguro, ErroUso } from './erros.mjs';
 
 const TAMANHO_PAGINA = 500;
 const VARIAVEIS = ['CF_SUPABASE_URL', 'CF_SUPABASE_ANON_KEY', 'CF_EMAIL', 'CF_PASSWORD'];
 
 function semBarraFinal(url) {
   return String(url || '').replace(/\/+$/, '');
+}
+
+/**
+ * 401/403 no meio da corrida é sessão expirada, não documento
+ * recusado: aborta para não transformar falta de login em "outro" e
+ * seguir baixando o resto com um token morto.
+ */
+function conferirSessao(resposta) {
+  if (resposta.status === 401 || resposta.status === 403) {
+    throw new ErroFatal('login expirou: rode de novo');
+  }
 }
 
 export class ClienteSupabase {
@@ -87,6 +98,7 @@ export class ClienteSupabase {
     } catch {
       throw new ErroSeguro(`Não consegui falar com o Supabase ao ler ${contexto}.`);
     }
+    conferirSessao(resposta);
     if (!resposta.ok) {
       throw new ErroSeguro(`Falha ao ler ${contexto} (HTTP ${resposta.status}).`);
     }
@@ -230,6 +242,7 @@ export class ClienteSupabase {
     } catch {
       throw new ErroSeguro('Não consegui falar com o Storage ao assinar o arquivo.');
     }
+    conferirSessao(resposta);
     if (!resposta.ok) {
       throw new ErroSeguro(`Falha ao assinar o arquivo (HTTP ${resposta.status}).`);
     }
@@ -253,6 +266,7 @@ export class ClienteSupabase {
     } catch {
       throw new ErroSeguro('Não consegui baixar o arquivo do Storage.');
     }
+    conferirSessao(arquivo);
     if (!arquivo.ok) {
       throw new ErroSeguro(`Falha ao baixar o arquivo do Storage (HTTP ${arquivo.status}).`);
     }
@@ -277,6 +291,7 @@ export class ClienteSupabase {
       throw new ErroRpc('Não consegui falar com o Supabase na RPC.');
     }
 
+    conferirSessao(resposta);
     if (!resposta.ok) {
       let corpo = null;
       try {

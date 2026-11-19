@@ -129,9 +129,11 @@ function normalizarLinhaHtml(texto) {
 }
 
 /**
- * HTML do mammoth → linhas. Cada `<tr>` é uma linha (células juntas
- * por espaço) e cada `<p>` FORA de tabela é uma linha. `<p>` dentro de
- * `<td>` não vira linha própria: ele repetiria o conteúdo da célula.
+ * HTML do mammoth → linhas no MESMO formato de `linhasDaPagina`
+ * (`{ texto }`), que é o que `escolherLinha`/`acharAlvo` leem. Cada
+ * `<tr>` é uma linha (células juntas por espaço) e cada `<p>` FORA de
+ * tabela é uma linha. `<p>` dentro de `<td>` não vira linha própria:
+ * ele repetiria o conteúdo da célula.
  */
 export function linhasDoHtmlDocx(html) {
   const entrada = typeof html === 'string' ? html : '';
@@ -156,12 +158,12 @@ export function linhasDoHtmlDocx(html) {
     }
 
     const normalizado = normalizarLinhaHtml(texto);
-    if (normalizado) linhas.push(normalizado);
+    if (normalizado) linhas.push({ texto: normalizado });
   }
   return linhas;
 }
 
-/** DOCX → { paginas: [linhas], totalPaginas: null }. */
+/** DOCX → { paginas: [[{ texto }]], totalPaginas: null }. */
 export async function lerDocx(bytes) {
   const importado = await import('mammoth');
   const mammoth = importado.default || importado;

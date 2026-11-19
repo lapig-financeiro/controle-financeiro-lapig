@@ -2,7 +2,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { lerArgumentos } from '../tools/rastreabilidade/backfill.mjs';
+import { lerArgumentos, principal } from '../tools/rastreabilidade/backfill.mjs';
 import {
   RAIZ_REPO,
   formatarSaidaTerminal,
@@ -187,5 +187,19 @@ describe('lerArgumentos', () => {
   it('recusa argumento desconhecido', () => {
     expect(() => lerArgumentos(['--foo'])).toThrow(/desconhecido/);
     expect(() => lerArgumentos(['--centro'])).toThrow(/exige/);
+  });
+
+  it('--centro e --saida recusam valor que comece por -- (ou vazio)', () => {
+    expect(() => lerArgumentos(['--centro', '--aplicar'])).toThrow(/--centro exige/);
+    expect(() => lerArgumentos(['--saida', '--centro'])).toThrow(/--saida exige/);
+    expect(() => lerArgumentos(['--centro=--aplicar'])).toThrow(/--centro exige/);
+    expect(() => lerArgumentos(['--saida='])).toThrow(/--saida exige/);
+  });
+
+  it('valida e cria --saida antes de ler o ambiente ou dados', async () => {
+    // Sem essa ordem, a falta de CF_* viria primeiro. Aqui a pasta
+    // dentro do repositório tem de ser o erro.
+    await expect(principal(['--saida', path.join(RAIZ_REPO, 'docs')]))
+      .rejects.toThrow(/fora do repositório/);
   });
 });

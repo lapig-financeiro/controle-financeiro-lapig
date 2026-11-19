@@ -41,22 +41,27 @@ describe('documento — formato pelos primeiros bytes', () => {
 });
 
 describe('documento — DOCX (mammoth + linkedom)', () => {
-  it('cada <tr> é uma linha e <p> dentro de <tr> não repete a célula', () => {
+  it('devolve linhas no formato de linhasDaPagina ({ texto })', () => {
     const html = '<p>Primeiro</p><table><tr><td><p>Bolsas</p></td><td>800,00</td></tr></table><p>Último</p>';
-    expect(linhasDoHtmlDocx(html)).toEqual(['Primeiro', 'Bolsas 800,00', 'Último']);
+    expect(linhasDoHtmlDocx(html)).toEqual([
+      { texto: 'Primeiro' },
+      { texto: 'Bolsas 800,00' },
+      { texto: 'Último' },
+    ]);
   });
 
   it('desescapa o texto do mammoth', () => {
-    expect(linhasDoHtmlDocx('<p>P&amp;D e &lt;teste&gt;</p>')).toEqual(['P&D e <teste>']);
+    expect(linhasDoHtmlDocx('<p>P&amp;D e &lt;teste&gt;</p>')).toEqual([{ texto: 'P&D e <teste>' }]);
   });
 
   it('lê o DOCX sintético e deixa a linha da equipe (com CPF) fora dos alvos', async () => {
     const linhas = (await lerDocx(docxSintetico())).paginas[0];
-    expect(linhas.some((linha) => linha.includes('Bolsas') && linha.includes('800,00'))).toBe(true);
-    expect(linhas.some((linha) => linha.includes('Plano de Aplicação dos Recursos Financeiros'))).toBe(true);
+    expect(linhas.every((linha) => typeof linha.texto === 'string')).toBe(true);
+    expect(linhas.some((linha) => linha.texto.includes('Bolsas') && linha.texto.includes('800,00'))).toBe(true);
+    expect(linhas.some((linha) => linha.texto.includes('Plano de Aplicação dos Recursos Financeiros'))).toBe(true);
 
-    const linhaEquipe = linhas.find((linha) => linha.includes('Equipe'));
+    const linhaEquipe = linhas.find((linha) => linha.texto.includes('Equipe'));
     expect(linhaEquipe).toBeTruthy();
-    expect(temCpf(linhaEquipe)).toBe(true);
+    expect(temCpf(linhaEquipe.texto)).toBe(true);
   }, 20000);
 });

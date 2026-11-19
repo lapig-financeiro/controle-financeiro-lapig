@@ -22,6 +22,7 @@ import {
   alvoDoTotalPlano,
   escolherLinha,
   montarFato,
+  valorLidoDoTrecho,
 } from './alvo.mjs';
 import { temCpf, temCpfLargo064 } from './cpf.mjs';
 import { detectarFormato, lerDocumento, sha256 } from './documento.mjs';
@@ -98,7 +99,7 @@ function lancamentosEsperados(raw) {
   }
 }
 
-function conferirLancamentos(balancetes, lancamentos) {
+function balancetesInconsistentes(balancetes, lancamentos) {
   const porBalancete = new Map();
   for (const lancamento of lancamentos) {
     const id = String(lancamento.balancete_id);
@@ -106,17 +107,14 @@ function conferirLancamentos(balancetes, lancamentos) {
     porBalancete.set(id, porBalancete.get(id) + 1);
   }
 
+  const inconsistentes = new Set();
   for (const balancete of balancetes) {
     const esperado = lancamentosEsperados(balancete.raw_extraction);
     if (esperado === 0) continue;
     const obtido = porBalancete.get(String(balancete.id)) || 0;
-    if (obtido === 0) {
-      throw new ErroFatal('Um balancete tem lançamentos no raw_extraction, mas a consulta voltou vazia; abortando para não gravar zero.');
-    }
-    if (obtido < esperado) {
-      throw new ErroFatal('A consulta de lançamentos voltou com menos linhas do que o raw_extraction indica; abortando para não gravar zero.');
-    }
+    if (obtido < esperado) inconsistentes.add(String(balancete.id));
   }
+  return inconsistentes;
 }
 
 function concatenar({ camRel, titulo, arquivoNome, fatos }) {
@@ -370,6 +368,7 @@ async function processarDocumento({
   rubricasPorPlano,
   desembolsosPorPlano,
   nomesRubricas,
+  balancetesInconsistentesSet,
 }) {
   const projeto = doc.projeto;
   const caminho = String(doc.caminho);
@@ -377,6 +376,15 @@ async function processarDocumento({
   const existente = mapaDocumentos.get(doc.chave) || null;
   const titulo = (existente && existente.titulo) || doc.tituloPadrao;
   const detalhe = novoDetalhe(doc, projeto, titulo, arquivoNome, caminho);
+
+  // Balancete cujo raw_extraction indica mais lançamentos do que a
+  // tabela tem: recusa SÓ este documento e segue (a 064 também diria
+  // que falta dado; gravar menos fatos passaria por leitura completa).
+  if (doc.tipo === 'balancete' && balancetesInconsistentesSet.has(String(doc.balancete.id))) {
+    detalhe.status = 'recusado';
+    detalhe.motivo = 'lancamentos_inconsistentes';
+    return detalhe;
+  }
 
   // CPF no nome vem antes da validação de caminho: a recusa é por CPF,
   // não por formato de chave.
@@ -397,7 +405,8 @@ async function processarDocumento({
   let bytes;
   try {
     bytes = await cliente.baixarArquivo(doc.bucket, caminho);
-  } catch {
+  } catch (erro) {
+    if (erro instanceof ErroFatal) throw erro;
     detalhe.status = 'recusado';
     detalhe.motivo = 'arquivo';
     return detalhe;
@@ -502,7 +511,10 @@ async function processarDocumento({
       continue;
     }
 
-    if (!valoresIguais(fato.valor, candidato.valor)) {
+    // Pré-validação da correção 7: o número é extraído do TRECHO (o
+    // texto como o documento imprime), não comparado com ele mesmo.
+    const valorLido = valorLidoDoTrecho(fato.trecho, fato.valor);
+    if (valorLido == null || !valoresIguais(fato.valor, valorLido)) {
       detalhe.contagens.recusados += 1;
       somarMotivo(detalhe, 'divergencia');
       continue;
@@ -545,6 +557,13 @@ async function processarDocumento({
   detalhe.contagens.achados = fatosFinal.length;
   detalhe.fatos = fatosFinal;
 
+  // Nunca registrar documento com zero fatos: não chama a RPC nem em
+  // aplicação. Vale também depois da retentativa por CPF.
+  if (fatosFinal.length === 0) {
+    detalhe.status = 'sem_fatos';
+    return detalhe;
+  }
+
   const payload = {
     project_id: String(projeto.id),
     tipo: doc.tipo,
@@ -585,6 +604,7 @@ async function processarDocumento({
     }
     return detalhe;
   } catch (erro) {
+    if (erro instanceof ErroFatal) throw erro;
     const motivo = motivoRecusa(erro);
     if (motivo !== 'cpf') {
       detalhe.status = 'recusado';
@@ -593,13 +613,21 @@ async function processarDocumento({
       return detalhe;
     }
 
-    // CPF: tira os fatos suspeitos e tenta UMA vez de novo.
+    // CPF: tira os fatos suspeitos e tenta UMA vez de novo. Sem
+    // suspeito não há o que tirar: pula o documento sem segunda
+    // chamada (a regra da 064 acusou algo que a nossa não vê).
     const suspeitos = fatosFinal.filter((fato) => temCpfLargo064(fato.trecho));
-    const remover = suspeitos.length ? suspeitos : fatosFinal;
-    const restantes = fatosFinal.filter((fato) => !remover.includes(fato));
+    if (!suspeitos.length) {
+      detalhe.status = 'recusado';
+      detalhe.motivo = 'cpf';
+      somarMotivo(detalhe, 'cpf');
+      return detalhe;
+    }
+
+    const restantes = fatosFinal.filter((fato) => !suspeitos.includes(fato));
     const nova = removerFatosComCpf({ camRel, titulo, arquivoNome, fatos: restantes });
 
-    for (const removido of remover) {
+    for (const removido of suspeitos) {
       detalhe.removidos.push({
         alvo_tabela: removido.alvo_tabela,
         alvo_id: removido.alvo_id,
@@ -615,7 +643,7 @@ async function processarDocumento({
         motivo: 'cpf_particionado',
       });
     }
-    detalhe.contagens.com_cpf += remover.length + nova.removidos.length;
+    detalhe.contagens.com_cpf += suspeitos.length + nova.removidos.length;
 
     if (temCpf(concatenar({ camRel, titulo, arquivoNome, fatos: nova.fatos }))) {
       detalhe.status = 'recusado';
@@ -626,6 +654,11 @@ async function processarDocumento({
 
     detalhe.contagens.achados = nova.fatos.length;
     detalhe.fatos = nova.fatos;
+
+    if (nova.fatos.length === 0) {
+      detalhe.status = 'sem_fatos';
+      return detalhe;
+    }
 
     try {
       const segundo = await cliente.registrarDocumento({ ...payload, fatos: nova.fatos });
@@ -639,6 +672,7 @@ async function processarDocumento({
       }
       detalhe.retentativa_cpf = true;
     } catch (erro2) {
+      if (erro2 instanceof ErroFatal) throw erro2;
       detalhe.status = 'recusado';
       detalhe.motivo = motivoRecusa(erro2);
       somarMotivo(detalhe, detalhe.motivo);
@@ -661,6 +695,7 @@ function resumir(detalhes) {
     ja_registrados: 0,
     aplicados: 0,
     simulados: 0,
+    sem_fatos: 0,
   };
 
   for (const detalhe of detalhes) {
@@ -671,6 +706,7 @@ function resumir(detalhes) {
     if (detalhe.status === 'ja_registrado') resumo.ja_registrados += 1;
     if (detalhe.status === 'aplicado') resumo.aplicados += 1;
     if (detalhe.status === 'simulado') resumo.simulados += 1;
+    if (detalhe.status === 'sem_fatos') resumo.sem_fatos += 1;
   }
 
   return resumo;
@@ -773,13 +809,15 @@ export async function executarBackfill({ cliente, opcoes = {}, geradoEm = new Da
   const planos = [...planosPorProjeto.values()];
 
   // 4. Lançamentos do balancete (todos, para conferir a tabela vazia).
+  // Balancete com menos lançamentos que o raw_extraction indica é
+  // recusado sozinho mais adiante (motivo `lancamentos_inconsistentes`).
   const balanceteIds = balancetes.map((balancete) => balancete.id);
   const lancamentos = ((await cliente.lerLancamentos(balanceteIds)) || []).map((lancamento) => ({
     ...lancamento,
     id: String(lancamento.id),
     balancete_id: String(lancamento.balancete_id),
   }));
-  conferirLancamentos(balancetes, lancamentos);
+  const inconsistentes = balancetesInconsistentes(balancetes, lancamentos);
 
   const lancamentosPorBalancete = new Map();
   for (const lancamento of lancamentos) {
@@ -887,6 +925,7 @@ export async function executarBackfill({ cliente, opcoes = {}, geradoEm = new Da
       rubricasPorPlano,
       desembolsosPorPlano,
       nomesRubricas,
+      balancetesInconsistentesSet: inconsistentes,
     });
     detalhes.push(detalhe);
   }
@@ -930,6 +969,8 @@ export function formatarSaidaTerminal(detalhe) {
 
       if (documento.status === 'recusado') {
         linha += ` — RECUSADO (${documento.motivo || 'outro'})`;
+      } else if (documento.status === 'sem_fatos') {
+        linha += ' — sem fatos';
       } else if (documento.status === 'ja_registrado') {
         linha += ` — já registrado (${documento.fatos_ignorados || 0} fato(s) ignorado(s))`;
       } else if (documento.status === 'aplicado') {
@@ -948,6 +989,7 @@ export function formatarSaidaTerminal(detalhe) {
     + `nao_achados ${resumo.nao_achados || 0}, ambiguos ${resumo.ambiguos || 0}, `
     + `com_cpf ${resumo.com_cpf || 0}, zeros ${resumo.zeros || 0}, `
     + `duplicados ${resumo.duplicados || 0}, documentos_recusados ${resumo.documentos_recusados || 0}, `
+    + `sem_fatos ${resumo.sem_fatos || 0}, `
     + `ja_registrados ${resumo.ja_registrados || 0}`,
   );
 

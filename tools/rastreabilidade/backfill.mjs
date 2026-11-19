@@ -47,24 +47,27 @@ Versão do parser: ${VERSAO}`;
 export function lerArgumentos(argv) {
   const opcoes = { aplicar: false, centro: null, saida: null, ajuda: false };
 
+  const valorDoArgumento = (valor, nome) => {
+    if (valor == null || valor === '' || valor.startsWith('--')) {
+      throw new ErroUso(`${nome} exige um valor.`);
+    }
+    return valor;
+  };
+
   for (let i = 0; i < argv.length; i += 1) {
     const argumento = argv[i];
     if (argumento === '--aplicar') {
       opcoes.aplicar = true;
     } else if (argumento === '--centro') {
-      const valor = argv[i + 1];
-      if (!valor) throw new ErroUso('--centro exige um valor.');
-      opcoes.centro = valor;
+      opcoes.centro = valorDoArgumento(argv[i + 1], '--centro');
       i += 1;
     } else if (argumento.startsWith('--centro=')) {
-      opcoes.centro = argumento.slice('--centro='.length);
+      opcoes.centro = valorDoArgumento(argumento.slice('--centro='.length), '--centro');
     } else if (argumento === '--saida') {
-      const valor = argv[i + 1];
-      if (!valor) throw new ErroUso('--saida exige um valor.');
-      opcoes.saida = valor;
+      opcoes.saida = valorDoArgumento(argv[i + 1], '--saida');
       i += 1;
     } else if (argumento.startsWith('--saida=')) {
-      opcoes.saida = argumento.slice('--saida='.length);
+      opcoes.saida = valorDoArgumento(argumento.slice('--saida='.length), '--saida');
     } else if (argumento === '--ajuda' || argumento === '--help' || argumento === '-h') {
       opcoes.ajuda = true;
     } else {
@@ -81,18 +84,21 @@ function carimboDeData(data) {
     + `${dois(data.getHours())}${dois(data.getMinutes())}${dois(data.getSeconds())}`;
 }
 
-async function principal() {
-  const opcoes = lerArgumentos(process.argv.slice(2));
+export async function principal(argv = process.argv.slice(2)) {
+  const opcoes = lerArgumentos(argv);
   if (opcoes.ajuda) {
     console.log(USO);
     return;
   }
 
+  // Correção 5 da 2ª rodada: a pasta --saida é validada e criada
+  // ANTES de qualquer leitura (inclusive do ambiente) ou escrita.
+  const pasta = validarPastaSaida(opcoes.saida || pastaSaidaPadrao());
+
   const cliente = criarClienteDoAmbiente(process.env);
   const detalhe = await executarBackfill({ cliente, opcoes });
   console.log(formatarSaidaTerminal(detalhe));
 
-  const pasta = validarPastaSaida(opcoes.saida || pastaSaidaPadrao());
   const arquivo = path.join(pasta, `backfill-${carimboDeData(new Date())}.json`);
   writeFileSync(arquivo, `${JSON.stringify(detalhe, null, 2)}\n`, 'utf8');
 

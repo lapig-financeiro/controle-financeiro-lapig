@@ -49,11 +49,13 @@ CF_PASSWORD
 - Com `--aplicar`: uma chamada por documento, com todos os fatos. É idempotente pelo
   `sha256`: rodar de novo com o mesmo arquivo não cria versão nem fato.
 - `--centro` filtra por `projects.code` e aborta se não achar **exatamente um**
-  projeto ativo com aquele código.
+  projeto ativo com aquele código. `--centro`/`--saida` recusam valor que comece
+  por `--` (ou vazio), para um argumento seguinte não virar valor por engano.
 - `--saida` é a pasta do JSON de detalhe. Tem de ficar **fora do repositório**
   (comparação sem diferenciar maiúsculas no Windows); o script recusa pasta dentro
-  do worktree. Sem `--saida`, usa uma pasta temporária do sistema, também fora do
-  repositório.
+  do worktree. Ela é validada e criada **antes** de qualquer leitura (inclusive das
+  variáveis de ambiente) ou escrita. Sem `--saida`, usa uma pasta temporária do
+  sistema, também fora do repositório.
 
 ## Escopo
 
@@ -81,11 +83,24 @@ O resto fica como está (`legado`). Bolsas continuam `digitado` nesta fase.
   satisfizer, é **ambíguo** e não vira fato.
 - Para rubrica, o alvo do `acharAlvo` é `{ texto }` (descrição livre ou nome da
   rubrica), com o valor só como desempate.
+- **Pré-validação de valor:** antes da RPC, o script extrai o número **do trecho**
+  (parsing do texto como o documento imprime, incluindo negativos entre parênteses)
+  e confere se ele é o valor do fato. Não é uma comparação do valor com ele mesmo.
+  A divergência entre o documento e o banco que o texto não revela continua sendo
+  pega só pela RPC (a linha é escolhida pelo valor formatado que está no banco).
 - O `trecho` é a linha inteira, truncada em 500 caracteres. Se o valor ficar fora do
   corte, não é fato.
 - `bbox` tem só as quatro chaves de `linhasDaPagina` (`x0`, `x1`, `yMin`, `yMax`).
+  Em DOCX, `pagina` e `bbox` são nulos.
 - Rubrica ambígua no plano (mesmo `rubrica_code` e `descricao_livre` nula/vazia
   duplicada) fica de fora: a 064 recusaria o documento inteiro.
+- **Zero fatos não registra.** Documento em que nenhum número vira fato sai com o
+  status `sem_fatos` (contado no terminal e no JSON), sem chamar a RPC — também
+  depois da retentativa por CPF.
+- **Balancete inconsistente** (`raw_extraction` indica mais lançamentos do que a
+  tabela tem) é recusado sozinho, com o motivo `lancamentos_inconsistentes`, e a
+  corrida continua nos outros documentos. Nunca grava menos fatos do que deveria
+  por causa de tabela incompleta.
 
 ## Formato
 
@@ -112,8 +127,16 @@ formar um CPF partido entre dois trechos, os fatos envolvidos são removidos por
 bissecção até a concatenação ficar limpa.
 
 Se a RPC recusar por CPF mesmo assim (por exemplo, contra uma base ainda na 064), o
-script tira os fatos suspeitos e tenta **uma vez** de novo; se recusar de novo, pula
-o documento e registra o motivo. Nada disso imprime CPF.
+script tira os fatos que a regra larga da 064 aponta como suspeitos e tenta **uma
+vez** de novo. Se não houver suspeito, ou se a segunda chamada recusar de novo, o
+documento é pulado com o motivo `cpf` e o script segue. Nada disso imprime CPF.
+
+## Sessão expirada
+
+HTTP 401 ou 403 durante a corrida (leitura, Storage ou RPC) **não** é recusa de
+documento: o script aborta com código de saída ≠ 0 e a mensagem
+`login expirou: rode de novo`. É só autenticar de novo e repetir; o que já foi
+aplicado é idempotente pelo `sha256`.
 
 ## Já registrado
 
@@ -127,9 +150,9 @@ mão.
 
 **Terminal:** só o modo, o papel, o ano, e — por centro e por documento — as
 contagens de achados, não achados, ambíguos, com CPF, zeros, duplicados, recusados,
-já registrados, além do código do centro, do id do documento, da data/versão e do
-motivo de recusa. Nunca imprime trecho, título, nome de pessoa, CPF, nome de arquivo,
-caminho ou valor.
+o status (`sem fatos`, já registrado, aplicado, recusado com motivo), além do código
+do centro, do id do documento, da data/versão e do motivo de recusa. Nunca imprime
+trecho, título, nome de pessoa, CPF, nome de arquivo, caminho ou valor.
 
 **JSON de detalhe:** vai para a pasta `--saida`, **fora do repositório**, e é o único
 lugar com trechos e valores. O arquivo é `backfill-<AAAAMMDD-HHMMSS>.json`.
@@ -141,11 +164,13 @@ npx vitest run tests/rastreabilidade
 npx eslint tools/rastreabilidade/
 ```
 
-- Unitários (sem rede): regra de CPF, montagem do alvo por tipo, escolha sem
-  ambiguidade, formatação do valor no trecho, corte de 500, bbox, saída do terminal.
-- Ponta a ponta (pglite): um PDF de balancete sintético gerado no teste; o payload
-  montado é aceito por `registrar_documento_v2`, `get_origem_v2` devolve `documento`
-  com a página certa, rodar duas vezes não cria versão nova e a simulação não chama a
+- Unitários (sem rede): regra de CPF (inclusive a regra larga da 064 com vãos de até
+  4 letras), montagem do alvo por tipo, escolha sem ambiguidade, valor lido do
+  trecho, formatação do valor no trecho, corte de 500, bbox, saída do terminal.
+- Ponta a ponta (pglite): um PDF de balancete **e** um DOCX de plano, ambos
+  sintéticos e gerados no teste. O DOCX passa pela saída real do `lerDocx` até
+  `registrar_documento_v2`; `get_origem_v2` devolve `documento` (para o DOCX, com
+  `pagina` nula), rodar duas vezes não cria versão nova e a simulação não chama a
   RPC.
 
 ## Versão

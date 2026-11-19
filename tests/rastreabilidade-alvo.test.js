@@ -10,6 +10,7 @@ import {
   escolherLinha,
   linhaServe,
   montarFato,
+  valorLidoDoTrecho,
   valorNaLinha,
 } from '../tools/rastreabilidade/alvo.mjs';
 
@@ -167,6 +168,14 @@ describe('alvo — escolha da linha', () => {
     expect(valorNaLinha('linha 345,00', 345)).toBe(true);
     expect(valorNaLinha('linha (1.234,56)', -1234.56)).toBe(true);
     expect(valorNaLinha('linha -1.234,56', -1234.56)).toBe(true);
+  });
+
+  it('a pré-validação lê o número do trecho, não o valor do banco', () => {
+    expect(valorLidoDoTrecho('BOLSA 380.000,00 0,00 380.000,00', 380000)).toBe(380000);
+    expect(valorLidoDoTrecho('APARELHOS (1.234,56)', -1234.56)).toBe(-1234.56);
+    expect(valorLidoDoTrecho('linha 1.345,00', 345)).toBeNull();
+    expect(valorLidoDoTrecho('TOTAL DE DEBITOS: 786.300,00 TOTAL DE CREDITOS: 0,00', 786300)).toBe(786300);
+    expect(valorLidoDoTrecho('sem número nenhum', 100)).toBeNull();
   });
 
   it('valor negativo com parênteses vira fato', () => {

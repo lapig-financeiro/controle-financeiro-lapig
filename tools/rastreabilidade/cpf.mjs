@@ -174,6 +174,12 @@ export function mascararCpf(texto) {
  * Regra mais larga da 064 — SÓ para a retentativa quando a RPC ainda
  * estiver na 064. A 065 substitui essa regra; em produção o backfill
  * roda depois da 065.
+ *
+ * Espelha as QUATRO checagens de `_tem_cpf` da 064: a 052 pura; a
+ * remoção de separadores; a remoção de 1–3 não-dígitos; e o padrão
+ * 3-3-3-2 com vãos de até 4 caracteres quaisquer (inclusive letras)
+ * ou 5+ separadores. A última é a que junta números separados por
+ * letras.
  */
 export function temCpfLargo064(texto) {
   const t = String(texto == null ? '' : texto);
@@ -186,5 +192,18 @@ export function temCpfLargo064(texto) {
   if (contemCpf(semSeparadores)) return true;
 
   const semAteTres = t.replace(/(?<=[0-9])[^0-9]{1,3}(?=[0-9])/g, '');
-  return contemCpf(semAteTres);
+  if (contemCpf(semAteTres)) return true;
+
+  const separadores = ' \\t\\n\\r\\u00A0._/\\u2013\\u2014-';
+  const vao = `(?:[^0-9]{0,4}|[${separadores}]{5,})`;
+  const largo = new RegExp(
+    `(?<![0-9])([0-9]{3}${vao}[0-9]{3}${vao}[0-9]{3}${vao}[0-9]{2})(?![0-9])`,
+    'g',
+  );
+
+  for (const achado of t.matchAll(largo)) {
+    if (contemCpf(digitosDe(achado[1]))) return true;
+  }
+
+  return false;
 }
