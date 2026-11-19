@@ -27,6 +27,7 @@ import { inserirCspNoHead } from '../vite.config.js';
 import {
   arquivoDeOrigem,
   balancetes,
+  conferirTermoContrato,
   explicarLivre,
   filtroVisao,
   modoExemploAtivo,
@@ -38,7 +39,10 @@ import {
   resumoProjetos,
   saldoLivre,
   salvarFiltroVisao,
+  termosContrato,
+  usarVigenciaDoContrato,
   validarArvoreExplicacao,
+  validarTermosContrato,
 } from '../src/servicos/dados.js';
 import * as dadosExemplo from '../src/servicos/dadosExemplo.js';
 
@@ -73,6 +77,9 @@ describe('camada de dados', () => {
       () => balancetes('proj-1'),
       () => planos('proj-1'),
       () => explicarLivre('proj-1'),
+      () => termosContrato('proj-1'),
+      () => conferirTermoContrato('termo-1'),
+      () => usarVigenciaDoContrato('proj-1'),
       () => origem({ alvo_tabela: 'balancete_lancamentos', alvo_id: 'l1', campo: 'saldo_atual' }),
     ]) {
       const res = await chamada();
@@ -135,6 +142,69 @@ describe('camada de dados', () => {
     expect(rpcMock).toHaveBeenNthCalledWith(2, 'get_planos_historico', { p_project_id: 'proj-1' });
     expect(b).toEqual({ dados: [{ id: 'b1' }], erro: null });
     expect(p).toEqual({ dados: [{ id: 'p1' }], erro: null });
+  });
+
+  it('usa as RPCs de termos do contrato e valida o payload antes de exibir', async () => {
+    const termo = {
+      id: 'termo-fim-1',
+      valor: '2027-08-31',
+      regra: '20 meses contados da última assinatura',
+      trecho: 'CLÁUSULA SEGUNDA — vigência de 20 meses.',
+      documento_nome: 'Contrato',
+      documento_url: 'https://drive.google.com/file/d/x/view',
+      pagina: 2,
+      nota: null,
+      origem: 'ia',
+      autor: 'Claude',
+      criado_em: '2026-11-18T15:10:00Z',
+      conferido: false,
+      conferido_em: null,
+      versoes_anteriores: [],
+    };
+    const payload = {
+      termos: { vigencia_fim: termo },
+      end_date_cadastro: '2027-08-31',
+      vigencia_confere: true,
+    };
+
+    rpcMock.mockResolvedValueOnce({ data: payload, error: null });
+    const res = await termosContrato('proj-1');
+    expect(rpcMock).toHaveBeenNthCalledWith(1, 'get_termos_contrato_v2', { p_project_id: 'proj-1' });
+    expect(res.erro).toBeNull();
+    expect(validarTermosContrato(res.dados)).toBe(true);
+
+    rpcMock.mockResolvedValueOnce({
+      data: { ...payload, termos: { vigencia_fim: { ...termo, origem: 'sistema' } } },
+      error: null,
+    });
+    const invalido = await termosContrato('proj-1');
+    expect(invalido.dados).toBeNull();
+    expect(invalido.erro).toContain('Não foi possível');
+
+    rpcMock.mockResolvedValueOnce({
+      data: { id: 'termo-fim-1', conferido_em: '2026-11-18T17:00:00Z', ja_estava: false },
+      error: null,
+    });
+    const conferido = await conferirTermoContrato('termo-fim-1');
+    expect(rpcMock).toHaveBeenNthCalledWith(3, 'conferir_termo_contrato_v2', { p_id: 'termo-fim-1' });
+    expect(conferido.erro).toBeNull();
+
+    rpcMock.mockResolvedValueOnce({
+      data: {
+        project_id: 'proj-1',
+        antes: { start_date: null, end_date: '2027-03-31' },
+        depois: { start_date: null, end_date: '2027-04-30' },
+        mudou: true,
+      },
+      error: null,
+    });
+    const usado = await usarVigenciaDoContrato('proj-1');
+    expect(rpcMock).toHaveBeenNthCalledWith(4, 'usar_vigencia_do_contrato_v2', { p_project_id: 'proj-1' });
+    expect(usado.erro).toBeNull();
+
+    const semCentro = await termosContrato(null);
+    expect(semCentro.dados).toBeNull();
+    expect(semCentro.erro).toContain('não informado');
   });
 
   it('ativa o exemplo apenas em DEV com VITE_DADOS=exemplo e sem import estático', () => {
@@ -420,6 +490,7 @@ describe('camada de dados', () => {
     const resRep = await repasses(fechadoId);
     const resBal = await balancetes(fechadoId);
     const resPl = await planos(fechadoId);
+    const resTermos = await termosContrato(fechadoId);
     const resArv = await explicarLivre(fechadoId);
     const resOrig = await origem({
       alvo_tabela: 'balancete_lancamentos',
@@ -439,6 +510,9 @@ describe('camada de dados', () => {
     expect(resRep.dados.parcelas.length).toBeGreaterThan(0);
     expect(resBal.dados.length).toBeGreaterThan(0);
     expect(resPl.dados.length).toBeGreaterThan(0);
+    expect(resTermos.erro).toBeNull();
+    expect(resTermos.dados.vigencia_confere).toBe(true);
+    expect(resTermos.dados.termos.vigencia_fim).toBeDefined();
     expect(resArv.dados.valor).toBe(84300);
     expect(resOrig.dados.tipo).toBe('documento');
     expect(resArq.dados).toBe(fakePdf);
@@ -490,5 +564,58 @@ describe('camada de dados', () => {
     } finally {
       await dadosExemplo.salvarFiltroVisao(filtroOriginal);
     }
+  });
+
+  it('modo exemplo: termos têm um que confere, um que diverge, um sem termos e um com nota', async () => {
+    const todos = (await dadosExemplo.resumoProjetos()).dados.todos;
+    const idPorCodigo = new Map(todos.map((c) => [c.code, c.id]));
+
+    const confere = await dadosExemplo.termosContrato(idPorCodigo.get('30.901'));
+    expect(confere.erro).toBeNull();
+    expect(validarTermosContrato(confere.dados)).toBe(true);
+    expect(confere.dados.vigencia_confere).toBe(true);
+    expect(Object.keys(confere.dados.termos)).toHaveLength(5);
+    expect(confere.dados.termos.taxa_cip_ufg.valor).toBe(8);
+    expect(confere.dados.termos.taxa_cip_ua.valor).toBe(8);
+    expect(confere.dados.termos.taxa_dao.valor).toBe(10);
+    expect(confere.dados.termos.vigencia_fim.nota).toBeNull();
+
+    const diverge = await dadosExemplo.termosContrato(idPorCodigo.get('30.902'));
+    expect(diverge.dados.vigencia_confere).toBe(false);
+    expect(diverge.dados.termos.vigencia_fim.valor).toBe('2027-04-30');
+    expect(diverge.dados.termos.vigencia_fim.nota).toContain('diferença');
+
+    const semTermos = await dadosExemplo.termosContrato(idPorCodigo.get('30.903'));
+    expect(semTermos.erro).toBeNull();
+    expect(semTermos.dados.termos).toEqual({});
+    expect(semTermos.dados.vigencia_confere).toBeNull();
+
+    const comNota = await dadosExemplo.termosContrato(idPorCodigo.get('30.904'));
+    expect(comNota.dados.vigencia_confere).toBe(true);
+    expect(comNota.dados.termos.vigencia_fim.nota).toContain('aditivo');
+
+    const idFimAtlas = diverge.dados.termos.vigencia_fim.id;
+    const conferido = await dadosExemplo.conferirTermoContrato(idFimAtlas);
+    expect(conferido.dados.ja_estava).toBe(false);
+    const depoisDeConferir = await dadosExemplo.termosContrato(idPorCodigo.get('30.902'));
+    expect(depoisDeConferir.dados.termos.vigencia_fim.conferido).toBe(true);
+    const conferidoDeNovo = await dadosExemplo.conferirTermoContrato(idFimAtlas);
+    expect(conferidoDeNovo.dados.ja_estava).toBe(true);
+
+    const usado = await dadosExemplo.usarVigenciaDoContrato(idPorCodigo.get('30.902'));
+    expect(usado.erro).toBeNull();
+    expect(usado.dados.antes.end_date).toBe('2027-03-31');
+    expect(usado.dados.depois.end_date).toBe('2027-04-30');
+    expect(usado.dados.depois.start_date).toBe('2025-08-30');
+    const depoisDeUsar = await dadosExemplo.termosContrato(idPorCodigo.get('30.902'));
+    expect(depoisDeUsar.dados.vigencia_confere).toBe(true);
+
+    const resumoDepois = await dadosExemplo.resumoProjetos();
+    const atlas = resumoDepois.dados.centros.find((c) => c.code === '30.902');
+    expect(atlas.end_date).toBe('2027-04-30');
+
+    const semVigencia = await dadosExemplo.usarVigenciaDoContrato(idPorCodigo.get('30.903'));
+    expect(semVigencia.dados).toBeNull();
+    expect(semVigencia.erro).toContain('Sem vigência');
   });
 });

@@ -12,6 +12,9 @@ const {
   explicarLivreMock,
   origemMock,
   arquivoDeOrigemMock,
+  termosContratoMock,
+  conferirTermoContratoMock,
+  usarVigenciaDoContratoMock,
 } = vi.hoisted(() => ({
   saldoLivreMock: vi.fn(),
   repassesMock: vi.fn(),
@@ -22,6 +25,9 @@ const {
   explicarLivreMock: vi.fn(),
   origemMock: vi.fn(),
   arquivoDeOrigemMock: vi.fn(),
+  termosContratoMock: vi.fn(),
+  conferirTermoContratoMock: vi.fn(),
+  usarVigenciaDoContratoMock: vi.fn(),
 }));
 
 vi.mock('../src/servicos/dados.js', () => ({
@@ -34,6 +40,9 @@ vi.mock('../src/servicos/dados.js', () => ({
   explicarLivre: explicarLivreMock,
   origem: origemMock,
   arquivoDeOrigem: arquivoDeOrigemMock,
+  termosContrato: termosContratoMock,
+  conferirTermoContrato: conferirTermoContratoMock,
+  usarVigenciaDoContrato: usarVigenciaDoContratoMock,
 }));
 
 vi.mock('../src/servicos/leitoresDocumento.js', () => ({
@@ -75,6 +84,9 @@ beforeEach(() => {
   explicarLivreMock.mockReset();
   origemMock.mockReset();
   arquivoDeOrigemMock.mockReset();
+  termosContratoMock.mockReset();
+  conferirTermoContratoMock.mockReset();
+  usarVigenciaDoContratoMock.mockReset();
 });
 
 function configurarPadrao({
@@ -260,6 +272,24 @@ function configurarPadrao({
           ],
         },
       ],
+    },
+    erro: null,
+  });
+
+  termosContratoMock.mockResolvedValue({
+    dados: { termos: {}, end_date_cadastro: null, vigencia_confere: null },
+    erro: null,
+  });
+  conferirTermoContratoMock.mockResolvedValue({
+    dados: { id: 'termo-1', conferido_em: '2026-11-18T17:00:00Z', ja_estava: false },
+    erro: null,
+  });
+  usarVigenciaDoContratoMock.mockResolvedValue({
+    dados: {
+      project_id: 'p-1',
+      antes: { start_date: null, end_date: '2027-08-31' },
+      depois: { start_date: null, end_date: '2027-08-31' },
+      mudou: false,
     },
     erro: null,
   });

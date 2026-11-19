@@ -860,6 +860,159 @@ const PLANOS_EXEMPLO = {
   ],
 };
 
+const TERMOS_CONTRATO_EXEMPLO = {
+  [IDS.cerrado]: {
+    termos: {
+      vigencia_inicio: {
+        id: 'termo-30901-inicio',
+        valor: '2025-12-31',
+        regra: '20 meses contados da última assinatura (31/12/2025)',
+        trecho:
+          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+        documento_nome: 'Contrato de prestação de serviços · 30.901',
+        documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
+        pagina: 2,
+        nota: null,
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:10:00Z',
+        conferido: true,
+        conferido_em: '2026-11-18T16:00:00Z',
+        versoes_anteriores: [],
+      },
+      vigencia_fim: {
+        id: 'termo-30901-fim',
+        valor: '2027-08-31',
+        regra: '20 meses contados da última assinatura (31/12/2025)',
+        trecho:
+          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+        documento_nome: 'Contrato de prestação de serviços · 30.901',
+        documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
+        pagina: 2,
+        nota: null,
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:10:00Z',
+        conferido: true,
+        conferido_em: '2026-11-18T16:00:00Z',
+        versoes_anteriores: [],
+      },
+      taxa_cip_ufg: {
+        id: 'termo-30901-cip-ufg',
+        valor: 8,
+        regra: 'percentual sobre o valor do projeto',
+        trecho: 'CLÁUSULA QUARTA — taxa de administração de 8% (oito por cento) para a UFG.',
+        documento_nome: 'Contrato de prestação de serviços · 30.901',
+        documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
+        pagina: 4,
+        nota: null,
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:12:00Z',
+        conferido: false,
+        conferido_em: null,
+        versoes_anteriores: [],
+      },
+      taxa_cip_ua: {
+        id: 'termo-30901-cip-ua',
+        valor: 8,
+        regra: 'percentual sobre o valor do projeto',
+        trecho:
+          'CLÁUSULA QUARTA — taxa de administração de 8% (oito por cento) para a unidade executora.',
+        documento_nome: 'Contrato de prestação de serviços · 30.901',
+        documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
+        pagina: 4,
+        nota: null,
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:12:00Z',
+        conferido: false,
+        conferido_em: null,
+        versoes_anteriores: [],
+      },
+      taxa_dao: {
+        id: 'termo-30901-dao',
+        valor: 10,
+        regra: 'percentual sobre o valor do projeto',
+        trecho: 'CLÁUSULA QUINTA — taxa de 10% (dez por cento) para a fundação de apoio.',
+        documento_nome: 'Contrato de prestação de serviços · 30.901',
+        documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
+        pagina: 5,
+        nota: null,
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:12:00Z',
+        conferido: false,
+        conferido_em: null,
+        versoes_anteriores: [],
+      },
+    },
+  },
+  [IDS.atlas]: {
+    termos: {
+      vigencia_inicio: {
+        id: 'termo-30902-inicio',
+        valor: '2025-08-30',
+        regra: '20 meses contados da última assinatura (30/08/2025)',
+        trecho:
+          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+        documento_nome: 'Contrato de prestação de serviços · 30.902',
+        documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30902/view',
+        pagina: 3,
+        nota: null,
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:20:00Z',
+        conferido: true,
+        conferido_em: '2026-11-18T16:10:00Z',
+        versoes_anteriores: [],
+      },
+      vigencia_fim: {
+        id: 'termo-30902-fim',
+        valor: '2027-04-30',
+        regra: '20 meses contados da última assinatura (30/08/2025)',
+        trecho:
+          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+        documento_nome: 'Contrato de prestação de serviços · 30.902',
+        documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30902/view',
+        pagina: 3,
+        nota:
+          'O cadastro está com 31/03/2027; a diferença de um mês veio da assinatura posterior do segundo signatário. Conferir com a coordenação antes de trocar a data do projeto.',
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:20:00Z',
+        conferido: false,
+        conferido_em: null,
+        versoes_anteriores: [],
+      },
+    },
+  },
+  [IDS.veredas]: {
+    termos: {
+      vigencia_fim: {
+        id: 'termo-30904-fim',
+        valor: '2027-12-31',
+        regra: 'vigência prorrogada pelo termo aditivo',
+        trecho:
+          'CLÁUSULA TERCEIRA — fica prorrogada a vigência do instrumento até 31 de dezembro de 2027.',
+        documento_nome: 'Termo aditivo · 30.904',
+        documento_url: 'https://docs.google.com/document/d/exemplo-aditivo-30904/view',
+        pagina: 1,
+        nota:
+          'A data de início ainda não está no banco; este termo só prorrogou o fim. O aditivo foi lido do Drive e conferido com a coordenação.',
+        origem: 'ia',
+        autor: 'Claude',
+        criado_em: '2026-11-18T15:30:00Z',
+        conferido: true,
+        conferido_em: '2026-11-18T16:20:00Z',
+        versoes_anteriores: [],
+      },
+    },
+  },
+};
+
+let termosContratoEstado = structuredClone(TERMOS_CONTRATO_EXEMPLO);
+
 function contarPendenciasAbertas(projectId) {
   return pendenciasEstado.filter((p) => p.project_id === projectId && p.situacao === 'aberta').length;
 }
@@ -962,6 +1115,98 @@ export async function balancetes(projectId) {
 export async function planos(projectId) {
   const lista = PLANOS_EXEMPLO[projectId] || [];
   return { dados: structuredClone(lista), erro: null };
+}
+
+function normalizarDataCurta(valor) {
+  if (typeof valor !== 'string') return null;
+  const texto = valor.trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(texto) ? texto : null;
+}
+
+export async function termosContrato(projectId) {
+  const centro = CENTROS_BASE.find((c) => c.id === projectId);
+  if (!centro) {
+    return { dados: null, erro: 'Centro de custo não encontrado.' };
+  }
+
+  const base = termosContratoEstado[projectId];
+  const termos = base?.termos ? structuredClone(base.termos) : {};
+  const fim = normalizarDataCurta(termos.vigencia_fim?.valor);
+  const cadastro = normalizarDataCurta(centro.end_date);
+  const vigenciaConfere = fim && cadastro ? fim === cadastro : null;
+
+  return {
+    dados: {
+      termos,
+      end_date_cadastro: cadastro,
+      vigencia_confere: vigenciaConfere,
+    },
+    erro: null,
+  };
+}
+
+export async function conferirTermoContrato(id) {
+  for (const base of Object.values(termosContratoEstado)) {
+    for (const termo of Object.values(base.termos || {})) {
+      if (termo.id !== id) continue;
+      const jaEstava = termo.conferido === true;
+      if (!jaEstava) {
+        termo.conferido = true;
+        termo.conferido_em = new Date().toISOString();
+      }
+      return {
+        dados: {
+          id: termo.id,
+          conferido_em: termo.conferido_em ?? null,
+          ja_estava: jaEstava,
+        },
+        erro: null,
+      };
+    }
+  }
+  return { dados: null, erro: 'Termo do contrato não encontrado.' };
+}
+
+export async function usarVigenciaDoContrato(projectId) {
+  const centro = CENTROS_BASE.find((c) => c.id === projectId);
+  if (!centro) {
+    return { dados: null, erro: 'Centro de custo não encontrado.' };
+  }
+
+  const base = termosContratoEstado[projectId];
+  const fim = normalizarDataCurta(base?.termos?.vigencia_fim?.valor);
+  if (!fim) {
+    return { dados: null, erro: 'Sem vigência final do contrato registrada para este centro.' };
+  }
+
+  const inicio = normalizarDataCurta(base?.termos?.vigencia_inicio?.valor);
+  const antes = {
+    start_date: centro.start_date ?? null,
+    end_date: centro.end_date ?? null,
+  };
+
+  centro.end_date = fim;
+  if (inicio) centro.start_date = inicio;
+
+  const saldo = SALDOS_EXEMPLO[projectId];
+  if (saldo && typeof saldo === 'object') {
+    saldo.end_date = fim;
+  }
+
+  const depois = {
+    start_date: centro.start_date ?? null,
+    end_date: centro.end_date ?? null,
+  };
+
+  return {
+    dados: {
+      project_id: projectId,
+      antes,
+      depois,
+      mudou: antes.start_date !== depois.start_date || antes.end_date !== depois.end_date,
+    },
+    erro: null,
+  };
 }
 
 const DOC_BALANCETE_30901 = {

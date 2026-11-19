@@ -140,3 +140,113 @@
   flex-direction: column;
   gap: var(--esp-3);
 }
+
+.projeto__link-contrato {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: var(--sublinhado-ativo);
+  cursor: pointer;
+}
+
+.projeto__link-contrato:hover {
+  color: var(--cor-acento);
+}
+
+.projeto__link-contrato:focus-visible {
+  outline: none;
+  box-shadow: var(--anel-foco);
+  border-radius: var(--raio-1);
+}
+
+.projeto__selo-contrato {
+  display: inline-block;
+  padding: var(--esp-1) var(--esp-2);
+  border-radius: var(--raio-1);
+  background: var(--cor-acento-suave);
+  color: var(--cor-acento);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  font-weight: var(--fw-medio);
+}
+
+.projeto__atencao-contrato {
+  display: inline-block;
+  padding: var(--esp-1) var(--esp-2);
+  border-radius: var(--raio-1);
+  background: var(--cor-atencao-suave);
+  color: var(--cor-atencao);
+  font-weight: var(--fw-medio);
+}
+
+.projeto__termos-contrato {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+}
+
+.projeto__trecho-contrato {
+  margin: 0;
+  padding: var(--esp-2) var(--esp-3);
+  border-left: var(--esp-1) solid var(--cor-atencao);
+  background: var(--cor-afundado);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  white-space: pre-line;
+}
+
+.projeto__documento-contrato {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
+.projeto__documento-contrato-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2);
+}
+
+.projeto__link-documento {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esp-1);
+  color: var(--cor-acento);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  text-decoration: underline;
+  text-underline-offset: var(--sublinhado-ativo);
+}
+
+.projeto__nota-contrato {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+  padding: var(--esp-3);
+  border-radius: var(--raio-1);
+  background: var(--cor-atencao-suave);
+}
+
+.projeto__acoes-contrato {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.projeto__confirmacao-contrato {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  padding-top: var(--esp-2);
+  border-top: var(--borda);
+}

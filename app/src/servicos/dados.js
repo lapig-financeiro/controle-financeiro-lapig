@@ -271,6 +271,89 @@ export async function planos(projectId) {
   );
 }
 
+export async function termosContrato(projectId) {
+  if (!projectId) {
+    return { dados: null, erro: 'Centro de custo não informado.' };
+  }
+  const opcoes = { validar: validarTermosContrato };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.termosContrato(projectId),
+          'Não foi possível carregar os termos do contrato.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'get_termos_contrato_v2',
+    { p_project_id: projectId },
+    'Não foi possível carregar os termos do contrato.',
+    opcoes
+  );
+}
+
+export async function conferirTermoContrato(id) {
+  if (typeof id !== 'string' || !id.trim()) {
+    return { dados: null, erro: 'Termo do contrato não informado.' };
+  }
+  const opcoes = {
+    validar: (d) => Boolean(d && typeof d === 'object' && typeof d.id === 'string'),
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.conferirTermoContrato(id),
+          'Não foi possível marcar o termo como conferido.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'conferir_termo_contrato_v2',
+    { p_id: id },
+    'Não foi possível marcar o termo como conferido.',
+    opcoes
+  );
+}
+
+export async function usarVigenciaDoContrato(projectId) {
+  if (!projectId) {
+    return { dados: null, erro: 'Centro de custo não informado.' };
+  }
+  const opcoes = {
+    validar: (d) =>
+      Boolean(
+        d &&
+          typeof d === 'object' &&
+          d.antes &&
+          typeof d.antes === 'object' &&
+          d.depois &&
+          typeof d.depois === 'object' &&
+          (d.depois.end_date === null || typeof d.depois.end_date === 'string') &&
+          typeof d.mudou === 'boolean'
+      ),
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.usarVigenciaDoContrato(projectId),
+          'Não foi possível usar a vigência do contrato.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'usar_vigencia_do_contrato_v2',
+    { p_project_id: projectId },
+    'Não foi possível usar a vigência do contrato.',
+    opcoes
+  );
+}
+
 const TIPOS_NO_ARVORE = ['calculo', 'documento', 'legado', 'digitado'];
 
 function ehObjetoSimples(valor) {
@@ -346,6 +429,46 @@ export function validarOrigem(d) {
     return false;
   }
   return true;
+}
+
+function validarTermoContrato(t) {
+  if (!ehObjetoSimples(t)) return false;
+  if (typeof t.id !== 'string' || !t.id.trim()) return false;
+  if (typeof t.valor !== 'string' && !numeroFinitoEstrito(t.valor)) return false;
+  if (t.regra !== null && t.regra !== undefined && typeof t.regra !== 'string') return false;
+  if (typeof t.trecho !== 'string') return false;
+  if (typeof t.documento_nome !== 'string') return false;
+  if (
+    t.documento_url !== null &&
+    t.documento_url !== undefined &&
+    typeof t.documento_url !== 'string'
+  ) {
+    return false;
+  }
+  if (
+    t.pagina !== null &&
+    t.pagina !== undefined &&
+    (!Number.isInteger(t.pagina) || t.pagina < 1)
+  ) {
+    return false;
+  }
+  if (t.nota !== null && t.nota !== undefined && typeof t.nota !== 'string') return false;
+  if (t.origem !== 'ia' && t.origem !== 'pessoa') return false;
+  if (typeof t.autor !== 'string' || !t.autor.trim()) return false;
+  if (typeof t.conferido !== 'boolean') return false;
+  if (t.conferido_em !== null && t.conferido_em !== undefined && typeof t.conferido_em !== 'string') {
+    return false;
+  }
+  if (t.versoes_anteriores !== undefined && !Array.isArray(t.versoes_anteriores)) return false;
+  return true;
+}
+
+export function validarTermosContrato(d) {
+  if (!ehObjetoSimples(d)) return false;
+  if (!ehObjetoSimples(d.termos)) return false;
+  if (d.end_date_cadastro !== null && typeof d.end_date_cadastro !== 'string') return false;
+  if (d.vigencia_confere !== null && typeof d.vigencia_confere !== 'boolean') return false;
+  return Object.values(d.termos).every(validarTermoContrato);
 }
 
 export async function explicarLivre(projectId) {

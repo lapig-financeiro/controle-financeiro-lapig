@@ -21,6 +21,7 @@ import {
 import { ehCliqueNavegacaoSimples, urlProjeto } from '../roteador.js';
 import {
   balancetes,
+  conferirTermoContrato,
   explicarLivre,
   origem,
   pendencias,
@@ -28,6 +29,8 @@ import {
   repasses,
   resolverPendencia,
   saldoLivre,
+  termosContrato,
+  usarVigenciaDoContrato,
 } from '../servicos/dados.js';
 import {
   dataCompacta,
@@ -54,6 +57,67 @@ const ROTULOS_TIPO_PENDENCIA = {
   cadastro: 'Cadastro',
   outro: 'Outro',
 };
+
+const ROTULOS_TERMO_CONTRATO = {
+  vigencia_inicio: 'Início da vigência',
+  vigencia_fim: 'Fim da vigência',
+  taxa_cip_ufg: 'Taxa CIP — UFG',
+  taxa_cip_ua: 'Taxa CIP — unidade acadêmica',
+  taxa_dao: 'Taxa DAO — fundação',
+};
+
+const ORDEM_TERMOS_CONTRATO = [
+  'vigencia_inicio',
+  'vigencia_fim',
+  'taxa_cip_ufg',
+  'taxa_cip_ua',
+  'taxa_dao',
+];
+
+const ROTULOS_TAXA_CONTRATO = [
+  { chave: 'taxa_cip_ufg', rotulo: 'UFG' },
+  { chave: 'taxa_cip_ua', rotulo: 'unidade' },
+  { chave: 'taxa_dao', rotulo: 'fundação' },
+];
+
+function milesimosDePct(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  const n = typeof valor === 'number' ? valor : Number(valor);
+  return Number.isFinite(n) ? Math.round(n * 1000) : null;
+}
+
+/**
+ * Texto de percentual a partir de milésimos, sem arredondar: a coluna
+ * `valor_pct` é `numeric(6,3)` e o valor exibido é o mesmo que está no
+ * banco (8 -> "8", 8.5 -> "8,5", 8.125 -> "8,125").
+ */
+function textoPct(milesimos) {
+  if (milesimos === null || milesimos === undefined) return '—';
+  const negativo = milesimos < 0;
+  const abs = Math.abs(milesimos);
+  const inteiro = Math.floor(abs / 1000);
+  const frac = String(abs % 1000).padStart(3, '0').replace(/0+$/, '');
+  return `${negativo ? '\u2212' : ''}${inteiro}${frac ? `,${frac}` : ''}`;
+}
+
+function dataDoTermo(valor) {
+  if (typeof valor !== 'string') return null;
+  const texto = valor.slice(0, 10);
+  return DATA_ISO_RE.test(texto) ? texto : null;
+}
+
+function valorDoTermoContrato(chave, termo) {
+  if (chave.startsWith('vigencia_')) {
+    const data = dataDoTermo(termo?.valor);
+    return data ? dataCompleta(data) : '—';
+  }
+  return `${textoPct(milesimosDePct(termo?.valor))}%`;
+}
+
+function posicaoTermoContrato(chave) {
+  const indice = ORDEM_TERMOS_CONTRATO.indexOf(chave);
+  return indice === -1 ? ORDEM_TERMOS_CONTRATO.length : indice;
+}
 
 const DATA_ISO_RE = /^\d{4}-\d{2}-\d{2}/;
 
@@ -275,6 +339,12 @@ export function Projeto({
   const [repassesSt, setRepassesSt] = useState({ carregando: true, dados: null, erro: null });
   const [docsSt, setDocsSt] = useState(() => docsVazios(null));
   const [pendenciasSt, setPendenciasSt] = useState({ carregando: true, dados: [], erro: null });
+  const [termosSt, setTermosSt] = useState({ carregando: true, dados: null, erro: null });
+  const [painelContrato, setPainelContrato] = useState(false);
+  const [salvandoTermoId, setSalvandoTermoId] = useState(null);
+  const [erroTermo, setErroTermo] = useState(null);
+  const [confirmacaoContrato, setConfirmacaoContrato] = useState(false);
+  const [usandoVigencia, setUsandoVigencia] = useState(false);
 
   const [painelOrigem, setPainelOrigem] = useState(null);
   const [explicarSt, setExplicarSt] = useState({
@@ -311,6 +381,7 @@ export function Projeto({
   const genResolucaoRef = useRef(0);
   const genExplicarRef = useRef(0);
   const genDocAbaRef = useRef(0);
+  const genTermosRef = useRef(0);
 
   useEffect(() => {
     montadoRef.current = true;
@@ -333,6 +404,12 @@ export function Projeto({
     setErroResolucao(null);
     setErroMostrarCentro(null);
     setSalvandoPendenciaId(null);
+    setTermosSt({ carregando: true, dados: null, erro: null });
+    setPainelContrato(false);
+    setSalvandoTermoId(null);
+    setErroTermo(null);
+    setConfirmacaoContrato(false);
+    setUsandoVigencia(false);
   }, [projectId]);
 
   useEffect(() => {
@@ -455,6 +532,22 @@ export function Projeto({
     });
   }, [projectId]);
 
+  const carregarTermos = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genTermosRef.current;
+    setTermosSt((prev) => ({ ...prev, carregando: true, erro: null }));
+    let res;
+    try {
+      res = await termosContrato(id);
+    } catch {
+      res = { dados: null, erro: 'Não foi possível carregar os termos do contrato.' };
+    }
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genTermosRef.current) {
+      return;
+    }
+    setTermosSt({ carregando: false, dados: res?.dados || null, erro: res?.erro || null });
+  }, [projectId]);
+
   useEffect(() => {
     const saldoRef = genSaldoRef;
     const repassesRef = genRepassesRef;
@@ -463,6 +556,7 @@ export function Projeto({
     const resolucaoRef = genResolucaoRef;
     const explicarRef = genExplicarRef;
     const docAbaRef = genDocAbaRef;
+    const termosRef = genTermosRef;
 
     if (!projectId || centroOculto) {
       return () => {
@@ -473,6 +567,7 @@ export function Projeto({
         resolucaoRef.current += 1;
         explicarRef.current += 1;
         docAbaRef.current += 1;
+        termosRef.current += 1;
       };
     }
 
@@ -480,6 +575,7 @@ export function Projeto({
     carregarRepasses();
     carregarDocumentos();
     carregarPendencias();
+    carregarTermos();
 
     return () => {
       saldoRef.current += 1;
@@ -489,8 +585,9 @@ export function Projeto({
       resolucaoRef.current += 1;
       explicarRef.current += 1;
       docAbaRef.current += 1;
+      termosRef.current += 1;
     };
-  }, [projectId, centroOculto, carregarSaldo, carregarRepasses, carregarDocumentos, carregarPendencias]);
+  }, [projectId, centroOculto, carregarSaldo, carregarRepasses, carregarDocumentos, carregarPendencias, carregarTermos]);
 
   const voltarProps = {
     rotulo: 'Projetos',
@@ -552,6 +649,55 @@ export function Projeto({
   const endDate = resumoCentro?.end_date || saldoSt.dados?.end_date || null;
   const meses = endDate ? mesesRestantes(endDate, hoje) : null;
 
+  const abrirPainelContrato = () => {
+    setPainelOrigem(null);
+    setPainelContrato(true);
+    setErroTermo(null);
+    setConfirmacaoContrato(false);
+  };
+
+  const termosDados = termosSt.dados;
+  const termosMapa =
+    termosDados && termosDados.termos && typeof termosDados.termos === 'object' &&
+    !Array.isArray(termosDados.termos)
+      ? termosDados.termos
+      : {};
+  const termoFimContrato = termosMapa.vigencia_fim || null;
+  const dataFimContrato = dataDoTermo(termoFimContrato?.valor);
+  const vigenciaConfere = termosDados ? termosDados.vigencia_confere : null;
+  const termosIndisponiveis = Boolean(termosSt.erro);
+
+  const taxasContrato = ROTULOS_TAXA_CONTRATO
+    .map(({ chave, rotulo }) => {
+      const termo = termosMapa[chave];
+      const milesimos = milesimosDePct(termo?.valor);
+      return milesimos === null ? null : { chave, rotulo, milesimos };
+    })
+    .filter(Boolean);
+  const somaTaxasMilesimos = taxasContrato.reduce((soma, t) => soma + t.milesimos, 0);
+  const textoTaxas =
+    taxasContrato.length > 0
+      ? `Taxas do contrato: ${textoPct(somaTaxasMilesimos)}% (${taxasContrato
+          .map((t) => `${t.rotulo} ${textoPct(t.milesimos)}`)
+          .join(' · ')})`
+      : null;
+  const contextoTaxas = textoTaxas ? (
+    <button type="button" class="projeto__link-contrato" onClick={abrirPainelContrato}>
+      {textoTaxas}
+    </button>
+  ) : null;
+
+  const rotuloVigenciaDigitada = termosIndisponiveis ? (
+    <span
+      class="projeto__nota-discreta"
+      title="Não foi possível carregar os termos do contrato"
+    >
+      —
+    </span>
+  ) : (
+    <span class="projeto__nota-discreta">vigência digitada</span>
+  );
+
   let contextoVigencia = null;
   if (endDate) {
     const textoMeses =
@@ -562,20 +708,55 @@ export function Projeto({
           : meses === 1
             ? 'falta 1 mês'
             : `faltam ${meses} meses`;
-    contextoVigencia = (
-      <>
-        Vigência até <Valor valor={endDate} tipo="data-completa" />
-        {textoMeses ? ` · ${textoMeses}` : ''} ·{' '}
-        <span class="projeto__nota-discreta">vigência digitada</span>
-      </>
-    );
+
+    if (dataFimContrato && vigenciaConfere === true) {
+      contextoVigencia = (
+        <>
+          Vigência até{' '}
+          <button type="button" class="projeto__link-contrato" onClick={abrirPainelContrato}>
+            {dataCompleta(dataFimContrato)}
+          </button>
+          {textoMeses ? ` · ${textoMeses}` : ''} ·{' '}
+          <span class="projeto__selo-contrato">do contrato</span>
+        </>
+      );
+    } else if (dataFimContrato && vigenciaConfere === false) {
+      contextoVigencia = (
+        <>
+          Vigência até <Valor valor={endDate} tipo="data-completa" />
+          {textoMeses ? ` · ${textoMeses}` : ''} ·{' '}
+          <span class="projeto__atencao-contrato">
+            contrato diz{' '}
+            <button type="button" class="projeto__link-contrato" onClick={abrirPainelContrato}>
+              {dataCompleta(dataFimContrato)}
+            </button>
+          </span>
+        </>
+      );
+    } else {
+      contextoVigencia = (
+        <>
+          Vigência até <Valor valor={endDate} tipo="data-completa" />
+          {textoMeses ? ` · ${textoMeses}` : ''} · {rotuloVigenciaDigitada}
+        </>
+      );
+    }
   } else if (!carregandoResumo && !saldoSt.carregando) {
     contextoVigencia = (
       <>
-        Vigência não informada · <span class="projeto__nota-discreta">vigência digitada</span>
+        Vigência não informada · {rotuloVigenciaDigitada}
       </>
     );
   }
+
+  const contextoPagina =
+    contextoVigencia || contextoTaxas ? (
+      <>
+        {contextoVigencia}
+        {contextoVigencia && contextoTaxas ? ' · ' : null}
+        {contextoTaxas}
+      </>
+    ) : null;
 
   const driveUrl = isAdmin ? validarUrlDrive(resumoCentro?.drive_folder_url) : null;
 
@@ -609,6 +790,7 @@ export function Projeto({
     !semNumeros;
 
   const abrirPainelRaiz = () => {
+    setPainelContrato(false);
     setPainelOrigem({ modo: 'raiz' });
     if (!explicarSt.consultado && !explicarSt.carregando) {
       carregarExplicar();
@@ -616,9 +798,59 @@ export function Projeto({
   };
 
   const abrirPainelGrupo = (grupo) => {
+    setPainelContrato(false);
     setPainelOrigem({ modo: 'grupo', grupo });
     if (!explicarSt.consultado && !explicarSt.carregando) {
       carregarExplicar();
+    }
+  };
+
+  const marcarTermoConferido = async (termo) => {
+    if (!termo?.id || salvandoTermoId) return;
+    const idProjeto = projectId;
+    setSalvandoTermoId(termo.id);
+    setErroTermo(null);
+    let res;
+    try {
+      res = await conferirTermoContrato(termo.id);
+    } catch {
+      res = { dados: null, erro: 'Não foi possível marcar o termo como conferido.' };
+    }
+    if (!montadoRef.current || projectIdRef.current !== idProjeto) return;
+    setSalvandoTermoId(null);
+    if (res?.erro) {
+      setErroTermo(res.erro);
+      return;
+    }
+    await carregarTermos();
+  };
+
+  const usarVigenciaContrato = async () => {
+    if (usandoVigencia) return;
+    const idProjeto = projectId;
+    setUsandoVigencia(true);
+    setErroTermo(null);
+    let res;
+    try {
+      res = await usarVigenciaDoContrato(idProjeto);
+    } catch {
+      res = { dados: null, erro: 'Não foi possível usar a vigência do contrato.' };
+    }
+    if (!montadoRef.current || projectIdRef.current !== idProjeto) return;
+    setUsandoVigencia(false);
+    if (res?.erro) {
+      setErroTermo(res.erro);
+      return;
+    }
+    setConfirmacaoContrato(false);
+    await carregarTermos();
+    await carregarSaldo();
+    if (onRecarregarResumo) {
+      try {
+        await onRecarregarResumo();
+      } catch {
+        // O aviso do resumo aparece no topo da página; o painel não fecha.
+      }
     }
   };
 
@@ -1469,6 +1701,136 @@ export function Projeto({
     },
   ];
 
+  const termosContratoLista = Object.entries(termosMapa)
+    .sort(
+      ([a], [b]) =>
+        posicaoTermoContrato(a) - posicaoTermoContrato(b) || a.localeCompare(b)
+    )
+    .map(([chave, termo]) => ({ chave, termo }));
+
+  const renderTermoContrato = ({ chave, termo }) => {
+    const rotulo = ROTULOS_TERMO_CONTRATO[chave] || chave;
+    const conferidoTexto = termo.conferido_em
+      ? ` · conferido em ${dataCompleta(termo.conferido_em)}`
+      : termo.conferido
+        ? ' · conferido'
+        : '';
+    const registroTexto = `Registrado por ${termo.autor}${termo.origem === 'ia' ? ' (IA)' : ''} em ${dataCompleta(termo.criado_em)}${conferidoTexto}`;
+    const url = validarUrlDrive(termo.documento_url);
+    const emConfirmacao = confirmacaoContrato && chave === 'vigencia_fim';
+
+    return (
+      <Cartao key={chave} titulo={rotulo} subtitulo={valorDoTermoContrato(chave, termo)}>
+        {termo.regra && (
+          <p class="texto-corrido">
+            <strong>Como foi obtido:</strong> {termo.regra}
+          </p>
+        )}
+
+        <blockquote class="projeto__trecho-contrato">{termo.trecho}</blockquote>
+
+        <div class="projeto__documento-contrato">
+          <span>{termo.documento_nome}</span>
+          <span class="projeto__documento-contrato-acoes">
+            {url && (
+              <a
+                class="projeto__link-documento"
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Abrir no Drive
+                <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
+              </a>
+            )}
+            {termo.pagina ? <span class="projeto__nota-discreta">p. {termo.pagina}</span> : null}
+          </span>
+        </div>
+
+        <p class="projeto__nota-discreta">{registroTexto}</p>
+
+        {isAdmin && termo.nota ? (
+          <div class="projeto__nota-contrato">
+            <h3 class="projeto__subtitulo-painel">Análise de quem registrou</h3>
+            <p class="texto-corrido">{termo.nota}</p>
+          </div>
+        ) : null}
+
+        {isAdmin && (
+          <div class="projeto__acoes-contrato">
+            {!termo.conferido && (
+              <Botao
+                variante="secundario"
+                tamanho="compacto"
+                carregando={salvandoTermoId === termo.id}
+                onClick={() => marcarTermoConferido(termo)}
+              >
+                Marcar como conferido
+              </Botao>
+            )}
+            {chave === 'vigencia_fim' && vigenciaConfere === false && !emConfirmacao && (
+              <Botao
+                variante="secundario"
+                tamanho="compacto"
+                onClick={() => {
+                  setErroTermo(null);
+                  setConfirmacaoContrato(true);
+                }}
+              >
+                Usar a data do contrato
+              </Botao>
+            )}
+          </div>
+        )}
+
+        {isAdmin && emConfirmacao && (
+          <div class="projeto__confirmacao-contrato">
+            <p class="projeto__pendencia-pergunta">
+              Usar a data do contrato? A vigência deste centro passa de{' '}
+              <strong>{endDate ? dataCompleta(endDate) : 'sem data'}</strong> para{' '}
+              <strong>{dataCompleta(termo.valor)}</strong>.
+            </p>
+            <div class="projeto__acoes-contrato">
+              <Botao
+                variante="primario"
+                tamanho="compacto"
+                carregando={usandoVigencia}
+                onClick={usarVigenciaContrato}
+              >
+                Usar a data do contrato
+              </Botao>
+              <Botao
+                variante="fantasma"
+                tamanho="compacto"
+                onClick={() => setConfirmacaoContrato(false)}
+              >
+                Cancelar
+              </Botao>
+            </div>
+          </div>
+        )}
+      </Cartao>
+    );
+  };
+
+  const renderPainelContrato = () => {
+    if (termosSt.carregando && !termosSt.dados) {
+      return <Esqueleto variante="linha" linhas={4} rotulo="Carregando termos do contrato" />;
+    }
+    if (termosSt.erro) {
+      return <AvisoFalha mensagem={termosSt.erro} aoTentarNovamente={carregarTermos} />;
+    }
+    if (termosContratoLista.length === 0) {
+      return <Vazio mensagem="Nenhum termo do contrato registrado para este centro." />;
+    }
+    return (
+      <div class="projeto__termos-contrato">
+        {erroTermo && <AvisoFalha mensagem={erroTermo} />}
+        {termosContratoLista.map(renderTermoContrato)}
+      </div>
+    );
+  };
+
   const grupoPainel = painelOrigem?.modo === 'grupo' ? painelOrigem.grupo : null;
   const rubricasGrupo = grupoPainel
     ? rubricas.filter((r) => r.grupo_code === grupoPainel.grupo_code)
@@ -1699,7 +2061,7 @@ export function Projeto({
       <CabecalhoPagina
         voltar={voltarProps}
         titulo={tituloPagina}
-        contexto={contextoVigencia}
+        contexto={contextoPagina}
         acoes={
           driveUrl ? (
             <Botao variante="secundario" icone={ExternalLink} href={driveUrl} externo>
@@ -1828,6 +2190,15 @@ export function Projeto({
             </div>
           ) : null
         )}
+      </PainelLateral>
+
+      <PainelLateral
+        aberto={painelContrato}
+        aoFechar={() => setPainelContrato(false)}
+        titulo="Do contrato"
+        subtitulo={tituloPagina}
+      >
+        {renderPainelContrato()}
       </PainelLateral>
 
       <Documento
