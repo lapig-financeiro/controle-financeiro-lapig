@@ -1,0 +1,122 @@
+# F2-B — backfill da rastreabilidade (relatório)
+
+## O que foi feito
+
+- `tools/rastreabilidade/backfill.mjs`: CLI (`--aplicar`, `--centro`, `--saida`),
+  leitura das quatro variáveis `CF_*`, checagem de papel **antes** de qualquer
+  leitura de dados, simulação sem RPC e gravação do JSON de detalhe fora do repo.
+- `tools/rastreabilidade/cliente.mjs`: cliente Supabase próprio, sobre `fetch`, que
+  nunca imprime credencial (o `mcp/src/client.js` imprimia o e-mail) e pagina as
+  leituras REST com o JWT do admin.
+- `tools/rastreabilidade/executar.mjs`: orquestração injetável (a rede é um objeto
+  `cliente`), escopo, montagem do payload literal da 064, pré-validação local,
+  remoção de fatos com CPF (inclusive CPF partido entre trechos), retentativa única
+  na recusa por CPF, idempotência, contagens e texto do terminal.
+- `tools/rastreabilidade/cpf.mjs`: a **Regra de CPF única** da 065 em JS (052 +
+  candidato 3-3-3-2 com vãos de 0 a 6 não-dígito/não-letra, DV válido, busca a partir
+  de cada posição), com `mascararCpf`/`cpfsDe` na mesma gramática.
+- `tools/rastreabilidade/alvo.mjs`: montagem do `alvo` por tipo e escolha da linha
+  (valor formatado **e** código/texto; mais de uma linha = ambíguo; corte de 500;
+  `bbox` só com as quatro chaves de `linhasDaPagina`).
+- `tools/rastreabilidade/documento.mjs`: PDF pelo `pdf.js` de `mcp/` (laço
+  `getTextContent` → `linhasDaPagina` de `origem-documento.js`), DOCX por
+  `mammoth.convertToHtml` + `linkedom`, formato pela extensão conferido pelos
+  primeiros bytes.
+- `tools/rastreabilidade/erros.mjs`: separa erro seguro (vai ao terminal) de erro de
+  RPC/PostgREST (só vira motivo, nunca é despejado).
+- `tools/rastreabilidade/README.md`: como rodar, o que imprime, o que nunca imprime,
+  o desvio declarado da regra 9 e o aviso de "já registrado".
+- Testes novos: `tests/rastreabilidade-cpf.test.js`,
+  `tests/rastreabilidade-alvo.test.js`, `tests/rastreabilidade-documento.test.js`,
+  `tests/rastreabilidade-fluxo.test.js`, `tests/rastreabilidade-saida.test.js` e
+  `tests/rastreabilidade-backfill-064.test.js` (pglite).
+
+## Decisões e desvios do plano
+
+1. **Admin humano é intencional.** A 064 só aceita `admin`; o script lê o próprio
+   papel em `app_users` e aborta se não for `admin`. É o desvio declarado da regra 9
+   de `docs/acesso-ao-banco.md`, registrado no README e neste relatório: execução
+   manual, simulação e aplicação em turnos separados, sem agendamento e sem CI.
+2. **CPF antes da RPC.** A regra da 065 é aplicada por trecho, nos metadados e na
+   concatenação na ordem da RPC (caminho relativo, título, arquivo, trechos). Um CPF
+   partido entre dois trechos é removido por bissecção; CPF no nome do documento
+   recusa o documento sem retentativa. A retentativa única usa a regra mais larga da
+   064 só para achar os fatos suspeitos; se não houver suspeito, tenta sem fatos.
+3. **Zero não é procurado.** O `acharAlvo` não acha zero; esses números entram na
+   contagem `zeros` e não viram fato.
+4. **Rubrica ambígua e fato duplicado.** Rubrica com mesmo `rubrica_code` e
+   `descricao_livre` nula/vazia duplicada fica de fora antes da RPC, porque a 064
+   recusaria o documento inteiro. Fato com a mesma chave estável (tabela, pai,
+   chave e campo) é contado como duplicado e não entra no payload.
+5. **Tabela vazia é erro.** Se o `raw_extraction` de um balancete tem lançamentos e a
+   consulta volta vazia (ou com menos linhas), o script aborta: nunca grava zero.
+6. **Idempotência.** O mesmo `sha256` devolve `criada: false`; o script avisa quantos
+   fatos novos foram ignorados. Corrigir depois exige a F3 ou intervenção manual.
+7. **DOCX.** Cada `<tr>` e cada `<p>` fora de tabela é uma linha; `<p>` dentro de
+   `<td>` não vira linha própria para não repetir a célula. O texto do mammoth é
+   desescapado pelo `linkedom`.
+8. **Saída.** O terminal só usa contagens, código de centro, id de documento,
+   data/versão e motivo de recusa. O JSON de detalhe (com trechos) vai para
+   `--saida`, fora do worktree; a pasta é resolvida e recusada se estiver dentro do
+   repo (sem diferenciar maiúsculas no Windows).
+9. **Dependências.** `pdfjs-dist` vem de `mcp/` (via `npm --prefix mcp ci`);
+   `mammoth` e `linkedom` já eram dependências da raiz. Nada foi acrescentado ao
+   `package.json` da raiz. O pglite dos testes fica em `.cache/pglite-064`, fora do
+   git.
+10. **Escopo.** `projects.active`, `projects.code`, `planos_trabalho.ativo` e
+    `balancetes.data_referencia`; `--centro` que não acha exatamente um projeto
+    ativo aborta. Se houver mais de um plano ativo por projeto (o índice da 025
+    impede), o script usa o de maior versão.
+
+## Como foi testado
+
+- `npx vitest run tests/rastreabilidade-cpf.test.js` — casos da regra de CPF
+  (pontuado, espaçado, barra, NBSP, travessão, DV inválido, 12 dígitos, linha de
+  balancete, letras nos vãos, máscara) e CPF partido entre trechos (bissecção).
+- `tests/rastreabilidade-alvo.test.js` — montagem do alvo por tipo, escolha sem
+  ambiguidade, ambiguidade com duas linhas, valor dentro de outro número, negativo
+  entre parênteses, zero, código cortado com `#`, corte de 500, `bbox` e fato DOCX.
+- `tests/rastreabilidade-documento.test.js` — formato pelos bytes, extensão que
+  mente, DOCX sintético pelo mammoth (`<tr>` como linha, `<p>` de célula sem
+  repetição, texto desescapado, linha de equipe com CPF detectada).
+- `tests/rastreabilidade-fluxo.test.js` — papel não-admin aborta antes de ler dados;
+  `--centro` inexistente aborta; lançamentos vazios/menos linhas que o
+  `raw_extraction` abortam.
+- `tests/rastreabilidade-saida.test.js` — o terminal não contém trecho, título,
+  arquivo ou valor; o detalhe contém o trecho; relatório e README não contêm o trecho
+  sintético; `--saida` dentro do repo é recusada (inclusive variação de maiúsculas no
+  Windows); argumentos.
+- `tests/rastreabilidade-backfill-064.test.js` — ponta a ponta no pglite com um PDF
+  sintético de 2 páginas: 9 fatos, 1 zero, simulação sem RPC; aplicação aceita por
+  `registrar_documento_v2`; `get_origem_v2` devolve `documento` com a página certa
+  (inclusive bbox); segunda aplicação não cria versão nova; simulação depois do
+  registro avisa `N fatos ignorados`.
+
+## Resultados
+
+- `npx eslint tools/rastreabilidade/` — verde.
+- `npm run lint` — verde.
+- `npm test` — verde, com o ponta a ponta do pglite executado (não pulado).
+- Nenhum documento real foi baixado e nenhuma variável `CF_*` real foi usada nesta
+  execução. As contagens acima são de fixtures sintéticas (centro `99.E2E`).
+
+## O que ficou em aberto
+
+- **Rodar na produção** (operador, primeiro em simulação e depois aplicando, em
+  turnos separados) **depois** de a 065 ser aplicada. O script está pronto, mas não
+  foi executado contra o Supabase.
+- O `criada: false` ignora fatos novos por desenho da 064; corrigir uma leitura errada
+  depois disso depende da F3 ou de intervenção manual.
+- Arquivos ausentes no Storage, formato divergente e caminho inválido recusam o
+  documento com o motivo; o relatório da execução real deve mostrar essas contagens.
+- Valores zero não são rastreados (o `acharAlvo` não acha zero). A F3/F5 pode decidir
+  uma forma de marcar zero com origem.
+- O ponta a ponta cobre o balancete em PDF; o DOCX foi testado na extração de linhas
+  e no formato, mas não tem um teste de ponta a ponta com `registrar_documento_v2`
+  (os planos reais só entram na execução de produção).
+- Se a consulta de lançamentos voltar com menos linhas do que o `raw_extraction`
+  indica, o script aborta. Isso é deliberado (nunca gravar zero), mas uma base com
+  `raw_extraction` histórico inconsistente pode precisar de revisão manual antes.
+- O cliente REST não renova o JWT sozinho; o turno de aplicação deve caber na
+  validade do token (o backfill é manual e curto). Se expirar, o script aborta com
+  HTTP 401 e é só rodar de novo.
