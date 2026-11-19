@@ -1,3 +1,5 @@
+export const SENTINELA_EXEMPLO = '__EXEMPLO_CF__';
+
 const IDS = {
   cerrado: '00000000-0000-4000-8000-000000030901',
   atlas: '00000000-0000-4000-8000-000000030902',
@@ -704,14 +706,14 @@ const REPASSES_EXEMPLO = {
 const BALANCETES_EXEMPLO = {
   [IDS.cerrado]: [
     {
-      id: 'bal-901-2',
+      id: '00000000-0000-4000-8000-000000090102',
       data_referencia: '2026-10-15',
       arquivo_nome: 'balancete-30901-out-26.pdf',
       saldo_disponivel: 184250.4,
       created_at: '2026-10-16T14:00:00Z',
     },
     {
-      id: 'bal-901-1',
+      id: '00000000-0000-4000-8000-000000090101',
       data_referencia: '2026-09-15',
       arquivo_nome: 'balancete-30901-set-26.pdf',
       saldo_disponivel: 210400,
@@ -720,7 +722,7 @@ const BALANCETES_EXEMPLO = {
   ],
   [IDS.atlas]: [
     {
-      id: 'bal-902-1',
+      id: '00000000-0000-4000-8000-000000090201',
       data_referencia: '2026-08-15',
       arquivo_nome: 'balancete-30902-ago-26.pdf',
       saldo_disponivel: 62100,
@@ -729,7 +731,7 @@ const BALANCETES_EXEMPLO = {
   ],
   [IDS.nascentes]: [
     {
-      id: 'bal-903-1',
+      id: '00000000-0000-4000-8000-000000090301',
       data_referencia: '2026-10-20',
       arquivo_nome: 'balancete-30903-out-26.pdf',
       saldo_disponivel: 54000,
@@ -738,7 +740,7 @@ const BALANCETES_EXEMPLO = {
   ],
   [IDS.florestal]: [
     {
-      id: 'bal-905-1',
+      id: '00000000-0000-4000-8000-000000090501',
       data_referencia: '2026-10-10',
       arquivo_nome: 'balancete-30905-out-26.pdf',
       saldo_disponivel: 48000,
@@ -750,7 +752,7 @@ const BALANCETES_EXEMPLO = {
 const PLANOS_EXEMPLO = {
   [IDS.cerrado]: [
     {
-      id: 'pl-901-2',
+      id: '00000000-0000-4000-8000-000000080102',
       versao: 2,
       tipo: 'remanejamento',
       data_documento: '2026-06-10',
@@ -761,7 +763,7 @@ const PLANOS_EXEMPLO = {
       created_at: '2026-06-11T09:00:00Z',
     },
     {
-      id: 'pl-901-1',
+      id: '00000000-0000-4000-8000-000000080101',
       versao: 1,
       tipo: 'original',
       data_documento: '2025-11-05',
@@ -774,7 +776,7 @@ const PLANOS_EXEMPLO = {
   ],
   [IDS.atlas]: [
     {
-      id: 'pl-902-1',
+      id: '00000000-0000-4000-8000-000000080201',
       versao: 1,
       tipo: 'original',
       data_documento: '2026-01-20',
@@ -787,7 +789,7 @@ const PLANOS_EXEMPLO = {
   ],
   [IDS.nascentes]: [
     {
-      id: 'pl-903-1',
+      id: '00000000-0000-4000-8000-000000080301',
       versao: 1,
       tipo: 'original',
       data_documento: '2026-02-12',
@@ -800,7 +802,7 @@ const PLANOS_EXEMPLO = {
   ],
   [IDS.veredas]: [
     {
-      id: 'pl-904-1',
+      id: '00000000-0000-4000-8000-000000080401',
       versao: 1,
       tipo: 'original',
       data_documento: '2026-07-01',
@@ -915,4 +917,838 @@ export async function balancetes(projectId) {
 export async function planos(projectId) {
   const lista = PLANOS_EXEMPLO[projectId] || [];
   return { dados: structuredClone(lista), erro: null };
+}
+
+const DOC_BALANCETE_30901 = {
+  id: '00000000-0000-4000-8000-000000090102',
+  tipo: 'balancete',
+  titulo: 'Balancete de out/26 · 30.901',
+  arquivo_nome: 'balancete-30901-out-26.pdf',
+  formato: 'pdf',
+  bucket: 'balancete-pdfs',
+  caminho: `${IDS.cerrado}/${SENTINELA_EXEMPLO}/balancete-30901-out-26.pdf`,
+  versao: 1,
+  registrado_em: '2026-10-16T14:00:00Z',
+};
+
+const MANIFESTO_FALLBACK = {
+  arquivo_nome: 'balancete-30901-out-26.pdf',
+  paginas: 2,
+  fatos: {
+    '7.1.3.04.01.09142': {
+      pagina: 1,
+      trecho: '7.1.3.04.01.09142 09142 BOLSA DOACAO PESQUISA 380.000,00 0,00 380.000,00',
+      bbox: null,
+    },
+    '7.1.3.04.01.09145': {
+      pagina: 1,
+      trecho: '7.1.3.04.01.09145 09145 BOLSA APOIO TECNICO 160.000,00 0,00 160.000,00',
+      bbox: null,
+    },
+    '7.1.3.04.02.09210': {
+      pagina: 1,
+      trecho: '7.1.3.04.02.09210 09210 AUXILIO COLABORADORES EXTERNOS 72.400,00 0,00 72.400,00',
+      bbox: null,
+    },
+    '7.1.3.05.01.08110': {
+      pagina: 2,
+      trecho: '7.1.3.05.01.08110 08110 SERVICOS DE PROCESSAMENTO DE DADOS 64.350,75 0,00 64.350,75',
+      bbox: null,
+    },
+    '7.1.3.05.01.08124': {
+      pagina: 2,
+      trecho: '7.1.3.05.01.08124 08124 CONSULTORIA TECNICA ESPECIALIZADA 41.549,25 0,00 41.549,25',
+      bbox: null,
+    },
+    '7.1.3.20.01.05012': {
+      pagina: 2,
+      trecho: '7.1.3.20.01.05012 05012 EQUIPAMENTOS DE PROCESSAMENTO DE DADOS 68.000,00 0,00 68.000,00',
+      bbox: null,
+    },
+    saldo_disponivel: {
+      pagina: 2,
+      trecho: 'SALDO DISPONIVEL EM CONTA MOVIMENTO: R$ 184.250,40.',
+      bbox: null,
+    },
+  },
+};
+
+let manifestoCache = null;
+
+async function obterManifestoExemplo() {
+  if (manifestoCache) return manifestoCache;
+  if (typeof fetch !== 'function') return MANIFESTO_FALLBACK;
+  try {
+    const base = import.meta.env?.BASE_URL || '/';
+    const resp = await fetch(`${base}__exemplo/manifesto.json`);
+    if (resp.ok) {
+      const json = await resp.json();
+      if (json && typeof json === 'object' && json.fatos) {
+        manifestoCache = json;
+        return manifestoCache;
+      }
+    }
+  } catch {
+    /* fallback sintético para testes unitários fora do servidor Vite */
+  }
+  return MANIFESTO_FALLBACK;
+}
+
+function noCalculo({ rotulo, valor, chave, conta = null, sinal = 1, nota = null, partes = [] }) {
+  return {
+    rotulo,
+    valor,
+    tipo: 'calculo',
+    chave,
+    conta,
+    sinal,
+    ref: null,
+    nota,
+    partes,
+  };
+}
+
+function noFolha({ rotulo, valor, tipo, chave, sinal = 1, ref = null, nota = null }) {
+  return {
+    rotulo,
+    valor,
+    tipo,
+    chave,
+    conta: null,
+    sinal,
+    ref,
+    nota,
+    partes: [],
+  };
+}
+
+export const ARVORES_EXEMPLO = {
+  [IDS.cerrado]: noCalculo({
+    rotulo: 'Livre para gastar',
+    valor: 84300,
+    chave: 'livre',
+    conta: 'soma dos grupos',
+    partes: [
+      noCalculo({
+        rotulo: 'Pessoal',
+        valor: 58200,
+        chave: 'grupo:a',
+        conta: 'previsto − realizado − comprometido',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Bolsas de pesquisa',
+            valor: 780000,
+            chave: 'rubrica:a.bolsas:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({
+                rotulo: 'Bolsas de pesquisa',
+                valor: 780000,
+                tipo: 'legado',
+                chave: 'linha:pr-901-a1',
+                ref: {
+                  alvo_tabela: 'plano_rubricas',
+                  alvo_id: '00000000-0000-4000-8000-000000060101',
+                  campo: 'valor_previsto',
+                },
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Bolsas de pesquisa',
+            valor: 540000,
+            chave: 'rubrica:a.bolsas:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: '7.1.3.04.01.09142 — BOLSA DOACAO PESQUISA',
+                valor: 380000,
+                tipo: 'documento',
+                chave: 'linha:bl-901-1',
+                ref: {
+                  alvo_tabela: 'balancete_lancamentos',
+                  alvo_id: '00000000-0000-4000-8000-000000050101',
+                  campo: 'saldo_atual',
+                },
+              }),
+              noFolha({
+                rotulo: '7.1.3.04.01.09145 — BOLSA APOIO TECNICO',
+                valor: 160000,
+                tipo: 'documento',
+                chave: 'linha:bl-901-2',
+                ref: {
+                  alvo_tabela: 'balancete_lancamentos',
+                  alvo_id: '00000000-0000-4000-8000-000000050102',
+                  campo: 'saldo_atual',
+                },
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Comprometido — Bolsas de pesquisa',
+            valor: 193400,
+            chave: 'rubrica:a.bolsas:comprometido',
+            conta: 'soma das bolsas',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: 'Bolsista A (Pesquisa) — 11 meses × R$ 6.200',
+                valor: 68200,
+                tipo: 'digitado',
+                chave: 'linha:b-901-1',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-901-1', campo: 'amount' },
+              }),
+              noFolha({
+                rotulo: 'Bolsista B (Geoprocessamento) — 11 meses × R$ 4.800',
+                valor: 52800,
+                tipo: 'digitado',
+                chave: 'linha:b-901-2',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-901-2', campo: 'amount' },
+              }),
+              noFolha({
+                rotulo: 'Bolsista C (Sensoriamento) — 8 meses × R$ 8.600',
+                valor: 68800,
+                tipo: 'digitado',
+                chave: 'linha:b-901-3',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-901-3', campo: 'amount' },
+              }),
+              noFolha({
+                rotulo: 'Bolsista D (Encerrada na janela) — 1 mês × R$ 3.600',
+                valor: 3600,
+                tipo: 'digitado',
+                chave: 'linha:b-901-4',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-901-4', campo: 'amount' },
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Previsto — Auxílio a colaboradores',
+            valor: 84000,
+            chave: 'rubrica:a.estag:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({
+                rotulo: 'Auxílio a colaboradores',
+                valor: 84000,
+                tipo: 'legado',
+                chave: 'linha:pr-901-a2',
+                ref: null,
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Auxílio a colaboradores',
+            valor: 72400,
+            chave: 'rubrica:a.estag:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: '7.1.3.04.02.09210 — AUXILIO COLABORADORES EXTERNOS',
+                valor: 72400,
+                tipo: 'documento',
+                chave: 'linha:bl-901-3',
+                ref: {
+                  alvo_tabela: 'balancete_lancamentos',
+                  alvo_id: '00000000-0000-4000-8000-000000050103',
+                  campo: 'saldo_atual',
+                },
+              }),
+            ],
+          }),
+        ],
+      }),
+      noCalculo({
+        rotulo: 'Serviços de terceiros (PJ)',
+        valor: 14100,
+        chave: 'grupo:b',
+        conta: 'previsto − realizado',
+        nota: 'compromissos fora de bolsas não são rastreados',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Serviços técnicos especializados',
+            valor: 120000,
+            chave: 'rubrica:b.pj:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({
+                rotulo: 'Serviços técnicos especializados',
+                valor: 120000,
+                tipo: 'legado',
+                chave: 'linha:pr-901-b1',
+                ref: null,
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Serviços técnicos especializados',
+            valor: 105900,
+            chave: 'rubrica:b.pj:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: '7.1.3.05.01.08110 — SERVICOS DE PROCESSAMENTO DE DADOS',
+                valor: 64350.75,
+                tipo: 'documento',
+                chave: 'linha:bl-901-4',
+                ref: {
+                  alvo_tabela: 'balancete_lancamentos',
+                  alvo_id: '00000000-0000-4000-8000-000000050104',
+                  campo: 'saldo_atual',
+                },
+              }),
+              noFolha({
+                rotulo: '7.1.3.05.01.08124 — CONSULTORIA TECNICA ESPECIALIZADA',
+                valor: 41549.25,
+                tipo: 'legado',
+                chave: 'linha:bl-901-5',
+                ref: {
+                  alvo_tabela: 'balancete_lancamentos',
+                  alvo_id: '00000000-0000-4000-8000-000000050105',
+                  campo: 'saldo_atual',
+                },
+              }),
+            ],
+          }),
+        ],
+      }),
+      noCalculo({
+        rotulo: 'Equipamentos e material permanente',
+        valor: 12000,
+        chave: 'grupo:f',
+        conta: 'previsto − realizado',
+        nota: 'compromissos fora de bolsas não são rastreados',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Servidores e estações de trabalho',
+            valor: 80000,
+            chave: 'rubrica:f.equip:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({
+                rotulo: 'Servidores e estações de trabalho',
+                valor: 80000,
+                tipo: 'legado',
+                chave: 'linha:pr-901-f1',
+                ref: null,
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Servidores e estações de trabalho',
+            valor: 68000,
+            chave: 'rubrica:f.equip:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: '7.1.3.20.01.05012 — EQUIPAMENTOS DE PROCESSAMENTO DE DADOS',
+                valor: 68000,
+                tipo: 'documento',
+                chave: 'linha:bl-901-6',
+                ref: {
+                  alvo_tabela: 'balancete_lancamentos',
+                  alvo_id: '00000000-0000-4000-8000-000000050106',
+                  campo: 'saldo_atual',
+                },
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  }),
+  [IDS.atlas]: noCalculo({
+    rotulo: 'Livre para gastar',
+    valor: 19400,
+    chave: 'livre',
+    conta: 'soma dos grupos',
+    partes: [
+      noCalculo({
+        rotulo: 'Pessoal',
+        valor: 12900,
+        chave: 'grupo:a',
+        conta: 'previsto − realizado − comprometido',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Bolsas de pesquisa',
+            valor: 320000,
+            chave: 'rubrica:a.bolsas:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({ rotulo: 'Bolsas de pesquisa', valor: 320000, tipo: 'legado', chave: 'linha:pr-902-a1' }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Bolsas de pesquisa',
+            valor: 267100,
+            chave: 'rubrica:a.bolsas:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({ rotulo: '7.1.3.04.01.09142 — BOLSA DOACAO', valor: 267100, tipo: 'legado', chave: 'linha:bl-902-1' }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Comprometido — Bolsas de pesquisa',
+            valor: 40000,
+            chave: 'rubrica:a.bolsas:comprometido',
+            conta: 'soma das bolsas',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: 'Bolsista E (Hidrologia) — 5 meses × R$ 5.000',
+                valor: 25000,
+                tipo: 'digitado',
+                chave: 'linha:b-902-1',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-902-1', campo: 'amount' },
+              }),
+              noFolha({
+                rotulo: 'Bolsista F (Cartografia) — 5 meses × R$ 3.000',
+                valor: 15000,
+                tipo: 'digitado',
+                chave: 'linha:b-902-2',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-902-2', campo: 'amount' },
+              }),
+            ],
+          }),
+        ],
+      }),
+      noCalculo({
+        rotulo: 'Diárias e passagens',
+        valor: 6500,
+        chave: 'grupo:d',
+        conta: 'previsto − realizado',
+        nota: 'compromissos fora de bolsas não são rastreados',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Diárias de campo',
+            valor: 60000,
+            chave: 'rubrica:d.diarias:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({ rotulo: 'Diárias de campo', valor: 60000, tipo: 'legado', chave: 'linha:pr-902-d1' }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Diárias de campo',
+            valor: 53500,
+            chave: 'rubrica:d.diarias:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({ rotulo: '7.1.3.03.02.04011 — DIARIAS DE CAMPO', valor: 53500, tipo: 'legado', chave: 'linha:bl-902-2' }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  }),
+  [IDS.nascentes]: noCalculo({
+    rotulo: 'Livre para gastar',
+    valor: 15750,
+    chave: 'livre',
+    conta: 'soma dos grupos',
+    partes: [
+      noCalculo({
+        rotulo: 'Pessoal',
+        valor: 20000,
+        chave: 'grupo:a',
+        conta: 'previsto − realizado − comprometido',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Bolsas de pesquisa',
+            valor: 240000,
+            chave: 'rubrica:a.bolsas:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [noFolha({ rotulo: 'Bolsas de pesquisa', valor: 240000, tipo: 'legado', chave: 'linha:pr-903-a1' })],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Bolsas de pesquisa',
+            valor: 188000,
+            chave: 'rubrica:a.bolsas:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [noFolha({ rotulo: '7.1.3.04.01.09142 — BOLSA DOACAO', valor: 188000, tipo: 'legado', chave: 'linha:bl-903-1' })],
+          }),
+          noCalculo({
+            rotulo: 'Comprometido — Bolsas de pesquisa',
+            valor: 32000,
+            chave: 'rubrica:a.bolsas:comprometido',
+            conta: 'soma das bolsas',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: 'Bolsista G (Campo) — 8 meses × R$ 4.000',
+                valor: 32000,
+                tipo: 'digitado',
+                chave: 'linha:b-903-1',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-903-1', campo: 'amount' },
+              }),
+            ],
+          }),
+        ],
+      }),
+      noCalculo({
+        rotulo: 'Equipamentos e material permanente',
+        valor: -4250,
+        chave: 'grupo:f',
+        conta: 'previsto − realizado',
+        nota: 'compromissos fora de bolsas não são rastreados',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Sensores hidrológicos',
+            valor: 95000,
+            chave: 'rubrica:f.sensores:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [noFolha({ rotulo: 'Sensores hidrológicos', valor: 95000, tipo: 'legado', chave: 'linha:pr-903-f1' })],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Sensores hidrológicos',
+            valor: 99250,
+            chave: 'rubrica:f.sensores:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [noFolha({ rotulo: '7.1.3.20.01.05012 — SENSORES HIDROLOGICOS', valor: 99250, tipo: 'legado', chave: 'linha:bl-903-2' })],
+          }),
+        ],
+      }),
+    ],
+  }),
+  [IDS.veredas]: {
+    valor: null,
+    motivo: 'sem balancete',
+    data_referencia: null,
+    rotulo: 'Livre para gastar',
+    tipo: 'calculo',
+    conta: 'soma dos grupos',
+    chave: 'livre',
+    sinal: 1,
+    ref: null,
+    nota: null,
+    partes: [],
+  },
+  [IDS.florestal]: {
+    valor: null,
+    motivo: 'sem plano',
+    data_referencia: '2026-10-10',
+    rotulo: 'Livre para gastar',
+    tipo: 'calculo',
+    conta: 'soma dos grupos',
+    chave: 'livre',
+    sinal: 1,
+    ref: null,
+    nota: null,
+    partes: [],
+  },
+  [IDS.corredor]: noCalculo({
+    rotulo: 'Livre para gastar',
+    valor: 42000,
+    chave: 'livre',
+    conta: 'soma dos grupos',
+    partes: [
+      noCalculo({
+        rotulo: 'Pessoal',
+        valor: 42000,
+        chave: 'grupo:a',
+        conta: 'previsto − realizado − comprometido',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Bolsas de pesquisa',
+            valor: 280000,
+            chave: 'rubrica:a.bolsas:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [noFolha({ rotulo: 'Bolsas de pesquisa', valor: 280000, tipo: 'legado', chave: 'linha:pr-907-a1' })],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Bolsas de pesquisa',
+            valor: 202000,
+            chave: 'rubrica:a.bolsas:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [noFolha({ rotulo: '7.1.3.04.01.09142 — BOLSA DOACAO', valor: 202000, tipo: 'legado', chave: 'linha:bl-907-1' })],
+          }),
+          noCalculo({
+            rotulo: 'Comprometido — Bolsas de pesquisa',
+            valor: 36000,
+            chave: 'rubrica:a.bolsas:comprometido',
+            conta: 'soma das bolsas',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: 'Bolsista I (Ecologia) — 12 meses × R$ 3.000',
+                valor: 36000,
+                tipo: 'digitado',
+                chave: 'linha:b-907-1',
+                ref: { alvo_tabela: 'scholarships', alvo_id: 'b-907-1', campo: 'amount' },
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  }),
+  [IDS.solos]: noCalculo({
+    rotulo: 'Livre para gastar',
+    valor: 31500,
+    chave: 'livre',
+    conta: 'soma dos grupos',
+    partes: [
+      noCalculo({
+        rotulo: 'Passagens e locomoção',
+        valor: 31500,
+        chave: 'grupo:c',
+        conta: 'previsto − realizado',
+        nota: 'compromissos fora de bolsas não são rastreados',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Passagens nacionais',
+            valor: 90000,
+            chave: 'rubrica:c.passagens:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [noFolha({ rotulo: 'Passagens nacionais', valor: 90000, tipo: 'legado', chave: 'linha:pr-908-c1' })],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Passagens nacionais',
+            valor: 58500,
+            chave: 'rubrica:c.passagens:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [noFolha({ rotulo: '7.1.3.03.03.04020 — PASSAGENS', valor: 58500, tipo: 'legado', chave: 'linha:bl-908-1' })],
+          }),
+        ],
+      }),
+    ],
+  }),
+};
+
+const ORIGENS_LANCAMENTOS = {
+  '00000000-0000-4000-8000-000000050101': {
+    tipo: 'documento',
+    valor: 380000,
+    chaveManifesto: '7.1.3.04.01.09142',
+  },
+  '00000000-0000-4000-8000-000000050102': {
+    tipo: 'documento',
+    valor: 160000,
+    chaveManifesto: '7.1.3.04.01.09145',
+  },
+  '00000000-0000-4000-8000-000000050103': {
+    tipo: 'documento',
+    valor: 72400,
+    chaveManifesto: '7.1.3.04.02.09210',
+  },
+  '00000000-0000-4000-8000-000000050104': {
+    tipo: 'documento',
+    valor: 64350.75,
+    chaveManifesto: '7.1.3.05.01.08110',
+  },
+  '00000000-0000-4000-8000-000000050105': {
+    tipo: 'legado',
+    valor: 41549.25,
+    busca: { conta_codigo: '7.1.3.05.01.08124', valor: 41549.25 },
+  },
+  '00000000-0000-4000-8000-000000050106': {
+    tipo: 'documento',
+    valor: 68000,
+    chaveManifesto: '7.1.3.20.01.05012',
+  },
+};
+
+export async function explicarLivre(projectId) {
+  if (projectId === IDS.estacoes) {
+    return { dados: null, erro: 'Não foi possível carregar a origem do saldo livre.' };
+  }
+  const arvore = ARVORES_EXEMPLO[projectId];
+  if (!arvore) {
+    return { dados: null, erro: 'Centro de custo não encontrado.' };
+  }
+  const centro = CENTROS_BASE.find((c) => c.id === projectId);
+  return {
+    dados: {
+      ...structuredClone(arvore),
+      data_referencia: arvore.valor === null ? arvore.data_referencia : (centro?.data_referencia ?? null),
+    },
+    erro: null,
+  };
+}
+
+export async function origem(ref) {
+  if (!ref || !ref.alvo_tabela || !ref.alvo_id || !ref.campo) {
+    return { dados: null, erro: 'Referência de origem incompleta.' };
+  }
+
+  if (ref.alvo_tabela === 'scholarships' && ref.campo === 'amount') {
+    for (const saldo of Object.values(SALDOS_EXEMPLO)) {
+      const bolsa = (saldo.bolsas_ativas || []).find((b) => b.scholarship_id === ref.alvo_id);
+      if (bolsa) {
+        return {
+          dados: {
+            tipo: 'digitado',
+            valor: bolsa.valor_mensal,
+            documento: null,
+            fato: null,
+            busca: null,
+            nota: 'Valor do cadastro de bolsas (planilha da FUNAPE), sem documento por linha até a F3; a árvore mostra o total dos meses.',
+          },
+          erro: null,
+        };
+      }
+    }
+    return { dados: null, erro: 'Bolsa não encontrada.' };
+  }
+
+  if (ref.alvo_tabela === 'plano_rubricas' && ref.campo === 'valor_previsto') {
+    return {
+      dados: {
+        tipo: 'legado',
+        valor: 780000,
+        documento: null,
+        fato: null,
+        busca: { texto: 'Bolsas de pesquisa', valor: 780000 },
+        nota: 'Valor anterior à rastreabilidade e sem arquivo de plano associado no modo exemplo.',
+      },
+      erro: null,
+    };
+  }
+
+  if (ref.alvo_tabela === 'balancete_lancamentos' && ref.campo === 'saldo_atual') {
+    const item = ORIGENS_LANCAMENTOS[ref.alvo_id];
+    if (!item) {
+      return { dados: null, erro: 'Lançamento não encontrado.' };
+    }
+    if (item.tipo === 'legado') {
+      return {
+        dados: {
+          tipo: 'legado',
+          valor: item.valor,
+          documento: { ...DOC_BALANCETE_30901 },
+          fato: null,
+          busca: { ...item.busca },
+          nota: null,
+        },
+        erro: null,
+      };
+    }
+    const manifesto = await obterManifestoExemplo();
+    const fatoManifesto = manifesto.fatos?.[item.chaveManifesto];
+    return {
+      dados: {
+        tipo: 'documento',
+        valor: item.valor,
+        documento: { ...DOC_BALANCETE_30901 },
+        fato: {
+          pagina: fatoManifesto?.pagina ?? 1,
+          trecho: fatoManifesto?.trecho ?? item.chaveManifesto,
+          bbox: fatoManifesto?.bbox ?? null,
+          parser: 'balancete-parser',
+          parser_versao: '1.0',
+        },
+        busca: null,
+        nota: null,
+      },
+      erro: null,
+    };
+  }
+
+  if (ref.alvo_tabela === 'balancetes' && ref.campo === 'saldo_disponivel') {
+    if (ref.alvo_id === DOC_BALANCETE_30901.id) {
+      const manifesto = await obterManifestoExemplo();
+      const fatoSaldo = manifesto.fatos?.saldo_disponivel;
+      return {
+        dados: {
+          tipo: 'documento',
+          valor: 184250.4,
+          documento: { ...DOC_BALANCETE_30901 },
+          fato: {
+            pagina: fatoSaldo?.pagina ?? 2,
+            trecho: fatoSaldo?.trecho ?? 'SALDO DISPONIVEL EM CONTA MOVIMENTO: R$ 184.250,40.',
+            bbox: fatoSaldo?.bbox ?? null,
+            parser: 'balancete-parser',
+            parser_versao: '1.0',
+          },
+          busca: null,
+          nota: null,
+        },
+        erro: null,
+      };
+    }
+    for (const lista of Object.values(BALANCETES_EXEMPLO)) {
+      const bal = lista.find((b) => b.id === ref.alvo_id);
+      if (bal) {
+        return {
+          dados: {
+            tipo: 'legado',
+            valor: bal.saldo_disponivel,
+            documento: null,
+            fato: null,
+            busca: { texto: 'saldo disponivel', valor: bal.saldo_disponivel },
+            nota: 'Balancete anterior à rastreabilidade, sem PDF sintético gerado para este centro no modo exemplo.',
+          },
+          erro: null,
+        };
+      }
+    }
+    return { dados: null, erro: 'Balancete não encontrado.' };
+  }
+
+  if (ref.alvo_tabela === 'planos_trabalho' && ref.campo === 'valor_total_plano') {
+    for (const lista of Object.values(PLANOS_EXEMPLO)) {
+      const plano = lista.find((p) => p.id === ref.alvo_id);
+      if (plano) {
+        return {
+          dados: {
+            tipo: 'legado',
+            valor: plano.valor_total_plano,
+            documento: null,
+            fato: null,
+            busca: { texto: plano.titulo, valor: plano.valor_total_plano },
+            nota: 'Plano de trabalho sem arquivo anexado no modo exemplo.',
+          },
+          erro: null,
+        };
+      }
+    }
+    return { dados: null, erro: 'Plano de trabalho não encontrado.' };
+  }
+
+  return { dados: null, erro: 'Origem não suportada no modo exemplo.' };
+}
+
+export async function arquivoDeOrigem(documento) {
+  if (!documento || !documento.caminho) {
+    return { dados: null, erro: 'Arquivo de origem não informado.' };
+  }
+  if (documento.arquivo_nome !== DOC_BALANCETE_30901.arquivo_nome) {
+    return { dados: null, erro: 'Arquivo não disponível no modo exemplo.' };
+  }
+  try {
+    const base = import.meta.env?.BASE_URL || '/';
+    const resposta = await fetch(`${base}__exemplo/${DOC_BALANCETE_30901.arquivo_nome}`);
+    if (!resposta.ok) {
+      return {
+        dados: null,
+        erro: `Não foi possível carregar o PDF de exemplo (HTTP ${resposta.status}).`,
+      };
+    }
+    const buffer = await resposta.arrayBuffer();
+    if (!buffer || buffer.byteLength === 0) {
+      return { dados: null, erro: 'O PDF de exemplo veio vazio.' };
+    }
+    return { dados: buffer, erro: null };
+  } catch {
+    return { dados: null, erro: 'Não foi possível buscar o PDF de exemplo.' };
+  }
 }

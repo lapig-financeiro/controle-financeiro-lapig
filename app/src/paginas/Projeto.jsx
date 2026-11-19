@@ -7,7 +7,9 @@ import {
   Botao,
   CabecalhoPagina,
   Cartao,
+  DeOndeVem,
   Destaque,
+  Documento,
   Esqueleto,
   GradeDestaques,
   PainelLateral,
@@ -19,6 +21,8 @@ import {
 import { ehCliqueNavegacaoSimples, urlProjeto } from '../roteador.js';
 import {
   balancetes,
+  explicarLivre,
+  origem,
   pendencias,
   planos,
   repasses,
@@ -60,23 +64,24 @@ function numeroFinito(valor) {
 
 function somarGrupos(grupos) {
   if (!Array.isArray(grupos) || grupos.length === 0) {
-    return { soma: null, invalida: false };
+    return { soma: null, somaCentavos: null, invalida: false };
   }
-  let total = 0;
+  let totalCentavos = 0;
   for (const g of grupos) {
     const v = numeroFinito(g?.saldo_livre);
     if (v === null) {
-      return { soma: null, invalida: true };
+      return { soma: null, somaCentavos: null, invalida: true };
     }
-    total += v;
+    totalCentavos += Math.round(v * 100);
   }
-  return { soma: total, invalida: false };
+  return { soma: totalCentavos / 100, somaCentavos: totalCentavos, invalida: false };
 }
 
 function situacaoGrupo(grupo, hasBalancete, defasagemMeses) {
   if (!hasBalancete) return 'sem balancete';
   const livre = numeroFinito(grupo?.saldo_livre);
-  if (livre !== null && livre < 0) return 'problema';
+  if (livre === null) return 'sem dado';
+  if (livre < 0) return 'problema';
   const defasagem = numeroFinito(defasagemMeses);
   if (defasagem !== null && defasagem >= 2) {
     return 'atenção';
@@ -86,19 +91,26 @@ function situacaoGrupo(grupo, hasBalancete, defasagemMeses) {
 
 function resumirRepasses(repassesDados, hasPlano, hoje) {
   if (!repassesDados) {
-    return { valor: <Valor valor={null} motivoSemDado="indisponível" />, contexto: 'indisponível' };
+    return {
+      valor: <Valor valor={null} motivoSemDado="indisponível" semOrigem="Parcelas do cronograma" />,
+      contexto: 'indisponível',
+    };
   }
 
   const recebidoValido = repassesDados.recursos
     ? numeroFinito(repassesDados.recursos.recebido)
     : null;
-  const recursosValidos = recebidoValido !== null
-    ? {
-        ...repassesDados.recursos,
-        recebido: recebidoValido,
-        a_receber: numeroFinito(repassesDados.recursos.a_receber) ?? 0,
-      }
+  const aReceberValido = repassesDados.recursos
+    ? numeroFinito(repassesDados.recursos.a_receber)
     : null;
+  const recursosValidos =
+    recebidoValido !== null && aReceberValido !== null
+      ? {
+          ...repassesDados.recursos,
+          recebido: recebidoValido,
+          a_receber: aReceberValido,
+        }
+      : null;
 
   const calc = situacaoDasParcelas({
     parcelas: repassesDados.parcelas || [],
@@ -110,7 +122,10 @@ function resumirRepasses(repassesDados, hasPlano, hoje) {
 
   if (calc.itens.length === 0) {
     const motivo = hasPlano === false ? 'sem plano' : 'sem cronograma';
-    return { valor: <Valor valor={null} motivoSemDado={motivo} />, contexto: motivo };
+    return {
+      valor: <Valor valor={null} motivoSemDado={motivo} semOrigem="Parcelas do cronograma" />,
+      contexto: motivo,
+    };
   }
 
   if (calc.recebido === null) {
@@ -118,14 +133,20 @@ function resumirRepasses(repassesDados, hasPlano, hoje) {
       ? 'sem dados de recurso'
       : 'sem balancete';
     return {
-      valor: <Valor valor={null} motivoSemDado={motivo} />,
+      valor: <Valor valor={null} motivoSemDado={motivo} semOrigem="Parcelas do cronograma" />,
       contexto: motivo,
     };
   }
 
   if (calc.sem_valores) {
     return {
-      valor: <Valor valor={calc.recebido} centavos={false} />,
+      valor: (
+        <Valor
+          valor={calc.recebido}
+          centavos={false}
+          semOrigem="Total recebido acumulado no balancete"
+        />
+      ),
       contexto:
         calc.falta_sem_cronograma != null
           ? `faltam ${dinheiro(calc.falta_sem_cronograma, { centavos: false })}`
@@ -218,8 +239,20 @@ export function Projeto({
   });
   const [pendenciasSt, setPendenciasSt] = useState({ carregando: true, dados: [], erro: null });
 
-  const [painelOrigemAberto, setPainelOrigemAberto] = useState(false);
-  const [grupoSelecionado, setGrupoSelecionado] = useState(null);
+  const [painelOrigem, setPainelOrigem] = useState(null);
+  const [explicarSt, setExplicarSt] = useState({
+    carregando: false,
+    dados: null,
+    erro: null,
+    consultado: false,
+  });
+  const [docAbaSt, setDocAbaSt] = useState({
+    carregandoId: null,
+    erro: null,
+    nota: null,
+    refPendente: null,
+    doc: null,
+  });
   const [confirmacao, setConfirmacao] = useState(null);
   const [salvandoPendenciaId, setSalvandoPendenciaId] = useState(null);
   const [erroResolucao, setErroResolucao] = useState(null);
@@ -235,6 +268,8 @@ export function Projeto({
   const genDocsRef = useRef(0);
   const genPendenciasRef = useRef(0);
   const genResolucaoRef = useRef(0);
+  const genExplicarRef = useRef(0);
+  const genDocAbaRef = useRef(0);
 
   useEffect(() => {
     montadoRef.current = true;
@@ -248,12 +283,38 @@ export function Projeto({
   }, [projectId, abaInicial]);
 
   useEffect(() => {
-    setPainelOrigemAberto(false);
-    setGrupoSelecionado(null);
+    setPainelOrigem(null);
+    setExplicarSt({ carregando: false, dados: null, erro: null, consultado: false });
+    setDocAbaSt({ carregandoId: null, erro: null, nota: null, refPendente: null, doc: null });
     setConfirmacao(null);
     setErroResolucao(null);
     setErroMostrarCentro(null);
     setSalvandoPendenciaId(null);
+  }, [projectId]);
+
+  const carregarExplicar = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genExplicarRef.current;
+    setExplicarSt((prev) => ({ ...prev, carregando: true, erro: null }));
+    let res;
+    try {
+      res = await explicarLivre(id);
+    } catch {
+      res = { dados: null, erro: 'Não foi possível carregar a origem do saldo livre.' };
+    }
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genExplicarRef.current) {
+      return;
+    }
+    if (res?.erro || !res?.dados) {
+      setExplicarSt({
+        carregando: false,
+        dados: null,
+        erro: res?.erro || 'Não foi possível carregar a origem do saldo livre.',
+        consultado: true,
+      });
+      return;
+    }
+    setExplicarSt({ carregando: false, dados: res.dados, erro: null, consultado: true });
   }, [projectId]);
 
   const carregarSaldo = useCallback(async () => {
@@ -322,6 +383,8 @@ export function Projeto({
     const docsRef = genDocsRef;
     const pendenciasRef = genPendenciasRef;
     const resolucaoRef = genResolucaoRef;
+    const explicarRef = genExplicarRef;
+    const docAbaRef = genDocAbaRef;
 
     if (!projectId || centroOculto) {
       return () => {
@@ -330,6 +393,8 @@ export function Projeto({
         docsRef.current += 1;
         pendenciasRef.current += 1;
         resolucaoRef.current += 1;
+        explicarRef.current += 1;
+        docAbaRef.current += 1;
       };
     }
 
@@ -344,6 +409,8 @@ export function Projeto({
       docsRef.current += 1;
       pendenciasRef.current += 1;
       resolucaoRef.current += 1;
+      explicarRef.current += 1;
+      docAbaRef.current += 1;
     };
   }, [projectId, centroOculto, carregarSaldo, carregarRepasses, carregarDocumentos, carregarPendencias]);
 
@@ -444,32 +511,91 @@ export function Projeto({
 
   const grupos = Array.isArray(saldoSt.dados?.grupos) ? saldoSt.dados.grupos : [];
   const rubricas = Array.isArray(saldoSt.dados?.rubricas) ? saldoSt.dados.rubricas : [];
-  const podeAbrirOrigem = grupos.length > 0 && numeroFinito(resumoCentro?.livre) !== null;
+  const semNumeros =
+    resumoCentro?.situacao === 'sem números' ||
+    (hasPlano &&
+      hasBalancete &&
+      !saldoSt.carregando &&
+      !saldoSt.erro &&
+      grupos.length === 0 &&
+      numeroFinito(resumoCentro?.livre) === null);
+  const podeAbrirOrigem =
+    numeroFinito(resumoCentro?.livre) !== null &&
+    !resumoCentro?.erro &&
+    !erroResumo &&
+    hasPlano &&
+    hasBalancete &&
+    grupos.length > 0 &&
+    !semNumeros;
+
+  const abrirPainelRaiz = () => {
+    setPainelOrigem({ modo: 'raiz' });
+    if (!explicarSt.consultado && !explicarSt.carregando) {
+      carregarExplicar();
+    }
+  };
+
+  const abrirPainelGrupo = (grupo) => {
+    setPainelOrigem({ modo: 'grupo', grupo });
+    if (!explicarSt.consultado && !explicarSt.carregando) {
+      carregarExplicar();
+    }
+  };
 
   // Destaque principal: sempre o `livre` do resumo (nunca recalculado).
-  let valorPrincipal = <Valor valor={null} motivoSemDado="sem dado" />;
+  let valorPrincipal = (
+    <Valor valor={null} motivoSemDado="sem dado" semOrigem="Sem valor disponível" />
+  );
   let contextoPrincipal = 'sem dado';
 
   if (resumoCentro?.erro === 'falha_saldo_livre' || erroResumo) {
-    valorPrincipal = <Valor valor={null} motivoSemDado="Não foi possível calcular o saldo deste centro" />;
+    valorPrincipal = (
+      <Valor
+        valor={null}
+        motivoSemDado="Não foi possível calcular o saldo deste centro"
+        semOrigem="Falha ao calcular saldo"
+      />
+    );
     contextoPrincipal = 'Não foi possível calcular o saldo deste centro';
   } else if (resumoCentro?.situacao === 'sem plano' || saldoSt.dados?.has_plano === false) {
-    valorPrincipal = <Valor valor={null} motivoSemDado="sem plano" />;
+    valorPrincipal = (
+      <Valor valor={null} motivoSemDado="sem plano" semOrigem="Centro sem plano de trabalho ativo" />
+    );
     contextoPrincipal = 'sem plano';
   } else if (resumoCentro?.situacao === 'sem balancete' || saldoSt.dados?.has_balancete === false) {
-    valorPrincipal = <Valor valor={null} motivoSemDado="sem balancete" />;
+    valorPrincipal = (
+      <Valor valor={null} motivoSemDado="sem balancete" semOrigem="Centro sem balancete importado" />
+    );
     contextoPrincipal = 'sem balancete';
+  } else if (semNumeros) {
+    valorPrincipal = (
+      <Valor
+        valor={null}
+        motivoSemDado="sem números"
+        semOrigem="Centro sem números suficientes para calcular o saldo"
+      />
+    );
+    contextoPrincipal = 'sem números';
   } else if (carregandoResumo && !resumoCentro) {
-    valorPrincipal = <Valor valor={null} motivoSemDado="consultando" />;
+    valorPrincipal = (
+      <Valor valor={null} motivoSemDado="consultando" semOrigem="Consultando saldo livre" />
+    );
     contextoPrincipal = 'consultando';
   } else if (resumoCentro && numeroFinito(resumoCentro.livre) !== null) {
-    valorPrincipal = (
+    valorPrincipal = podeAbrirOrigem ? (
       <Valor
         valor={resumoCentro.livre}
         centavos={false}
         problema={resumoCentro.situacao === 'problema'}
-        origem={podeAbrirOrigem ? { resumo: 'Ver composição por grupo' } : null}
-        onOrigem={podeAbrirOrigem ? () => setPainelOrigemAberto(true) : null}
+        origem={{ resumo: 'Ver origem deste valor' }}
+        onOrigem={abrirPainelRaiz}
+      />
+    ) : (
+      <Valor
+        valor={resumoCentro.livre}
+        centavos={false}
+        problema={resumoCentro.situacao === 'problema'}
+        semOrigem="Saldo livre sem detalhamento disponível"
       />
     );
     contextoPrincipal = dataRef ? `balancete de ${dataCompacta(dataRef)}` : 'balancete vigente';
@@ -497,16 +623,24 @@ export function Projeto({
     }
   }
 
-  let valorBolsas = <Valor valor={null} motivoSemDado="sem dado" />;
+  let valorBolsas = (
+    <Valor valor={null} motivoSemDado="sem dado" semOrigem="Soma das bolsas ativas desta tela" />
+  );
   let contextoBolsas = 'sem dado';
   if (saldoSt.carregando) {
-    valorBolsas = <Valor valor={null} motivoSemDado="consultando" />;
+    valorBolsas = (
+      <Valor valor={null} motivoSemDado="consultando" semOrigem="Consultando bolsas ativas" />
+    );
     contextoBolsas = 'consultando';
   } else if (saldoSt.erro) {
-    valorBolsas = <Valor valor={null} motivoSemDado={saldoSt.erro} />;
+    valorBolsas = (
+      <Valor valor={null} motivoSemDado={saldoSt.erro} semOrigem="Falha ao consultar bolsas ativas" />
+    );
     contextoBolsas = 'indisponível';
   } else if (!hasPlano || !temArrayBolsas) {
-    valorBolsas = <Valor valor={null} motivoSemDado="sem plano" />;
+    valorBolsas = (
+      <Valor valor={null} motivoSemDado="sem plano" semOrigem="Centro sem plano de trabalho ativo" />
+    );
     contextoBolsas = 'sem plano';
   } else {
     let somaBolsasMes = 0;
@@ -521,10 +655,22 @@ export function Projeto({
     }
 
     if (valorIncompleto) {
-      valorBolsas = <Valor valor={null} motivoSemDado="Há bolsa ativa sem valor mensal válido" />;
+      valorBolsas = (
+        <Valor
+          valor={null}
+          motivoSemDado="Há bolsa ativa sem valor mensal válido"
+          semOrigem="Soma das bolsas ativas desta tela"
+        />
+      );
       contextoBolsas = 'valor incompleto';
     } else {
-      valorBolsas = <Valor valor={somaBolsasMes} centavos={false} />;
+      valorBolsas = (
+        <Valor
+          valor={somaBolsasMes}
+          centavos={false}
+          semOrigem="Soma das bolsas ativas desta tela"
+        />
+      );
       if (bolsasVigentes.length === 0) {
         contextoBolsas = 'nenhum bolsista ativo';
       } else if (bolsasVigentes.length === 1) {
@@ -537,9 +683,19 @@ export function Projeto({
 
   // Repasses (Correção #4 e 2ª rodada itens 4 e 9).
   const resumoRep = repassesSt.carregando
-    ? { valor: <Valor valor={null} motivoSemDado="consultando" />, contexto: 'consultando' }
+    ? {
+        valor: (
+          <Valor valor={null} motivoSemDado="consultando" semOrigem="Parcelas do cronograma" />
+        ),
+        contexto: 'consultando',
+      }
     : repassesSt.erro
-      ? { valor: <Valor valor={null} motivoSemDado={repassesSt.erro} />, contexto: 'indisponível' }
+      ? {
+          valor: (
+            <Valor valor={null} motivoSemDado={repassesSt.erro} semOrigem="Parcelas do cronograma" />
+          ),
+          contexto: 'indisponível',
+        }
       : resumirRepasses(repassesSt.dados, hasPlano, hoje);
 
   // Pendências do centro.
@@ -558,10 +714,14 @@ export function Projeto({
       : `${pendenciasAbertas} abertas neste centro`;
 
   if (pendenciasSt.carregando) {
-    valorPendencias = <Valor valor={null} motivoSemDado="consultando" />;
+    valorPendencias = (
+      <Valor valor={null} motivoSemDado="consultando" semOrigem="Contagem de pendências" />
+    );
     contextoPendencias = 'consultando';
   } else if (pendenciasSt.erro) {
-    valorPendencias = <Valor valor={null} motivoSemDado={pendenciasSt.erro} />;
+    valorPendencias = (
+      <Valor valor={null} motivoSemDado={pendenciasSt.erro} semOrigem="Contagem de pendências" />
+    );
     contextoPendencias = 'indisponível';
   }
 
@@ -595,28 +755,115 @@ export function Projeto({
     }
   };
 
-  const { soma: somaGrupos, invalida: somaGruposInvalida } = somarGrupos(grupos);
+  const {
+    soma: somaGrupos,
+    somaCentavos: somaGruposCentavos,
+    invalida: somaGruposInvalida,
+  } = somarGrupos(grupos);
   const livreResumoNum = numeroFinito(resumoCentro?.livre);
+  const livreResumoCentavos =
+    livreResumoNum !== null ? Math.round(livreResumoNum * 100) : null;
   const divergeDoResumo =
     grupos.length > 0 &&
     (somaGruposInvalida ||
-      (livreResumoNum !== null && Math.abs(somaGrupos - livreResumoNum) > 0.01));
+      (livreResumoCentavos !== null && somaGruposCentavos !== livreResumoCentavos));
 
   const temErroDocs = Boolean(docsSt.erroBalancetes || docsSt.erroPlanos);
   const documentosUnificados = [
     ...docsSt.balancetes.map((b, idx) => ({
       id: `bal-${b.id ?? idx}`,
+      registroId: b.id ?? null,
       tipo: 'Balancete',
       nome: b.arquivo_nome || `Balancete de ${dataCompacta(b.data_referencia)}`,
       data: b.data_referencia || null,
+      valor: numeroFinito(b.saldo_disponivel),
+      ref: b.id
+        ? { alvo_tabela: 'balancetes', alvo_id: b.id, campo: 'saldo_disponivel' }
+        : null,
     })),
     ...docsSt.planos.map((p, idx) => ({
       id: `pl-${p.id ?? idx}`,
+      registroId: p.id ?? null,
       tipo: p.ativo ? 'Plano de trabalho (ativo)' : 'Plano de trabalho',
       nome: p.arquivo_nome || p.titulo || `Versão ${p.versao || ''}`.trim(),
       data: p.data_documento || (p.created_at ? String(p.created_at).slice(0, 10) : null),
+      valor: numeroFinito(p.valor_total_plano),
+      ref: p.id
+        ? { alvo_tabela: 'planos_trabalho', alvo_id: p.id, campo: 'valor_total_plano' }
+        : null,
     })),
   ].sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+
+  const abrirDocumentoDaAba = async (docItem) => {
+    if (!docItem?.ref) {
+      setDocAbaSt({
+        carregandoId: null,
+        erro: null,
+        nota: 'Este documento não possui registro de origem disponível.',
+        refPendente: null,
+        doc: null,
+      });
+      return;
+    }
+    const idProjeto = projectId;
+    const gen = ++genDocAbaRef.current;
+    setDocAbaSt({
+      carregandoId: docItem.id,
+      erro: null,
+      nota: null,
+      refPendente: docItem,
+      doc: null,
+    });
+
+    let res;
+    try {
+      res = await origem(docItem.ref);
+    } catch {
+      res = { dados: null, erro: 'Não foi possível consultar o documento.' };
+    }
+    if (!montadoRef.current || projectIdRef.current !== idProjeto || gen !== genDocAbaRef.current) {
+      return;
+    }
+
+    if (res?.erro || !res?.dados) {
+      setDocAbaSt({
+        carregandoId: null,
+        erro: res?.erro || 'Não foi possível consultar o documento.',
+        nota: null,
+        refPendente: docItem,
+        doc: null,
+      });
+      return;
+    }
+
+    if (!res.dados.documento) {
+      setDocAbaSt({
+        carregandoId: null,
+        erro: null,
+        nota: res.dados.nota || 'Este documento não possui arquivo disponível para visualização.',
+        refPendente: null,
+        doc: null,
+      });
+      return;
+    }
+
+    setDocAbaSt({
+      carregandoId: null,
+      erro: null,
+      nota: null,
+      refPendente: null,
+      doc: {
+        titulo: res.dados.documento.titulo || docItem.nome,
+        documento: res.dados.documento,
+        tipoOrigem: res.dados.tipo,
+        fato: res.dados.fato,
+        busca: res.dados.busca,
+        nota: res.dados.nota,
+        valor: res.dados.valor ?? docItem.valor,
+        parte: docItem.nome,
+      },
+    });
+  };
 
   const colunasGrupos = [
     {
@@ -628,7 +875,15 @@ export function Projeto({
       chave: 'previsto',
       titulo: 'Previsto (R$)',
       alinhamento: 'direita',
-      render: (g) => <Valor valor={g.previsto} centavos={false} semPrefixo alinhadoDireita />,
+      render: (g) => (
+        <Valor
+          valor={g.previsto}
+          centavos={false}
+          semPrefixo
+          alinhadoDireita
+          semOrigem="Previsto do grupo no plano ativo (clique na linha para ver a origem)"
+        />
+      ),
     },
     {
       chave: 'realizado',
@@ -640,7 +895,8 @@ export function Projeto({
           centavos={false}
           semPrefixo
           alinhadoDireita
-          motivoSemDado="sem balancete"
+          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+          semOrigem="Realizado do grupo no balancete (clique na linha para ver a origem)"
         />
       ),
     },
@@ -654,7 +910,8 @@ export function Projeto({
           centavos={false}
           semPrefixo
           alinhadoDireita
-          motivoSemDado="sem balancete"
+          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+          semOrigem="Compromissos do grupo (clique na linha para ver a origem)"
         />
       ),
     },
@@ -667,9 +924,14 @@ export function Projeto({
           valor={hasBalancete ? g.saldo_livre : null}
           centavos={false}
           semPrefixo
-          problema={hasBalancete && Number(g.saldo_livre) < 0}
+          problema={
+            hasBalancete &&
+            numeroFinito(g.saldo_livre) !== null &&
+            Number(g.saldo_livre) < 0
+          }
           alinhadoDireita
-          motivoSemDado="sem balancete"
+          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+          semOrigem="Saldo livre do grupo (clique na linha para ver a origem)"
         />
       ),
     },
@@ -709,7 +971,7 @@ export function Projeto({
             colunas={colunasGrupos}
             dados={grupos}
             chaveLinha={(g) => g.grupo_code}
-            onClicarLinha={(g) => setGrupoSelecionado(g)}
+            onClicarLinha={(g) => abrirPainelGrupo(g)}
             rotuloLinha={(g) => `Abrir detalhe de ${g.grupo_name}`}
             legenda="Execução por grupo de rubrica"
           />
@@ -750,13 +1012,14 @@ export function Projeto({
                         semPrefixo
                         alinhadoDireita
                         motivoSemDado="sem valor"
+                        semOrigem="Valor mensal no cadastro de bolsas"
                       />
                     ),
                   },
                   {
                     chave: 'end_date',
                     titulo: 'Até quando',
-                    render: () => <Valor valor={null} motivoSemDado="sem data" />,
+                    render: () => <Valor valor={null} tipo="data" motivoSemDado="sem data" />,
                   },
                 ]}
                 dados={bolsasSemData}
@@ -781,6 +1044,7 @@ export function Projeto({
                       semPrefixo
                       alinhadoDireita
                       motivoSemDado="sem valor"
+                      semOrigem="Valor mensal no cadastro de bolsas"
                     />
                   ),
                 },
@@ -819,12 +1083,30 @@ export function Projeto({
           aoTentarNovamente={carregarDocumentos}
         />
       ) : (
-        <>
+        <div class="projeto__docs-bloco">
           {docsSt.erroBalancetes && (
             <AvisoFalha mensagem={docsSt.erroBalancetes} aoTentarNovamente={carregarDocumentos} />
           )}
           {docsSt.erroPlanos && (
             <AvisoFalha mensagem={docsSt.erroPlanos} aoTentarNovamente={carregarDocumentos} />
+          )}
+          {docAbaSt.carregandoId && (
+            <p class="projeto__nota-discreta" role="status">
+              Consultando documento…
+            </p>
+          )}
+          {docAbaSt.erro && (
+            <AvisoFalha
+              mensagem={docAbaSt.erro}
+              aoTentarNovamente={
+                docAbaSt.refPendente ? () => abrirDocumentoDaAba(docAbaSt.refPendente) : null
+              }
+            />
+          )}
+          {docAbaSt.nota && (
+            <p class="projeto__nota-discreta" role="status">
+              {docAbaSt.nota}
+            </p>
           )}
           {documentosUnificados.length > 0 ? (
             <Tabela
@@ -839,11 +1121,13 @@ export function Projeto({
                 },
               ]}
               dados={documentosUnificados}
+              onClicarLinha={abrirDocumentoDaAba}
+              rotuloLinha={(d) => `Abrir ${d.tipo}: ${d.nome}`}
             />
           ) : !temErroDocs ? (
             <Vazio mensagem="Nenhum documento registrado neste centro." />
           ) : null}
-        </>
+        </div>
       ),
     },
     {
@@ -956,9 +1240,224 @@ export function Projeto({
     },
   ];
 
-  const rubricasGrupo = grupoSelecionado
-    ? rubricas.filter((r) => r.grupo_code === grupoSelecionado.grupo_code)
+  const grupoPainel = painelOrigem?.modo === 'grupo' ? painelOrigem.grupo : null;
+  const rubricasGrupo = grupoPainel
+    ? rubricas.filter((r) => r.grupo_code === grupoPainel.grupo_code)
     : [];
+  const noGrupoArvore =
+    grupoPainel && Array.isArray(explicarSt.dados?.partes)
+      ? explicarSt.dados.partes.find(
+          (p) => p && typeof p === 'object' && p.chave === `grupo:${grupoPainel.grupo_code}`
+        ) || null
+      : null;
+
+  const renderPainelGruposFallback = () => (
+    <>
+      <Destaque
+        rotulo={rotuloPrincipal}
+        valor={
+          <Valor
+            valor={livreResumoNum}
+            centavos
+            semOrigem="Total do resumo (composição reserva por grupo)"
+          />
+        }
+        contexto={dataRef ? `balancete de ${dataCompacta(dataRef)}` : 'soma dos grupos abaixo'}
+      />
+
+      {divergeDoResumo && (
+        <AvisoFalha
+          mensagem={
+            somaGruposInvalida
+              ? 'Não foi possível somar as partes porque há grupo sem valor válido.'
+              : `A soma dos grupos (${dinheiro(somaGrupos, { centavos: true })}) difere do valor exibido (${dinheiro(livreResumoNum, { centavos: true })}).`
+          }
+        />
+      )}
+
+      <dl class="projeto__lista-definicao">
+        {grupos.map((g) => (
+          <div key={g.grupo_code} class="projeto__par-conta">
+            <div class="projeto__par">
+              <dt>
+                {g.grupo_name} <span class="projeto__codigo-discreto">({g.grupo_code})</span>
+              </dt>
+              <dd>
+                <Valor
+                  valor={numeroFinito(g.saldo_livre)}
+                  centavos
+                  problema={numeroFinito(g.saldo_livre) !== null && Number(g.saldo_livre) < 0}
+                  motivoSemDado="valor indisponível"
+                  semOrigem="Saldo livre do grupo na composição reserva"
+                />
+              </dd>
+            </div>
+            <span class="projeto__formula">
+              Previsto{' '}
+              <Valor
+                valor={numeroFinito(g.previsto)}
+                centavos
+                motivoSemDado="sem dado"
+                semOrigem="Previsto do grupo na composição reserva"
+              />{' '}
+              − Realizado{' '}
+              <Valor
+                valor={numeroFinito(g.realizado)}
+                centavos
+                motivoSemDado="sem dado"
+                semOrigem="Realizado do grupo na composição reserva"
+              />{' '}
+              − Comprometido{' '}
+              <Valor
+                valor={numeroFinito(g.compromissos)}
+                centavos
+                motivoSemDado="sem dado"
+                semOrigem="Comprometido do grupo na composição reserva"
+              />
+            </span>
+          </div>
+        ))}
+      </dl>
+
+      <div class="projeto__par projeto__par--total">
+        <span>Soma das partes</span>
+        <Valor
+          valor={somaGruposInvalida ? null : somaGrupos}
+          centavos
+          motivoSemDado="Há grupo sem valor válido"
+          semOrigem="Soma dos grupos desta tela"
+        />
+      </div>
+    </>
+  );
+
+  const renderPainelGrupoDetalheFallback = (grupo) => (
+    <>
+      <dl class="projeto__lista-definicao">
+        <div class="projeto__par">
+          <dt>Previsto</dt>
+          <dd>
+            <Valor
+              valor={grupo.previsto}
+              centavos
+              semOrigem="Previsto do grupo na composição reserva"
+            />
+          </dd>
+        </div>
+        <div class="projeto__par">
+          <dt>Realizado</dt>
+          <dd>
+            <Valor
+              valor={hasBalancete ? grupo.realizado : null}
+              centavos
+              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+              semOrigem="Realizado do grupo na composição reserva"
+            />
+          </dd>
+        </div>
+        <div class="projeto__par">
+          <dt>Comprometido</dt>
+          <dd>
+            <Valor
+              valor={hasBalancete ? grupo.compromissos : null}
+              centavos
+              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+              semOrigem="Comprometido do grupo na composição reserva"
+            />
+          </dd>
+        </div>
+        <div class="projeto__par">
+          <dt>Livre</dt>
+          <dd>
+            <Valor
+              valor={hasBalancete ? grupo.saldo_livre : null}
+              centavos
+              problema={
+                hasBalancete &&
+                numeroFinito(grupo.saldo_livre) !== null &&
+                Number(grupo.saldo_livre) < 0
+              }
+              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+              semOrigem="Saldo livre do grupo na composição reserva"
+            />
+          </dd>
+        </div>
+      </dl>
+
+      <p class="texto-corrido projeto__cobertura">
+        {grupo.compromissos_cobertura === 'bolsas'
+          ? 'Compromissos de bolsas incluídos até o fim da vigência.'
+          : 'Nenhum compromisso futuro descontado neste grupo além do já realizado.'}
+      </p>
+
+      {rubricasGrupo.length > 0 && (
+        <div class="projeto__subrubricas">
+          <h3 class="projeto__subtitulo-painel">Rubricas deste grupo</h3>
+          <dl class="projeto__lista-definicao">
+            {rubricasGrupo.map((r) => (
+              <div key={r.rubrica_code} class="projeto__par-conta">
+                <div class="projeto__par">
+                  <dt>
+                    {r.rubrica_name}{' '}
+                    <span class="projeto__codigo-discreto">({r.rubrica_code})</span>
+                  </dt>
+                  <dd>
+                    <Valor
+                      valor={hasBalancete ? r.saldo_livre : null}
+                      centavos
+                      problema={
+                        hasBalancete &&
+                        numeroFinito(r.saldo_livre) !== null &&
+                        Number(r.saldo_livre) < 0
+                      }
+                      motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+                      semOrigem="Saldo livre da rubrica na composição reserva"
+                    />
+                  </dd>
+                </div>
+                <span class="projeto__formula">
+                  Previsto{' '}
+                  <Valor
+                    valor={r.previsto}
+                    centavos
+                    semOrigem="Previsto da rubrica na composição reserva"
+                  />{' '}
+                  · Realizado{' '}
+                  <Valor
+                    valor={hasBalancete ? r.realizado : null}
+                    centavos
+                    motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+                    semOrigem="Realizado da rubrica na composição reserva"
+                  />{' '}
+                  · Comprometido{' '}
+                  <Valor
+                    valor={hasBalancete ? r.compromissos : null}
+                    centavos
+                    motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+                    semOrigem="Comprometido da rubrica na composição reserva"
+                  />
+                </span>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+    </>
+  );
+
+  const arvoreDados = explicarSt.dados;
+  const arvoreRaizNula = Boolean(
+    arvoreDados && (arvoreDados.valor === null || arvoreDados.valor === undefined)
+  );
+  const arvoreSemPartes = Boolean(
+    arvoreDados && (!Array.isArray(arvoreDados.partes) || arvoreDados.partes.length === 0)
+  );
+  const arvoreSemDetalhesComResumo = (arvoreRaizNula || arvoreSemPartes) && livreResumoNum !== null;
+  const motivoSemDetalhes = arvoreDados?.motivo
+    ? `Sem árvore detalhada (${arvoreDados.motivo}); exibindo a composição por grupo.`
+    : arvoreRaizNula
+      ? 'A árvore detalhada veio sem valor; exibindo a composição por grupo.'
+      : 'A árvore detalhada veio sem partes; exibindo a composição por grupo.';
 
   return (
     <div class="conteudo">
@@ -1013,148 +1512,82 @@ export function Projeto({
       </Cartao>
 
       <PainelLateral
-        aberto={painelOrigemAberto}
-        aoFechar={() => setPainelOrigemAberto(false)}
-        titulo="De onde vem este valor"
-        subtitulo={tituloPagina}
+        aberto={Boolean(painelOrigem)}
+        aoFechar={() => setPainelOrigem(null)}
+        titulo={grupoPainel ? grupoPainel.grupo_name : 'De onde vem este valor'}
+        subtitulo={grupoPainel ? `Código ${grupoPainel.grupo_code}` : tituloPagina}
       >
-        <Destaque
-          rotulo={rotuloPrincipal}
-          valor={<Valor valor={livreResumoNum} centavos />}
-          contexto={dataRef ? `balancete de ${dataCompacta(dataRef)}` : 'soma dos grupos abaixo'}
-        />
-
-        {divergeDoResumo && (
-          <AvisoFalha
-            mensagem={
-              somaGruposInvalida
-                ? 'Não foi possível somar as partes porque há grupo sem valor válido.'
-                : `A soma dos grupos (${dinheiro(somaGrupos, { centavos: true })}) difere do valor exibido (${dinheiro(livreResumoNum, { centavos: true })}).`
-            }
-          />
-        )}
-
-        <dl class="projeto__lista-definicao">
-          {grupos.map((g) => (
-            <div key={g.grupo_code} class="projeto__par-conta">
-              <div class="projeto__par">
-                <dt>
-                  {g.grupo_name} <span class="projeto__codigo-discreto">({g.grupo_code})</span>
-                </dt>
-                <dd>
-                  <Valor
-                    valor={numeroFinito(g.saldo_livre)}
-                    centavos
-                    problema={numeroFinito(g.saldo_livre) !== null && Number(g.saldo_livre) < 0}
-                    motivoSemDado="valor indisponível"
-                  />
-                </dd>
-              </div>
-              <span class="projeto__formula">
-                Previsto <Valor valor={numeroFinito(g.previsto)} centavos motivoSemDado="sem dado" /> − Realizado{' '}
-                <Valor valor={numeroFinito(g.realizado)} centavos motivoSemDado="sem dado" /> − Comprometido{' '}
-                <Valor valor={numeroFinito(g.compromissos)} centavos motivoSemDado="sem dado" />
-              </span>
+        {painelOrigem?.modo === 'raiz' && (
+          explicarSt.carregando ? (
+            <DeOndeVem carregando />
+          ) : explicarSt.erro ? (
+            <div class="projeto__painel-reserva">
+              <AvisoFalha mensagem={explicarSt.erro} aoTentarNovamente={carregarExplicar} />
+              {grupos.length > 0 && renderPainelGruposFallback()}
             </div>
-          ))}
-        </dl>
+          ) : arvoreSemDetalhesComResumo ? (
+            <div class="projeto__painel-reserva">
+              <p class="projeto__nota-discreta">{motivoSemDetalhes}</p>
+              {grupos.length > 0 && renderPainelGruposFallback()}
+            </div>
+          ) : arvoreRaizNula ? (
+            <Vazio
+              mensagem={
+                arvoreDados.motivo
+                  ? `Sem dados para explicar: ${arvoreDados.motivo}.`
+                  : 'Sem dados de origem.'
+              }
+            />
+          ) : arvoreDados ? (
+            <DeOndeVem arvore={arvoreDados} valorEsperado={livreResumoNum} />
+          ) : null
+        )}
 
-        <div class="projeto__par projeto__par--total">
-          <span>Soma das partes</span>
-          <Valor
-            valor={somaGruposInvalida ? null : somaGrupos}
-            centavos
-            motivoSemDado="Há grupo sem valor válido"
-          />
-        </div>
-      </PainelLateral>
-
-      <PainelLateral
-        aberto={Boolean(grupoSelecionado)}
-        aoFechar={() => setGrupoSelecionado(null)}
-        titulo={grupoSelecionado?.grupo_name || ''}
-        subtitulo={grupoSelecionado ? `Código ${grupoSelecionado.grupo_code}` : ''}
-      >
-        {grupoSelecionado && (
-          <>
-            <dl class="projeto__lista-definicao">
-              <div class="projeto__par">
-                <dt>Previsto</dt>
-                <dd><Valor valor={grupoSelecionado.previsto} centavos /></dd>
-              </div>
-              <div class="projeto__par">
-                <dt>Realizado</dt>
-                <dd>
-                  <Valor
-                    valor={hasBalancete ? grupoSelecionado.realizado : null}
-                    centavos
-                    motivoSemDado="sem balancete"
-                  />
-                </dd>
-              </div>
-              <div class="projeto__par">
-                <dt>Comprometido</dt>
-                <dd>
-                  <Valor
-                    valor={hasBalancete ? grupoSelecionado.compromissos : null}
-                    centavos
-                    motivoSemDado="sem balancete"
-                  />
-                </dd>
-              </div>
-              <div class="projeto__par">
-                <dt>Livre</dt>
-                <dd>
-                  <Valor
-                    valor={hasBalancete ? grupoSelecionado.saldo_livre : null}
-                    centavos
-                    problema={hasBalancete && Number(grupoSelecionado.saldo_livre) < 0}
-                    motivoSemDado="sem balancete"
-                  />
-                </dd>
-              </div>
-            </dl>
-
-            <p class="texto-corrido projeto__cobertura">
-              {grupoSelecionado.compromissos_cobertura === 'bolsas'
-                ? 'Compromissos de bolsas incluídos até o fim da vigência.'
-                : 'Nenhum compromisso futuro descontado neste grupo além do já realizado.'}
-            </p>
-
-            {rubricasGrupo.length > 0 && (
-              <div class="projeto__subrubricas">
-                <h3 class="projeto__subtitulo-painel">Rubricas deste grupo</h3>
-                <dl class="projeto__lista-definicao">
-                  {rubricasGrupo.map((r) => (
-                    <div key={r.rubrica_code} class="projeto__par-conta">
-                      <div class="projeto__par">
-                        <dt>
-                          {r.rubrica_name}{' '}
-                          <span class="projeto__codigo-discreto">({r.rubrica_code})</span>
-                        </dt>
-                        <dd>
-                          <Valor
-                            valor={hasBalancete ? r.saldo_livre : null}
-                            centavos
-                            problema={hasBalancete && Number(r.saldo_livre) < 0}
-                            motivoSemDado="sem balancete"
-                          />
-                        </dd>
-                      </div>
-                      <span class="projeto__formula">
-                        Previsto <Valor valor={r.previsto} centavos /> · Realizado{' '}
-                        <Valor valor={hasBalancete ? r.realizado : null} centavos motivoSemDado="sem balancete" /> ·
-                        Comprometido{' '}
-                        <Valor valor={hasBalancete ? r.compromissos : null} centavos motivoSemDado="sem balancete" />
-                      </span>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
-          </>
+        {painelOrigem?.modo === 'grupo' && grupoPainel && (
+          explicarSt.carregando ? (
+            <DeOndeVem carregando />
+          ) : explicarSt.erro ? (
+            <div class="projeto__painel-reserva">
+              <AvisoFalha mensagem={explicarSt.erro} aoTentarNovamente={carregarExplicar} />
+              {renderPainelGrupoDetalheFallback(grupoPainel)}
+            </div>
+          ) : noGrupoArvore ? (
+            <DeOndeVem
+              arvore={noGrupoArvore}
+              valorEsperado={numeroFinito(grupoPainel.saldo_livre)}
+            />
+          ) : arvoreRaizNula ? (
+            <div class="projeto__painel-reserva">
+              <p class="projeto__nota-discreta">
+                {arvoreDados.motivo
+                  ? `Sem árvore detalhada (${arvoreDados.motivo}); exibindo a composição por rubrica.`
+                  : 'Sem árvore detalhada; exibindo a composição por rubrica.'}
+              </p>
+              {renderPainelGrupoDetalheFallback(grupoPainel)}
+            </div>
+          ) : explicarSt.consultado ? (
+            <div class="projeto__painel-reserva">
+              <p class="projeto__nota-discreta">
+                A árvore detalhada deste grupo não está disponível; exibindo a composição por rubrica.
+              </p>
+              {renderPainelGrupoDetalheFallback(grupoPainel)}
+            </div>
+          ) : null
         )}
       </PainelLateral>
+
+      <Documento
+        aberto={Boolean(docAbaSt.doc)}
+        aoFechar={() => setDocAbaSt((prev) => ({ ...prev, doc: null }))}
+        titulo={docAbaSt.doc?.titulo || ''}
+        documento={docAbaSt.doc?.documento || null}
+        tipoOrigem={docAbaSt.doc?.tipoOrigem || 'documento'}
+        fato={docAbaSt.doc?.fato || null}
+        busca={docAbaSt.doc?.busca || null}
+        nota={docAbaSt.doc?.nota || ''}
+        valor={docAbaSt.doc?.valor ?? null}
+        parte={docAbaSt.doc?.parte || ''}
+      />
     </div>
   );
 }

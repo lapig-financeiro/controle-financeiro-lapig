@@ -3,6 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MARCADORES_EXEMPLO = [
+  '__EXEMPLO_CF__',
+  'Admin de exemplo',
+  'exemplo@lapig.ufg.br',
   'Bacia do Cerrado Norte',
   'Atlas Hídrico do Planalto',
   'Monitoramento de Nascentes',
@@ -17,14 +20,36 @@ export const MARCADORES_EXEMPLO = [
   'dadosExemplo',
 ];
 
-function listarArquivosBuild(diretorio) {
+export function verificarCspIndexHtml(html) {
+  const matchHead = String(html || '').match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+  if (!matchHead) {
+    return 'tag <head> ausente no index.html';
+  }
+  const head = matchHead[1];
+  const matchCsp = head.match(/<meta\s[^>]*http-equiv=["']?Content-Security-Policy["']?[^>]*>/i);
+  if (!matchCsp) {
+    return 'meta Content-Security-Policy ausente no <head>';
+  }
+  const posCsp = matchCsp.index;
+  const matchScript = head.match(/<script[\s>]/i);
+  if (matchScript && matchScript.index < posCsp) {
+    return 'meta Content-Security-Policy aparece depois de <script> no <head>';
+  }
+  const matchLink = head.match(/<link[\s>]/i);
+  if (matchLink && matchLink.index < posCsp) {
+    return 'meta Content-Security-Policy aparece depois de <link> no <head>';
+  }
+  return null;
+}
+
+function listarTodosArquivosBuild(diretorio) {
   const resultado = [];
   if (!fs.existsSync(diretorio)) return resultado;
   for (const entrada of fs.readdirSync(diretorio, { withFileTypes: true })) {
     const completo = path.join(diretorio, entrada.name);
     if (entrada.isDirectory()) {
-      resultado.push(...listarArquivosBuild(completo));
-    } else if (/\.(js|css|html)$/i.test(entrada.name)) {
+      resultado.push(...listarTodosArquivosBuild(completo));
+    } else {
       resultado.push(completo);
     }
   }
@@ -37,14 +62,30 @@ export function verificarBuild(diretorioDist, marcadores = MARCADORES_EXEMPLO) {
     return [{ arquivo: 'dist/assets', marcador: 'diretório ausente' }];
   }
 
-  const arquivos = listarArquivosBuild(diretorioDist);
-  const temBundleJs = arquivos.some((a) => a.endsWith('.js'));
+  const todosArquivos = listarTodosArquivosBuild(diretorioDist);
+  const arquivosTexto = todosArquivos.filter((a) => /\.(js|mjs|css|html|json)$/i.test(a));
+  const temBundleJs = arquivosTexto.some((a) => /\.(js|mjs)$/i.test(a));
   if (!temBundleJs) {
     return [{ arquivo: 'dist/assets', marcador: 'nenhum arquivo .js encontrado' }];
   }
 
   const ocorrencias = [];
-  for (const arquivo of arquivos) {
+  const caminhoIndex = path.join(diretorioDist, 'index.html');
+  if (fs.existsSync(caminhoIndex)) {
+    const erroCsp = verificarCspIndexHtml(fs.readFileSync(caminhoIndex, 'utf8'));
+    if (erroCsp) {
+      ocorrencias.push({ arquivo: 'index.html', marcador: erroCsp });
+    }
+  }
+
+  for (const arquivo of todosArquivos) {
+    const relativo = path.relative(diretorioDist, arquivo).replace(/\\/g, '/');
+    if (/\.(pdf|docx)$/i.test(arquivo)) {
+      ocorrencias.push({ arquivo: relativo, marcador: 'arquivo de documento proibido no build' });
+    }
+  }
+
+  for (const arquivo of arquivosTexto) {
     const conteudo = fs.readFileSync(arquivo, 'utf8');
     const relativo = path.relative(diretorioDist, arquivo).replace(/\\/g, '/');
     for (const marcador of marcadores) {

@@ -16,6 +16,7 @@ export function Valor({
   motivoSemDado = 'sem dado',
   origem = null,
   onOrigem = null,
+  semOrigem = '',
   className = '',
 }) {
   const ehTipoMoeda = tipo === 'moeda' || tipo === 'moeda-compacta';
@@ -68,5 +69,9 @@ export function Valor({
     );
   }
 
-  return <span class={classes}>{texto}</span>;
+  return (
+    <span class={classes} title={semOrigem || undefined}>
+      {texto}
+    </span>
+  );
 }

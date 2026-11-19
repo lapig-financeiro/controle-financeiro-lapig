@@ -8,6 +8,7 @@ import {
   Campo,
   Cartao,
   Chip,
+  DeOndeVem,
   Destaque,
   Documento,
   Esqueleto,
@@ -29,6 +30,270 @@ import {
 } from '../componentes/index.js';
 import { dinheiroCompacto } from '../util/formato.js';
 import './Componentes.css';
+
+function criarPdfMinimoCatalogo() {
+  const comandos = [
+    'BT',
+    '/F1 10 Tf',
+    '1 0 0 1 42 740 Tm (BALANCETE DE DEMONSTRACAO - PROJETO 30.113) Tj',
+    '1 0 0 1 42 700 Tm (7.1.3.04.01.09142 09142 PESSOAL E BOLSAS 612.400,00) Tj',
+    '1 0 0 1 42 676 Tm (7.1.3.05.01.08110 08110 CUSTEIO E VIAGENS 168.000,00) Tj',
+    'ET',
+  ].join('\n');
+  const objetos = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    `<< /Length ${comandos.length} >>\nstream\n${comandos}\nendstream`,
+  ];
+  let texto = '%PDF-1.4\n';
+  const offsets = [0];
+  objetos.forEach((obj, idx) => {
+    offsets.push(texto.length);
+    texto += `${idx + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+  const xrefInicio = texto.length;
+  texto += `xref\n0 ${objetos.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i <= objetos.length; i += 1) {
+    texto += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  texto += `trailer\n<< /Size ${objetos.length + 1} /Root 1 0 R >>\nstartxref\n${xrefInicio}\n%%EOF\n`;
+  const bytes = new Uint8Array(texto.length);
+  for (let i = 0; i < texto.length; i += 1) {
+    bytes[i] = texto.charCodeAt(i) & 0xff;
+  }
+  return bytes.buffer;
+}
+
+const ARVORE_CATALOGO = {
+  valor: 84300,
+  motivo: null,
+  data_referencia: '2026-09-30',
+  rotulo: 'Livres para gastar até ago/27',
+  tipo: 'calculo',
+  conta: 'soma dos grupos',
+  chave: 'livre',
+  sinal: 1,
+  ref: null,
+  nota: null,
+  partes: [
+    {
+      rotulo: 'Pessoal',
+      valor: 72300,
+      tipo: 'calculo',
+      chave: 'grupo:a',
+      conta: 'previsto − realizado − comprometido',
+      sinal: 1,
+      ref: null,
+      nota: null,
+      partes: [
+        {
+          rotulo: 'Previsto — Bolsas e encargos',
+          valor: 864000,
+          tipo: 'calculo',
+          chave: 'rubrica:a:previsto',
+          conta: 'soma das linhas',
+          sinal: 1,
+          ref: null,
+          nota: null,
+          partes: [
+            {
+              rotulo: 'Bolsas de pesquisa',
+              valor: 864000,
+              tipo: 'legado',
+              chave: 'linha:cat-pr-1',
+              conta: null,
+              sinal: 1,
+              ref: null,
+              nota: null,
+              partes: [],
+            },
+          ],
+        },
+        {
+          rotulo: 'Realizado — Bolsas e encargos',
+          valor: 612400,
+          tipo: 'calculo',
+          chave: 'rubrica:a:realizado',
+          conta: 'soma dos lançamentos',
+          sinal: -1,
+          ref: null,
+          nota: null,
+          partes: [
+            {
+              rotulo: '7.1.3.04.01.09142 — Pessoal e bolsas',
+              valor: 612400,
+              tipo: 'documento',
+              chave: 'linha:cat-bl-1',
+              conta: null,
+              sinal: 1,
+              ref: { alvo_tabela: 'balancete_lancamentos', alvo_id: 'cat-bl-1', campo: 'saldo_atual' },
+              nota: null,
+              partes: [],
+            },
+          ],
+        },
+        {
+          rotulo: 'Comprometido — Bolsas ativas',
+          valor: 179300,
+          tipo: 'calculo',
+          chave: 'rubrica:a:comprometido',
+          conta: 'soma das bolsas',
+          sinal: -1,
+          ref: null,
+          nota: null,
+          partes: [
+            {
+              rotulo: 'Equipe vigente — 10 meses',
+              valor: 179300,
+              tipo: 'digitado',
+              chave: 'linha:cat-b-1',
+              conta: null,
+              sinal: 1,
+              ref: { alvo_tabela: 'scholarships', alvo_id: 'cat-b-1', campo: 'amount' },
+              nota: null,
+              partes: [],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      rotulo: 'Custeio e viagens',
+      valor: 12000,
+      tipo: 'calculo',
+      chave: 'grupo:b',
+      conta: 'previsto − realizado',
+      sinal: 1,
+      ref: null,
+      nota: 'compromissos fora de bolsas não são rastreados',
+      partes: [
+        {
+          rotulo: 'Previsto — Custeio e viagens',
+          valor: 180000,
+          tipo: 'calculo',
+          chave: 'rubrica:b:previsto',
+          conta: 'soma das linhas',
+          sinal: 1,
+          ref: null,
+          nota: null,
+          partes: [
+            {
+              rotulo: 'Custeio e viagens',
+              valor: 180000,
+              tipo: 'legado',
+              chave: 'linha:cat-pr-2',
+              conta: null,
+              sinal: 1,
+              ref: null,
+              nota: null,
+              partes: [],
+            },
+          ],
+        },
+        {
+          rotulo: 'Realizado — Custeio e viagens',
+          valor: 168000,
+          tipo: 'calculo',
+          chave: 'rubrica:b:realizado',
+          conta: 'soma dos lançamentos',
+          sinal: -1,
+          ref: null,
+          nota: null,
+          partes: [
+            {
+              rotulo: '7.1.3.05.01.08110 — Custeio e viagens',
+              valor: 168000,
+              tipo: 'legado',
+              chave: 'linha:cat-bl-2',
+              conta: null,
+              sinal: 1,
+              ref: { alvo_tabela: 'balancete_lancamentos', alvo_id: 'cat-bl-2', campo: 'saldo_atual' },
+              nota: null,
+              partes: [],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+const ARVORE_DIGITADO_CATALOGO = {
+  valor: 12000,
+  motivo: null,
+  data_referencia: null,
+  rotulo: 'Reserva informada',
+  tipo: 'digitado',
+  conta: null,
+  chave: 'reserva',
+  sinal: 1,
+  ref: null,
+  nota: null,
+  partes: [],
+};
+
+async function buscarOrigemCatalogo(ref) {
+  if (ref.alvo_id === 'cat-b-1') {
+    return {
+      dados: {
+        tipo: 'digitado',
+        valor: 17930,
+        documento: null,
+        fato: null,
+        busca: null,
+        nota: 'Valor do cadastro de bolsas (planilha da FUNAPE), sem documento por linha.',
+      },
+      erro: null,
+    };
+  }
+  const docPdf = {
+    id: 'cat-doc-1',
+    tipo: 'balancete',
+    titulo: 'Balancete de set/26 · 30.113',
+    arquivo_nome: 'balancete-30113-set-26.pdf',
+    formato: 'pdf',
+    bucket: 'catalogo',
+    caminho: 'catalogo/balancete-30113-set-26.pdf',
+    versao: 1,
+    registrado_em: '2026-10-01T12:00:00Z',
+  };
+  if (ref.alvo_id === 'cat-bl-2') {
+    return {
+      dados: {
+        tipo: 'legado',
+        valor: 168000,
+        documento: docPdf,
+        fato: null,
+        busca: { conta_codigo: '7.1.3.05.01.08110', valor: 168000 },
+        nota: null,
+      },
+      erro: null,
+    };
+  }
+  return {
+    dados: {
+      tipo: 'documento',
+      valor: 612400,
+      documento: docPdf,
+      fato: {
+        pagina: 1,
+        trecho: '7.1.3.04.01.09142 09142 PESSOAL E BOLSAS 612.400,00',
+        bbox: null,
+        parser: 'balancete-parser',
+        parser_versao: '1.0',
+      },
+      busca: null,
+      nota: null,
+    },
+    erro: null,
+  };
+}
+
+async function carregarArquivoCatalogo() {
+  return { dados: criarPdfMinimoCatalogo(), erro: null };
+}
 
 // Ordem alfabética conforme §5.
 const CENTROS_EXEMPLO = [
@@ -150,44 +415,12 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
     return !busca.trim() || item.rubrica.toLowerCase().includes(busca.trim().toLowerCase());
   });
 
-  const abrirArvoreOrigem = (titulo, valorTotal, tipoOrigem) => {
+  const abrirArvoreOrigem = (titulo, tipoOrigem) => {
     setPainel({
       tipo: 'origem',
       titulo,
       subtitulo: tipoOrigem === 'digitado' ? 'Valor digitado, sem documento' : 'De onde vem este valor',
-      valorTotal,
-      tipoOrigem,
-      partes: tipoOrigem === 'digitado'
-        ? []
-        : [
-            {
-              rotulo: 'Caixa sem rendimento (balancete set/26)',
-              valor: 142300.5,
-              arquivo: 'balancete-30113-set-26.pdf',
-              pagina: 2,
-              parte: 'Saldo disponível em conta movimento',
-              achadoPor: 'achado pelo código 2.1.3.01',
-              trecho: 'Saldo final disponível sem aplicação financeira: R$ 142.300,50 (conta 2.1.3.01).',
-            },
-            {
-              rotulo: 'Repasse previsto no plano',
-              valor: 109299.5,
-              arquivo: 'plano-trabalho-30113.docx',
-              pagina: 4,
-              parte: 'Parcela 4 do cronograma de desembolso',
-              achadoPor: 'achado pelo texto "Parcela 4"',
-              trecho: 'Parcela 4 prevista para janeiro de 2027 no valor de R$ 109.299,50.',
-            },
-            {
-              rotulo: 'Bolsas comprometidas até ago/27',
-              valor: -167300,
-              arquivo: 'planilha-bolsas-set-26.xlsx',
-              pagina: 1,
-              parte: '6 bolsistas ativos (out/26 a ago/27)',
-              achadoPor: 'achado pelo valor consolidado',
-              trecho: 'Total comprometido de bolsas vigentes entre out/26 e ago/27: R$ 167.300,00.',
-            },
-          ],
+      arvore: tipoOrigem === 'digitado' ? ARVORE_DIGITADO_CATALOGO : ARVORE_CATALOGO,
     });
   };
 
@@ -210,7 +443,9 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
       chave: 'previsto',
       titulo: 'Previsto (R$)',
       alinhamento: 'direita',
-      render: (linha) => <Valor valor={linha.previsto} centavos={false} semPrefixo alinhadoDireita />,
+      render: (linha) => (
+        <Valor valor={linha.previsto} centavos={false} semPrefixo alinhadoDireita semOrigem="Amostra de catálogo" />
+      ),
     },
     {
       chave: 'realizado',
@@ -223,6 +458,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
           semPrefixo
           alinhadoDireita
           motivoSemDado="sem balancete"
+          semOrigem="Amostra de catálogo"
         />
       ),
     },
@@ -237,6 +473,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
           semPrefixo
           alinhadoDireita
           motivoSemDado="sem balancete"
+          semOrigem="Amostra de catálogo"
         />
       ),
     },
@@ -252,6 +489,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
           problema={linha.situacao === 'problema'}
           alinhadoDireita
           motivoSemDado="sem balancete"
+          semOrigem="Amostra de catálogo"
         />
       ),
     },
@@ -314,7 +552,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
             { chave: 'funcao', titulo: 'Função' },
             { chave: 'inicio', titulo: 'Início', render: (b) => <Valor valor={b.inicio} tipo="data" /> },
             { chave: 'fim', titulo: 'Término', render: (b) => <Valor valor={b.fim} tipo="data" /> },
-            { chave: 'mensal', titulo: 'Mensal (R$)', alinhamento: 'direita', render: (b) => <Valor valor={b.mensal} semPrefixo alinhadoDireita /> },
+            { chave: 'mensal', titulo: 'Mensal (R$)', alinhamento: 'direita', render: (b) => <Valor valor={b.mensal} semPrefixo alinhadoDireita semOrigem="Amostra de catálogo" /> },
             { chave: 'situacao', titulo: 'Situação', render: (b) => <Situacao estado={b.situacao} /> },
           ]}
           dados={BOLSAS_EXEMPLO}
@@ -408,11 +646,11 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
               <span class="componentes__lista-saldo">
                 {centro.livre !== null ? (
                   <>
-                    <Valor valor={centro.livre} centavos={false} /> livres até{' '}
+                    <Valor valor={centro.livre} centavos={false} semOrigem="Resumo de lista no catálogo" /> livres até{' '}
                     <Valor valor={centro.ate} tipo="data" />
                   </>
                 ) : (
-                  <Valor valor={null} motivoSemDado="sem balancete" />
+                  <Valor valor={null} motivoSemDado="sem balancete" semOrigem="Centro sem balancete no catálogo" />
                 )}
               </span>
               <Situacao estado={centro.situacao} />
@@ -470,14 +708,14 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
                 valor={84300}
                 centavos={false}
                 origem={{ resumo: 'Conta com origem registrada' }}
-                onOrigem={() => abrirArvoreOrigem('Livres para gastar até ago/27', 84300, 'calculo')}
+                onOrigem={() => abrirArvoreOrigem('Livres para gastar até ago/27', 'calculo')}
               />
             )}
             contexto="balancete de set/26"
           />
           <Destaque
             rotulo="Bolsas por mês"
-            valor={<Valor valor={18400} centavos={false} />}
+            valor={<Valor valor={18400} centavos={false} semOrigem="Soma das bolsas do catálogo" />}
             contexto="6 bolsistas ativos"
           />
           <Destaque
@@ -511,27 +749,27 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
             <dl class="componentes__lista-definicao">
               <div class="componentes__par">
                 <dt>Sem centavos (lista/destaque)</dt>
-                <dd><Valor valor={84300} centavos={false} /></dd>
+                <dd><Valor valor={84300} centavos={false} semOrigem="Amostra visual do componente" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Com centavos (painel/documento)</dt>
-                <dd><Valor valor={84300.45} centavos /></dd>
+                <dd><Valor valor={84300.45} centavos semOrigem="Amostra visual do componente" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Compacto (total/eixo)</dt>
-                <dd><Valor valor={1240000} tipo="moeda-compacta" /></dd>
+                <dd><Valor valor={1240000} tipo="moeda-compacta" semOrigem="Amostra visual do componente" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Negativo que é problema</dt>
-                <dd><Valor valor={-4250} centavos problema /></dd>
+                <dd><Valor valor={-4250} centavos problema semOrigem="Amostra visual do componente" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Negativo pequeno (preserva sinal)</dt>
-                <dd><Valor valor={-0.4} centavos problema /></dd>
+                <dd><Valor valor={-0.4} centavos problema semOrigem="Amostra visual do componente" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Ausência de dado</dt>
-                <dd><Valor valor={null} motivoSemDado="sem balancete" /></dd>
+                <dd><Valor valor={null} motivoSemDado="sem balancete" semOrigem="Amostra visual do componente" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Valor digitado (sem documento)</dt>
@@ -540,7 +778,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
                     valor={12000}
                     centavos={false}
                     origem={{ tipo: 'digitado', resumo: 'Valor digitado' }}
-                    onOrigem={() => abrirArvoreOrigem('Reserva informada', 12000, 'digitado')}
+                    onOrigem={() => abrirArvoreOrigem('Reserva informada', 'digitado')}
                   />
                 </dd>
               </div>
@@ -683,44 +921,11 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
         subtitulo={painel?.subtitulo || ''}
       >
         {painel?.tipo === 'origem' && (
-          <div class="componentes__painel-bloco">
-            <Destaque
-              rotulo="Total apurado"
-              valor={<Valor valor={painel.valorTotal} centavos />}
-              contexto={painel.tipoOrigem === 'digitado' ? 'valor digitado, sem documento' : 'soma das partes abaixo'}
-            />
-
-            {painel.tipoOrigem === 'digitado' ? (
-              <p class="texto-corrido">Valor digitado, sem documento.</p>
-            ) : (
-              <dl class="componentes__lista-definicao">
-                {painel.partes.map((parte, idx) => (
-                  <div key={idx} class="componentes__par">
-                    <dt>{parte.rotulo}</dt>
-                    <dd>
-                      <Valor
-                        valor={parte.valor}
-                        centavos
-                        problema={parte.valor < 0}
-                        origem={parte}
-                        onOrigem={(item) =>
-                          setDocumento({
-                            titulo: item.rotulo,
-                            arquivo: item.arquivo,
-                            pagina: item.pagina,
-                            valor: item.valor,
-                            parte: item.parte,
-                            achadoPor: item.achadoPor,
-                            trecho: item.trecho,
-                          })
-                        }
-                      />
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </div>
+          <DeOndeVem
+            arvore={painel.arvore}
+            buscarOrigem={buscarOrigemCatalogo}
+            carregarArquivo={carregarArquivoCatalogo}
+          />
         )}
 
         {painel?.tipo === 'linha' && (
@@ -728,15 +933,15 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
             <dl class="componentes__lista-definicao">
               <div class="componentes__par">
                 <dt>Previsto</dt>
-                <dd><Valor valor={painel.linha.previsto} centavos /></dd>
+                <dd><Valor valor={painel.linha.previsto} centavos semOrigem="Amostra de catálogo" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Realizado</dt>
-                <dd><Valor valor={painel.linha.realizado} centavos motivoSemDado="sem balancete" /></dd>
+                <dd><Valor valor={painel.linha.realizado} centavos motivoSemDado="sem balancete" semOrigem="Amostra de catálogo" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Comprometido</dt>
-                <dd><Valor valor={painel.linha.comprometido} centavos motivoSemDado="sem balancete" /></dd>
+                <dd><Valor valor={painel.linha.comprometido} centavos motivoSemDado="sem balancete" semOrigem="Amostra de catálogo" /></dd>
               </div>
               <div class="componentes__par">
                 <dt>Livre</dt>
@@ -746,6 +951,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
                     centavos
                     problema={painel.linha.situacao === 'problema'}
                     motivoSemDado="sem balancete"
+                    semOrigem="Amostra de catálogo"
                   />
                 </dd>
               </div>

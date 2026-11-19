@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "dev:exemplo": "vite --mode exemplo",
+    "gerar:exemplo": "node scripts/gerar-pdf-exemplo.mjs",
     "build": "node scripts/verificar-estilo.mjs && vite build && node scripts/verificar-build.mjs",
     "preview": "vite preview",
     "test": "vitest run",
@@ -17,6 +18,8 @@
     "@fontsource-variable/inter": "^5.2.5",
     "@supabase/supabase-js": "^2.49.8",
     "lucide-preact": "^0.475.0",
+    "mammoth": "1.12.0",
+    "pdfjs-dist": "4.10.38",
     "preact": "^10.26.4"
   },
   "devDependencies": {

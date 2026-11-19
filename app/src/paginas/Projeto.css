@@ -128,3 +128,15 @@
 .projeto__bolsa-encerrada {
   color: var(--cor-texto-3);
 }
+
+.projeto__painel-reserva {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+}
+
+.projeto__docs-bloco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}

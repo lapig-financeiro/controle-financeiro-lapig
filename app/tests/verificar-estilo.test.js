@@ -26,6 +26,13 @@ describe('verificar-estilo', () => {
 
     const permitidoVar = verificarArquivo('paginas/Bom.jsx', "<div style={{ '--largura': '50%' }}>x</div>", TOKENS_DEFINIDOS);
     expect(permitidoVar).toEqual([]);
+
+    const permitidoMulti = verificarArquivo(
+      'paginas/Bom.jsx',
+      "<div style={{ '--faixa-x': '10px', '--faixa-y': '20px', }}>x</div>",
+      TOKENS_DEFINIDOS
+    );
+    expect(permitidoMulti).toEqual([]);
   });
 
   it('reprova cores literais (hex e rgb) fora de tokens.css', () => {
@@ -94,6 +101,31 @@ describe('verificar-estilo', () => {
       fs.writeFileSync(path.join(tmp, 'Quebrado.css'), '.x { padding: 18px; color: #ff0000; }\n');
       const problemas = verificarEstilo(tmp, path.join(DIRETORIO_SRC, 'estilo/tokens.css'));
       expect(problemas.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('aceita no CSS custom properties declaradas em style={{ "--...": ... }} no JSX sem liberar variáveis inventadas', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'estilo-custom-prop-'));
+    try {
+      fs.writeFileSync(
+        path.join(tmp, 'Faixa.jsx'),
+        "export function Faixa() { return <div style={{ '--faixa-x': '12px', '--faixa-y': '24px', }} />; }\n"
+      );
+      fs.writeFileSync(
+        path.join(tmp, 'Faixa.css'),
+        '.faixa { left: var(--faixa-x); top: var(--faixa-y); }\n'
+      );
+      expect(verificarEstilo(tmp, path.join(DIRETORIO_SRC, 'estilo/tokens.css'))).toEqual([]);
+
+      fs.writeFileSync(
+        path.join(tmp, 'Faixa.css'),
+        '.faixa { left: var(--faixa-x); color: var(--cor-inventada); }\n'
+      );
+      const problemas = verificarEstilo(tmp, path.join(DIRETORIO_SRC, 'estilo/tokens.css'));
+      expect(problemas).toHaveLength(1);
+      expect(problemas[0].regra).toBe('token-inexistente');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
