@@ -259,7 +259,9 @@
   font-weight: var(--fw-medio);
 }
 
-.documento__docx tr:has(mark.origem-mark) td {
+.documento__docx .origem-linha,
+.documento__docx tr.origem-linha > td,
+.documento__docx tr.origem-linha > th {
   background-color: color-mix(in srgb, var(--cor-acento-suave) 60%, transparent);
 }
 

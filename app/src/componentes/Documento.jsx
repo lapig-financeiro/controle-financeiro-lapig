@@ -565,12 +565,28 @@ export function Documento({
 
             if (achados.length > 0) {
               motivoDocx = achados[0].motivo;
-              const termosMarcar = termosDocxPorMotivo(motivoDocx, alvoDocx);
-              const elementosMarcados = new Set(
+              // Com fato `documento`, o trecho é a linha inteira já com as células
+              // juntadas por espaço. Marcar o trecho não casa quando o texto está
+              // partido entre <td>s: o que interessa na linha é o valor conferido.
+              const termosMarcar =
+                tipoAtual === 'documento'
+                  ? termosDocxPorMotivo('valor', { valor: valorAtual })
+                  : termosDocxPorMotivo(motivoDocx, alvoDocx);
+              const elementosAchados = new Set(
                 achados.map((a) => linhasDocx[a.linha]?.el).filter(Boolean)
               );
-              for (const el of elementosMarcados) {
-                el.innerHTML = marcarNoHtml(el.innerHTML, termosMarcar).html;
+              for (const el of elementosAchados) {
+                // A classe garante destaque e rolagem mesmo quando nenhum termo
+                // chega a ser marcado (texto partido entre células).
+                if (el === raiz) {
+                  // DOCX sem bloco algum: a "linha" é o conteúdo inteiro.
+                  el.innerHTML = `<div class="origem-linha">${el.innerHTML}</div>`;
+                } else {
+                  el.classList.add('origem-linha');
+                }
+                if (termosMarcar.length > 0) {
+                  el.innerHTML = marcarNoHtml(el.innerHTML, termosMarcar).html;
+                }
               }
               htmlFinal = sanitizarHtmlDocx(raiz ? raiz.innerHTML : htmlLimpo);
             }
@@ -840,7 +856,9 @@ export function Documento({
       }
       deveRolarParaFaixaRef.current = false;
     } else if (estadoDoc.formato === 'docx' && estadoDoc.htmlDocx) {
-      const marcaEl = visaoRef.current.querySelector('mark.origem-mark');
+      const marcaEl =
+        visaoRef.current.querySelector('mark.origem-mark') ||
+        visaoRef.current.querySelector('.origem-linha');
       if (marcaEl && typeof marcaEl.scrollIntoView === 'function') {
         marcaEl.scrollIntoView({ block: 'center' });
       }

@@ -10,18 +10,57 @@ import {
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
 let getContextOriginal;
+let scrollIntoViewOriginal;
 
 beforeEach(() => {
   getContextOriginal = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = vi.fn(() => ({}));
+  scrollIntoViewOriginal = Element.prototype.scrollIntoView;
 });
 
 afterEach(() => {
   HTMLCanvasElement.prototype.getContext = getContextOriginal;
+  if (scrollIntoViewOriginal === undefined) {
+    delete Element.prototype.scrollIntoView;
+  } else {
+    Element.prototype.scrollIntoView = scrollIntoViewOriginal;
+  }
   vi.unstubAllGlobals();
   render(null, document.body);
   document.body.innerHTML = '';
 });
+
+function montarDocx({
+  html,
+  tipoOrigem = 'documento',
+  fato = null,
+  busca = null,
+  valor = null,
+  onResultadoBusca = null,
+}) {
+  return (
+    <Documento
+      aberto
+      aoFechar={vi.fn()}
+      documento={{
+        id: 'docx-linha',
+        formato: 'docx',
+        arquivo_nome: 'plano.docx',
+        bucket: 'plano-trabalho-docs',
+        caminho: 'p/plano.docx',
+      }}
+      tipoOrigem={tipoOrigem}
+      fato={fato}
+      busca={busca}
+      valor={valor}
+      carregarArquivo={vi.fn().mockResolvedValue({ dados: new Uint8Array([80, 75]).buffer, erro: null })}
+      carregadorMammoth={async () => ({
+        convertToHtml: vi.fn().mockResolvedValue({ value: html }),
+      })}
+      onResultadoBusca={onResultadoBusca}
+    />
+  );
+}
 
 function criarPdfMock(paginasItens) {
   const destroyMock = vi.fn();
@@ -351,6 +390,129 @@ describe('Documento', () => {
     const marcas = docxWrap.querySelectorAll('mark.origem-mark');
     expect(marcas.length).toBeGreaterThanOrEqual(1);
     expect(document.querySelector('.documento__criterio').textContent).toBe('achado pelo valor');
+  });
+
+  it('DOCX com fato documento destaca a linha do trecho entre três células e marca o valor', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const htmlTabela =
+      '<table>' +
+      '<tr><td>07.1.3.04.01</td><td>BOLSA DOACAO PESQUISA</td><td>380.000,00</td></tr>' +
+      '<tr><td>07.1.3.05.01</td><td>SERVICOS DE PROCESSAMENTO DE DADOS</td><td>64.350,75</td></tr>' +
+      '</table>';
+
+    render(
+      montarDocx({
+        html: htmlTabela,
+        fato: {
+          trecho: '07.1.3.05.01 SERVICOS DE PROCESSAMENTO DE DADOS 64.350,75',
+          pagina: null,
+          bbox: null,
+        },
+        valor: 64350.75,
+      }),
+      document.body
+    );
+    await tick();
+
+    const linhas = document.querySelectorAll('.documento__docx tr.origem-linha');
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0].textContent).toContain('07.1.3.05.01');
+    const marcas = linhas[0].querySelectorAll('mark.origem-mark');
+    expect(marcas).toHaveLength(1);
+    expect(marcas[0].textContent).toBe('64.350,75');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.contexts[0]).toBe(marcas[0]);
+  });
+
+  it('DOCX com fato documento sem valor na linha destaca e rola a linha mesmo sem marca', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const htmlTabela =
+      '<table><tr><td>07.1.3.05.01</td><td>SERVICOS DE PROCESSAMENTO DE DADOS</td><td>64.350,75</td></tr></table>';
+
+    render(
+      montarDocx({
+        html: htmlTabela,
+        fato: {
+          trecho: '07.1.3.05.01 SERVICOS DE PROCESSAMENTO DE DADOS',
+          pagina: null,
+          bbox: null,
+        },
+        valor: null,
+      }),
+      document.body
+    );
+    await tick();
+
+    const linha = document.querySelector('.documento__docx tr.origem-linha');
+    expect(linha).not.toBeNull();
+    expect(linha.querySelector('mark.origem-mark')).toBeNull();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.contexts[0]).toBe(linha);
+  });
+
+  it('DOCX de documento com valor negativo marca a forma negativa formatada', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const htmlTabela =
+      '<table><tr><td>07.1.3.05.01</td><td>CONSULTORIA</td><td>(1.234,50)</td></tr></table>';
+
+    render(
+      montarDocx({
+        html: htmlTabela,
+        fato: {
+          trecho: '07.1.3.05.01 CONSULTORIA (1.234,50)',
+          pagina: null,
+          bbox: null,
+        },
+        valor: -1234.5,
+      }),
+      document.body
+    );
+    await tick();
+
+    const marcas = document.querySelectorAll('.documento__docx tr.origem-linha mark.origem-mark');
+    expect(marcas).toHaveLength(1);
+    expect(marcas[0].textContent).toBe('(1.234,50)');
+  });
+
+  it('DOCX legado com motivo texto destaca a linha partida entre células e rola até ela', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const onResultado = vi.fn();
+    const htmlTabela =
+      '<table><tr><td>PESQUISA E</td><td>DESENVOLVIMENTO</td><td>380.000,00</td></tr></table>';
+
+    render(
+      montarDocx({
+        html: htmlTabela,
+        tipoOrigem: 'legado',
+        busca: { texto: 'PESQUISA E DESENVOLVIMENTO' },
+        onResultadoBusca: onResultado,
+      }),
+      document.body
+    );
+    await tick();
+
+    const linha = document.querySelector('.documento__docx tr.origem-linha');
+    expect(linha).not.toBeNull();
+    expect(linha.querySelector('mark.origem-mark')).toBeNull();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.contexts[0]).toBe(linha);
+    expect(onResultado).toHaveBeenCalledWith({
+      achado: true,
+      texto: 'achado pelo texto',
+      motivo: 'texto',
+    });
+  });
+
+  it('sanitizarHtmlDocx preserva a classe origem-linha', () => {
+    const limpo = sanitizarHtmlDocx(
+      '<table><tr class="origem-linha"><td>64.350,75</td></tr></table>'
+    );
+    const dom = new DOMParser().parseFromString(`<div>${limpo}</div>`, 'text/html');
+    expect(dom.querySelector('tr.origem-linha')).not.toBeNull();
   });
 
   it('exibe estado de carregamento e erro de download como AvisoFalha com Tentar de novo', async () => {
