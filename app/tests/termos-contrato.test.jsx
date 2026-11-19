@@ -58,7 +58,7 @@ const RESUMO = {
   id: 'p-1',
   code: '30.901',
   name: 'Centro do contrato',
-  end_date: '2027-08-31',
+  end_date: '2027-01-15',
   livre: 1000,
   situacao: 'em dia',
   data_referencia: '2026-10-15',
@@ -66,9 +66,9 @@ const RESUMO = {
 
 const TERMO_INICIO = {
   id: 'termo-inicio-1',
-  valor: '2025-12-31',
-  regra: '20 meses contados da última assinatura (31/12/2025)',
-  trecho: 'CLÁUSULA SEGUNDA — vigência de 20 (vinte) meses, contados da última assinatura.',
+  valor: '2025-11-15',
+  regra: 'vigência definida no contrato',
+  trecho: 'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
   documento_nome: 'Contrato de prestação de serviços · 30.901',
   documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
   pagina: 2,
@@ -83,9 +83,9 @@ const TERMO_INICIO = {
 
 const TERMO_FIM = {
   id: 'termo-fim-1',
-  valor: '2027-08-31',
-  regra: '20 meses contados da última assinatura (31/12/2025)',
-  trecho: 'CLÁUSULA SEGUNDA — vigência de 20 (vinte) meses, contados da última assinatura.',
+  valor: '2027-01-15',
+  regra: 'vigência definida no contrato',
+  trecho: 'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
   documento_nome: 'Contrato de prestação de serviços · 30.901',
   documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
   pagina: 2,
@@ -100,9 +100,9 @@ const TERMO_FIM = {
 
 const TERMO_TOTAL = {
   id: 'termo-total-1',
-  valor: 12.5,
-  regra: 'Project Overhead de 12,5% sobre o valor total do projeto',
-  trecho: 'ANEXO — Project Overhead: 12,5% do valor total do projeto.',
+  valor: 9.75,
+  regra: 'Project Overhead de 9,75% sobre o valor total do projeto',
+  trecho: 'ANEXO — Project Overhead: 9,75% do valor total do projeto.',
   documento_nome: 'Plano de trabalho · 30.901 v2',
   documento_url: null,
   documento_id: 'documento-plano-30901-v2',
@@ -130,9 +130,9 @@ const TERMO_TOTAL = {
 const TAXAS = {
   taxa_cip_ufg: {
     id: 'termo-cip-ufg',
-    valor: 8,
+    valor: 5,
     regra: 'percentual sobre o valor do projeto',
-    trecho: 'CLÁUSULA QUARTA — taxa de administração de 8% para a UFG.',
+    trecho: 'CLÁUSULA QUARTA — taxa de administração de 5% para a UFG.',
     documento_nome: 'Contrato de prestação de serviços · 30.901',
     documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
     pagina: 4,
@@ -146,9 +146,9 @@ const TAXAS = {
   },
   taxa_cip_ua: {
     id: 'termo-cip-ua',
-    valor: 8,
+    valor: 6,
     regra: 'percentual sobre o valor do projeto',
-    trecho: 'CLÁUSULA QUARTA — taxa de administração de 8% para a unidade executora.',
+    trecho: 'CLÁUSULA QUARTA — taxa de administração de 6% para a unidade executora.',
     documento_nome: 'Contrato de prestação de serviços · 30.901',
     documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
     pagina: 4,
@@ -162,9 +162,9 @@ const TAXAS = {
   },
   taxa_dao: {
     id: 'termo-dao',
-    valor: 10,
+    valor: 4,
     regra: 'percentual sobre o valor do projeto',
-    trecho: 'CLÁUSULA QUINTA — taxa de 10% para a fundação de apoio.',
+    trecho: 'CLÁUSULA QUINTA — taxa de 4% para a fundação de apoio.',
     documento_nome: 'Contrato de prestação de serviços · 30.901',
     documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
     pagina: 5,
@@ -181,7 +181,9 @@ const TAXAS = {
 const TERMOS_CONFERE = {
   dados: {
     termos: { vigencia_inicio: TERMO_INICIO, vigencia_fim: TERMO_FIM, ...TAXAS },
-    end_date_cadastro: '2027-08-31',
+    start_date_cadastro: '2025-11-15',
+    end_date_cadastro: '2027-01-15',
+    vigencia_situacao: 'confere',
     vigencia_confere: true,
   },
   erro: null,
@@ -190,14 +192,16 @@ const TERMOS_CONFERE = {
 const TERMOS_DIVERGE = {
   dados: {
     termos: {
-      vigencia_inicio: { ...TERMO_INICIO, valor: '2025-08-30' },
+      vigencia_inicio: { ...TERMO_INICIO, valor: '2025-11-15' },
       vigencia_fim: {
         ...TERMO_FIM,
-        valor: '2027-04-30',
-        nota: 'O cadastro está com 31/03/2027; a diferença veio da última assinatura.',
+        valor: '2027-01-15',
+        nota: 'O cadastro está com 15/12/2026; a diferença veio da última assinatura.',
       },
     },
-    end_date_cadastro: '2027-03-31',
+    start_date_cadastro: '2025-11-01',
+    end_date_cadastro: '2026-12-15',
+    vigencia_situacao: 'diverge',
     vigencia_confere: false,
   },
   erro: null,
@@ -209,7 +213,9 @@ const TERMOS_SO_TOTAL = {
       vigencia_fim: TERMO_FIM,
       taxa_total: TERMO_TOTAL,
     },
-    end_date_cadastro: '2027-08-31',
+    start_date_cadastro: '2025-11-15',
+    end_date_cadastro: '2027-01-15',
+    vigencia_situacao: 'confere',
     vigencia_confere: true,
   },
   erro: null,
@@ -219,11 +225,27 @@ const TERMOS_TOTAL_E_DIVISAO = {
   dados: {
     termos: {
       vigencia_fim: TERMO_FIM,
-      taxa_total: { ...TERMO_TOTAL, valor: 16 },
+      taxa_total: { ...TERMO_TOTAL, valor: 9.75 },
       ...TAXAS,
     },
-    end_date_cadastro: '2027-08-31',
+    start_date_cadastro: '2025-11-15',
+    end_date_cadastro: '2027-01-15',
+    vigencia_situacao: 'confere',
     vigencia_confere: true,
+  },
+  erro: null,
+};
+
+const TERMOS_SEM_CADASTRO = {
+  dados: {
+    termos: {
+      vigencia_inicio: { ...TERMO_INICIO, valor: '2025-06-01' },
+      vigencia_fim: TERMO_FIM,
+    },
+    start_date_cadastro: '2025-01-01',
+    end_date_cadastro: null,
+    vigencia_situacao: 'sem_cadastro',
+    vigencia_confere: null,
   },
   erro: null,
 };
@@ -272,8 +294,8 @@ function configurarBase({ termos = TERMOS_CONFERE, resumo = RESUMO } = {}) {
   usarVigenciaDoContratoMock.mockResolvedValue({
     dados: {
       project_id: 'p-1',
-      antes: { start_date: null, end_date: '2027-03-31' },
-      depois: { start_date: '2025-08-30', end_date: '2027-04-30' },
+      antes: { start_date: '2025-11-01', end_date: '2026-12-15' },
+      depois: { start_date: '2025-11-15', end_date: '2027-01-15' },
       mudou: true,
     },
     erro: null,
@@ -329,12 +351,12 @@ describe('termos do contrato no cabeçalho', () => {
     renderizar();
     await tick();
 
-    expect(contexto().textContent).toContain('Vigência até 31/08/2027');
+    expect(contexto().textContent).toContain('Vigência até 15/01/2027');
     expect(contexto().textContent).toContain('do contrato');
     expect(contexto().textContent).not.toContain('vigência digitada');
 
     const dataContrato = Array.from(contexto().querySelectorAll('button')).find(
-      (b) => b.textContent.trim() === '31/08/2027'
+      (b) => b.textContent.trim() === '15/01/2027'
     );
     expect(dataContrato).toBeDefined();
     dataContrato.click();
@@ -344,27 +366,45 @@ describe('termos do contrato no cabeçalho', () => {
   });
 
   it('mantém a data do cadastro e destaca a do contrato quando diverge', async () => {
-    configurarBase({ termos: TERMOS_DIVERGE, resumo: { ...RESUMO, end_date: '2027-03-31' } });
-    renderizar({ resumo: { ...RESUMO, end_date: '2027-03-31' } });
+    configurarBase({ termos: TERMOS_DIVERGE, resumo: { ...RESUMO, end_date: '2026-12-15' } });
+    renderizar({ resumo: { ...RESUMO, end_date: '2026-12-15' } });
     await tick();
 
-    expect(contexto().textContent).toContain('Vigência até 31/03/2027');
+    expect(contexto().textContent).toContain('Vigência até 15/12/2026');
     expect(contexto().textContent).toContain('contrato diz');
-    expect(contexto().textContent).toContain('30/04/2027');
+    expect(contexto().textContent).toContain('15/01/2027');
     expect(contexto().querySelector('.projeto__atencao-contrato')).not.toBeNull();
+  });
+
+  it('mostra a vigência do contrato quando o cadastro não tem data', async () => {
+    configurarBase({ termos: TERMOS_SEM_CADASTRO, resumo: { ...RESUMO, end_date: null } });
+    renderizar({ isAdmin: true, resumo: { ...RESUMO, end_date: null } });
+    await tick();
+
+    expect(contexto().textContent).toContain('Vigência do contrato: 15/01/2027');
+    expect(contexto().textContent).toContain('não está no cadastro');
+    botaoComTexto('15/01/2027').click();
+    await tick();
+    expect(botaoComTexto('Usar a data do contrato')).toBeDefined();
   });
 
   it('sem termos e com falha ao carregar mantém a vigência digitada (falha vira — discreto)', async () => {
     configurarBase({
       termos: {
-        dados: { termos: {}, end_date_cadastro: '2027-08-31', vigencia_confere: null },
+        dados: {
+          termos: {},
+          start_date_cadastro: null,
+          end_date_cadastro: '2027-01-15',
+          vigencia_situacao: 'sem_contrato',
+          vigencia_confere: null,
+        },
         erro: null,
       },
     });
     renderizar();
     await tick();
     expect(contexto().textContent).toContain('vigência digitada');
-    expect(contexto().textContent).toContain('31/08/2027');
+    expect(contexto().textContent).toContain('15/01/2027');
 
     render(null, document.body);
     document.body.innerHTML = '';
@@ -373,9 +413,10 @@ describe('termos do contrato no cabeçalho', () => {
       dados: null,
       erro: 'Não foi possível carregar os termos do contrato.',
     });
-    renderizar();    await tick();
+    renderizar();
+    await tick();
 
-    expect(contexto().textContent).toContain('Vigência até 31/08/2027');
+    expect(contexto().textContent).toContain('Vigência até 15/01/2027');
     expect(contexto().textContent).not.toContain('vigência digitada');
     expect(contexto().querySelector('.projeto__nota-discreta').textContent).toContain('—');
   });
@@ -385,11 +426,13 @@ describe('termos do contrato no cabeçalho', () => {
       dados: {
         termos: {
           vigencia_fim: TERMO_FIM,
-          taxa_cip_ufg: { ...TAXAS.taxa_cip_ufg, valor: 8.125 },
-          taxa_cip_ua: { ...TAXAS.taxa_cip_ua, valor: 8.125 },
+          taxa_cip_ufg: { ...TAXAS.taxa_cip_ufg, valor: 5.125 },
+          taxa_cip_ua: { ...TAXAS.taxa_cip_ua, valor: 5.125 },
           taxa_dao: TAXAS.taxa_dao,
         },
-        end_date_cadastro: '2027-08-31',
+        start_date_cadastro: '2025-11-15',
+        end_date_cadastro: '2027-01-15',
+        vigencia_situacao: 'confere',
         vigencia_confere: true,
       },
       erro: null,
@@ -399,7 +442,7 @@ describe('termos do contrato no cabeçalho', () => {
     await tick();
 
     expect(contexto().textContent).toContain(
-      'Taxas do contrato: 26,25% (UFG 8,125 · unidade 8,125 · fundação 10)'
+      'Taxas do contrato: 14,25% (UFG 5,125 · unidade 5,125 · fundação 4)'
     );
     botaoComTexto('Taxas do contrato').click();
     await tick();
@@ -411,7 +454,7 @@ describe('termos do contrato no cabeçalho', () => {
     renderizar();
     await tick();
 
-    expect(contexto().textContent).toContain('Taxas do contrato: 12,5% no total');
+    expect(contexto().textContent).toContain('Taxas do contrato: 9,75% no total');
     expect(contexto().textContent).not.toContain('por rubrica');
   });
 
@@ -420,19 +463,19 @@ describe('termos do contrato no cabeçalho', () => {
     renderizar();
     await tick();
 
-    expect(contexto().textContent).toContain('Taxas do contrato: 16% no total');
+    expect(contexto().textContent).toContain('Taxas do contrato: 9,75% no total');
     expect(contexto().textContent).toContain(
-      'por rubrica: 26% (UFG 8 · unidade 8 · fundação 10)'
+      'por rubrica: 15% (UFG 5 · unidade 6 · fundação 4)'
     );
   });
 });
 
 describe('painel Do contrato', () => {
-  it('professor vê os termos e o trecho, mas não a nota nem os botões', async () => {
-    configurarBase({ termos: TERMOS_CONFERE });
-    renderizar({ isAdmin: false });
+  it('professor de um caso divergente vê os termos, mas não a nota nem os botões', async () => {
+    configurarBase({ termos: TERMOS_DIVERGE, resumo: { ...RESUMO, end_date: '2026-12-15' } });
+    renderizar({ isAdmin: false, resumo: { ...RESUMO, end_date: '2026-12-15' } });
     await tick();
-    botaoComTexto('31/08/2027').click();
+    botaoComTexto('15/01/2027').click();
     await tick();
 
     const painel = document.querySelector('.painel-lateral');
@@ -456,7 +499,7 @@ describe('painel Do contrato', () => {
     configurarBase({ termos: TERMOS_CONFERE });
     renderizar({ isAdmin: true });
     await tick();
-    botaoComTexto('31/08/2027').click();
+    botaoComTexto('15/01/2027').click();
     await tick();
 
     const painel = document.querySelector('.painel-lateral');
@@ -475,7 +518,7 @@ describe('painel Do contrato', () => {
     configurarBase({ termos: TERMOS_SO_TOTAL });
     renderizar({ isAdmin: true });
     await tick();
-    botaoComTexto('31/08/2027').click();
+    botaoComTexto('15/01/2027').click();
     await tick();
 
     const abrirPlano = botaoComTexto('Abrir o plano');
@@ -489,22 +532,27 @@ describe('painel Do contrato', () => {
     );
   });
 
-  it('admin usa a data do contrato com confirmação antes → depois e recarrega resumo e saldo', async () => {
-    configurarBase({ termos: TERMOS_DIVERGE, resumo: { ...RESUMO, end_date: '2027-03-31' } });
+  it('admin usa a data do contrato com início e fim antes → depois e recarrega tudo', async () => {
+    configurarBase({ termos: TERMOS_DIVERGE, resumo: { ...RESUMO, end_date: '2026-12-15' } });
     const { onRecarregarResumo } = renderizar({
       isAdmin: true,
-      resumo: { ...RESUMO, end_date: '2027-03-31' },
+      resumo: { ...RESUMO, end_date: '2026-12-15' },
     });
     await tick();
 
-    botaoComTexto('30/04/2027').click();
+    botaoComTexto('15/01/2027').click();
     await tick();
     botaoComTexto('Usar a data do contrato').click();
     await tick();
 
     const confirmacao = document.querySelector('.projeto__confirmacao-contrato');
     expect(confirmacao).not.toBeNull();
-    expect(confirmacao.textContent).toContain('passa de 31/03/2027 para 30/04/2027');
+    expect(confirmacao.textContent).toContain(
+      'Início: 01/11/2025 → 15/11/2025'
+    );
+    expect(confirmacao.textContent).toContain(
+      'Fim: 15/12/2026 → 15/01/2027'
+    );
 
     botaoComTexto('Usar a data do contrato').click();
     await tick();
@@ -513,5 +561,6 @@ describe('painel Do contrato', () => {
     expect(onRecarregarResumo).toHaveBeenCalledTimes(1);
     expect(saldoLivreMock).toHaveBeenCalledTimes(2);
     expect(termosContratoMock).toHaveBeenCalledTimes(2);
+    expect(explicarLivreMock).toHaveBeenCalledTimes(1);
   });
 });

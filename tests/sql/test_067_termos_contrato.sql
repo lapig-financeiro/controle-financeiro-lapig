@@ -136,7 +136,7 @@ update public.projects
  where code = '63.INAT';
 
 update public.projects
-   set start_date = '2025-01-01', end_date = '2027-12-31', active = true
+   set start_date = '2025-01-01', end_date = null, active = true
  where code = '64.EDGE';
 
 select set_config(
@@ -159,6 +159,17 @@ select set_config(
     limit 1),
   true
 );
+
+-- O plano do 51.X é sintético, mas o caminho/nome leva um CPF para
+-- exercitar a máscara da 064/065 no metadado devolvido pela RPC.
+update public.documentos
+   set titulo = 'Plano de trabalho 529.982.247-25'
+ where id = current_setting('test067.doc_x')::uuid;
+update public.documento_versoes
+   set caminho = (select p.id::text from public.projects p where p.code = '51.X')
+                 || '/529.982.247-25-plano.docx',
+       arquivo_nome = '529.982.247-25-plano.docx'
+ where documento_id = current_setting('test067.doc_x')::uuid;
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
 set local role authenticated;
@@ -219,6 +230,7 @@ do $$
 declare
   x uuid := (select id from public.projects where code = '51.X');
   base jsonb;
+  v_sample text;
 begin
   base := pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'trecho');
 
@@ -233,19 +245,19 @@ begin
   );
   perform pg_temp.falha_com067(
     format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
-      jsonb_set(base, '{valor_pct}', '8')::text),
+      jsonb_set(base, '{valor_pct}', '5')::text),
     '22023'
   );
 
   -- taxa com valor_data (o helper aceita a data e o RPC recusa)
   perform pg_temp.falha_com067(
     format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
-      (pg_temp.corpo067(x, 'taxa_cip_ufg', '2027-08-31', 8, 'regra', 'trecho'))::text),
+      (pg_temp.corpo067(x, 'taxa_cip_ufg', '2027-08-31', 5, 'regra', 'trecho'))::text),
     '22023'
   );
   perform pg_temp.falha_com067(
     format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
-      (pg_temp.corpo067(x, 'taxa_total', '2027-08-31', 12.5, 'regra', 'trecho'))::text),
+      (pg_temp.corpo067(x, 'taxa_total', '2027-08-31', 9.75, 'regra', 'trecho'))::text),
     '22023'
   );
 
@@ -307,9 +319,46 @@ begin
   );
   perform pg_temp.falha_com067(
     format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
-      pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'CPF 529.982.247-25')::text),
+      jsonb_set(base, '{pagina}', '2147483648')::text),
     '22023'
   );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'trecho',
+        null, repeat('n', 301))::text),
+    '22023'
+  );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'trecho',
+        null, 'Contrato', 'https://drive.google.com/' || repeat('a', 2000))::text),
+    '22023'
+  );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      jsonb_set(pg_temp.corpo067(x, 'taxa_cip_ufg', null, 5, 'regra', 'trecho'),
+                '{valor_pct}', '1e400')::text),
+    '22023'
+  );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      jsonb_set(pg_temp.corpo067(x, 'taxa_cip_ufg', null, 5, 'regra', 'trecho'),
+                '{valor_pct}', '"NaN"')::text),
+    '22023'
+  );
+
+  foreach v_sample in array array[
+    'CPF 529 982 247 25',
+    'CPF 529-982-247-25',
+    'CPF 529.982.247/25',
+    E'CPF 529     \n982     247     25'
+  ] loop
+    perform pg_temp.falha_com067(
+      format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+        pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', v_sample)::text),
+      '22023'
+    );
+  end loop;
   perform pg_temp.falha_com067(
     format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
       pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'trecho',
@@ -353,15 +402,28 @@ begin
   );
 end $$;
 
--- O CHECK de CPF também barra o dono da tabela (prova de que está no dado).
+-- O gatilho de CPF também barra o dono da tabela (prova de que está
+-- no dado, não só na RPC).
 reset role;
-select pg_temp.falha_com067(
-  format($q$insert into public.termos_contrato
-             (project_id, termo, valor_data, trecho, documento_nome, origem, autor)
-           values (%L::uuid, 'vigencia_fim', '2027-08-31', 'CPF 529.982.247-25', 'Contrato', 'pessoa', 'Teste')$q$,
-    (select id from public.projects where code = '51.X')::text),
-  '23514'
-);
+do $$
+declare
+  v_sample text;
+begin
+  foreach v_sample in array array[
+    'CPF 529 982 247 25',
+    'CPF 529-982-247-25',
+    'CPF 529.982.247/25',
+    E'CPF 529     \n982     247     25'
+  ] loop
+    perform pg_temp.falha_com067(
+      format($q$insert into public.termos_contrato
+                 (project_id, termo, valor_data, trecho, documento_nome, origem, autor)
+               values (%L::uuid, 'vigencia_fim', '2027-08-31', %L, 'Contrato', 'pessoa', 'Teste')$q$,
+        current_setting('test067.x'), v_sample),
+      '23514'
+    );
+  end loop;
+end $$;
 select pg_temp.falha_com067(
   format($q$insert into public.termos_contrato
              (project_id, termo, valor_data, trecho, documento_nome, origem, autor)
@@ -395,35 +457,35 @@ declare
 begin
   v_ini := public.registrar_termo_contrato_v2(
     pg_temp.corpo067(x, 'vigencia_inicio', '2025-12-31', null,
-      '20 meses contados da última assinatura (31/12/2025)',
-      'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.'));
+      'vigência definida no contrato',
+      'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.'));
 
   v_fim := public.registrar_termo_contrato_v2(
     pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null,
-      '20 meses contados da última assinatura (31/12/2025)',
-      'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+      'vigência definida no contrato',
+      'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
       'O cadastro estava com a mesma data; a regra veio do contrato. Conferido com a coordenação.'));
 
   -- Taxa total do financiador, com o plano de trabalho como fonte (064).
   v_total := public.registrar_termo_contrato_v2(
-    pg_temp.corpo067(x, 'taxa_total', null, 12.5,
+    pg_temp.corpo067(x, 'taxa_total', null, 9.75,
       'percentual total de custos indiretos do financiador',
-      'ANEXO — Project Overhead: 12,5% do valor total do projeto.',
-      'O contrato fixa 12,5% no total; o plano divide 8+8+10=26%. A diferença está no plano e não é corrigida aqui.',
+      'ANEXO — Project Overhead: 9,75% do valor total do projeto.',
+      'O contrato fixa 9,75% no total; o plano divide 5+6+4=15%. A diferença está no plano e não é corrigida aqui.',
       p_url => null, p_doc_id => current_setting('test067.doc_x')::uuid));
 
   v_t1 := public.registrar_termo_contrato_v2(
-    pg_temp.corpo067(x, 'taxa_cip_ufg', null, 8,
+    pg_temp.corpo067(x, 'taxa_cip_ufg', null, 5,
       'percentual sobre o valor do projeto',
-      'CLÁUSULA QUARTA — taxa de administração de 8% (oito por cento) para a UFG.'));
+      'CLÁUSULA QUARTA — taxa de administração de 5% (cinco por cento) para a UFG.'));
   v_t2 := public.registrar_termo_contrato_v2(
-    pg_temp.corpo067(x, 'taxa_cip_ua', null, 8,
+    pg_temp.corpo067(x, 'taxa_cip_ua', null, 6,
       'percentual sobre o valor do projeto',
-      'CLÁUSULA QUARTA — taxa de administração de 8% (oito por cento) para a unidade executora.'));
+      'CLÁUSULA QUARTA — taxa de administração de 6% (seis por cento) para a unidade executora.'));
   v_t3 := public.registrar_termo_contrato_v2(
-    pg_temp.corpo067(x, 'taxa_dao', null, 10,
+    pg_temp.corpo067(x, 'taxa_dao', null, 4,
       'percentual sobre o valor do projeto',
-      'CLÁUSULA QUINTA — taxa de 10% (dez por cento) para a fundação de apoio.'));
+      'CLÁUSULA QUINTA — taxa de 4% (quatro por cento) para a fundação de apoio.'));
 
   v_id_fim := (v_fim ->> 'id')::uuid;
 
@@ -445,8 +507,8 @@ begin
 
   -- Mesmo conteúdo: devolve o mesmo id e não insere.
   v_payload := pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null,
-    '20 meses contados da última assinatura (31/12/2025)',
-    'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+    'vigência definida no contrato',
+    'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
     'O cadastro estava com a mesma data; a regra veio do contrato. Conferido com a coordenação.');
   v_novo := public.registrar_termo_contrato_v2(v_payload);
   v_id_2 := (v_novo ->> 'id')::uuid;
@@ -458,14 +520,34 @@ begin
   -- Regra diferente = versão nova (o texto que explica a data mudou).
   v_novo := public.registrar_termo_contrato_v2(
     pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null,
-      '20 meses contados da última assinatura (02/01/2026) — retificada',
-      'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+      'vigência definida no contrato (retificada)',
+      'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
       'O cadastro estava com a mesma data; a regra veio do contrato. Conferido com a coordenação.'));
   v_id_3 := (v_novo ->> 'id')::uuid;
   perform pg_temp.ok067(v_id_3 <> v_id_fim, 'regra diferente deveria criar uma versão nova');
   perform pg_temp.ok067((v_novo ->> 'criado')::boolean, 'versão com regra nova deveria ser criada');
   v_count := pg_temp.total_termos067(public.get_termos_contrato_v2(x) -> 'termos');
   perform pg_temp.ok067(v_count = 7, format('deveriam existir 7 registros no 51.X, há %s', v_count));
+
+  -- Autor diferente = versão nova (a idempotência inclui autor/origem).
+  v_novo := public.registrar_termo_contrato_v2(
+    pg_temp.corpo067(x, 'taxa_dao', null, 4,
+      'percentual sobre o valor do projeto',
+      'CLÁUSULA QUINTA — taxa de 4% (quatro por cento) para a fundação de apoio.',
+      p_autor => 'Outra Pessoa'));
+  perform pg_temp.ok067((v_novo ->> 'criado')::boolean, 'autor diferente deveria criar versão');
+  v_count := pg_temp.total_termos067(public.get_termos_contrato_v2(x) -> 'termos');
+  perform pg_temp.ok067(v_count = 8, format('deveriam existir 8 registros no 51.X, há %s', v_count));
+
+  -- Origem diferente (mesmo autor) = outra versão.
+  v_novo := public.registrar_termo_contrato_v2(
+    pg_temp.corpo067(x, 'taxa_dao', null, 4,
+      'percentual sobre o valor do projeto',
+      'CLÁUSULA QUINTA — taxa de 4% (quatro por cento) para a fundação de apoio.',
+      p_autor => 'Outra Pessoa', p_origem => 'pessoa'));
+  perform pg_temp.ok067((v_novo ->> 'criado')::boolean, 'origem diferente deveria criar versão');
+  v_count := pg_temp.total_termos067(public.get_termos_contrato_v2(x) -> 'termos');
+  perform pg_temp.ok067(v_count = 9, format('deveriam existir 9 registros no 51.X, há %s', v_count));
 
   -- Conferência: marca uma vez e não muda a data na segunda chamada.
   -- A versão vigente é a última (v_id_3), não a primeira.
@@ -500,8 +582,12 @@ declare
 begin
   r := public.get_termos_contrato_v2(x);
 
+  perform pg_temp.ok067(r ->> 'start_date_cadastro' = '2025-12-31',
+    format('start_date_cadastro deveria ser 2025-12-31, veio %s', r ->> 'start_date_cadastro'));
   perform pg_temp.ok067(r ->> 'end_date_cadastro' = '2027-08-31',
     format('end_date_cadastro deveria ser 2027-08-31, veio %s', r ->> 'end_date_cadastro'));
+  perform pg_temp.ok067(r ->> 'vigencia_situacao' = 'confere',
+    format('vigencia_situacao deveria ser confere, veio %s', r ->> 'vigencia_situacao'));
   perform pg_temp.ok067((r ->> 'vigencia_confere')::boolean, 'vigencia_confere deveria ser true');
 
   t := r -> 'termos' -> 'vigencia_fim';
@@ -517,31 +603,44 @@ begin
     format('vigencia_fim deveria ter 1 versão anterior, veio %s', jsonb_array_length(t -> 'versoes_anteriores')));
   perform pg_temp.ok067((t -> 'versoes_anteriores' -> 0 ->> 'valor') = '2027-08-31',
     'versão anterior deveria manter o valor');
+  perform pg_temp.ok067(
+    not exists (
+      select 1 from jsonb_array_elements(t -> 'versoes_anteriores') as v
+       where v ? 'nota'
+    ),
+    'versoes_anteriores não pode ter nota'
+  );
 
-  -- Taxa total: 12,5%, fonte documento_id (plano), sem URL.
-  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' ->> 'valor')::numeric = 12.5,
-    'taxa_total deveria ser 12,5');
+  -- Taxa total: 9,75%, fonte documento_id (plano), sem URL.
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' ->> 'valor')::numeric = 9.75,
+    'taxa_total deveria ser 9,75');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' ->> 'documento_id') = current_setting('test067.doc_x'),
     'taxa_total deveria apontar para o documento do plano');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'bucket') = 'plano-trabalho-docs',
     'metadado do documento deveria ter bucket de plano');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'titulo') = 'Plano de trabalho 529.982.247-25',
+    'admin deveria ver o título cru do documento');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'caminho') is not null,
-    'metadado do documento deveria ter caminho');
+    'admin deveria ver o caminho cru do documento');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'arquivo_nome') = '529.982.247-25-plano.docx',
+    'admin deveria ver o nome cru do arquivo');
+  perform pg_temp.ok067(not (r -> 'termos' -> 'taxa_total' -> 'documento' ? 'nota'),
+    'admin não precisa da nota de arquivo mascarado');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'formato') = 'docx',
     'metadado do documento deveria ter formato docx');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'versao')::integer >= 1,
     'metadado do documento deveria ter versão');
 
-  -- Taxas: 8 + 8 + 10 = 26 (soma só para exibir; nada arredondado aqui).
-  -- O total do contrato é 12,5: o banco devolve os dois números e não corrige.
-  perform pg_temp.ok067((r -> 'termos' -> 'taxa_cip_ufg' ->> 'valor')::numeric = 8, 'taxa_cip_ufg errada');
-  perform pg_temp.ok067((r -> 'termos' -> 'taxa_cip_ua' ->> 'valor')::numeric = 8, 'taxa_cip_ua errada');
-  perform pg_temp.ok067((r -> 'termos' -> 'taxa_dao' ->> 'valor')::numeric = 10, 'taxa_dao errada');
+  -- Taxas: 5 + 6 + 4 = 15 (soma só para exibir; nada arredondado aqui).
+  -- O total do contrato é 9,75: o banco devolve os dois números e não corrige.
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_cip_ufg' ->> 'valor')::numeric = 5, 'taxa_cip_ufg errada');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_cip_ua' ->> 'valor')::numeric = 6, 'taxa_cip_ua errada');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_dao' ->> 'valor')::numeric = 4, 'taxa_dao errada');
   perform pg_temp.ok067(
     (r -> 'termos' -> 'taxa_cip_ufg' ->> 'valor')::numeric +
     (r -> 'termos' -> 'taxa_cip_ua' ->> 'valor')::numeric +
-    (r -> 'termos' -> 'taxa_dao' ->> 'valor')::numeric = 26,
-    'soma das taxas deveria ser 26'
+    (r -> 'termos' -> 'taxa_dao' ->> 'valor')::numeric = 15,
+    'soma das taxas deveria ser 15'
   );
   perform pg_temp.ok067(
     (r -> 'termos' -> 'taxa_total' ->> 'valor')::numeric is distinct from (
@@ -559,9 +658,19 @@ begin
     'professor não pode receber a nota');
   perform pg_temp.ok067((r -> 'termos' -> 'vigencia_fim' ->> 'valor') = '2027-08-31',
     'professor deveria ver o valor');
+  perform pg_temp.ok067((r ->> 'vigencia_situacao') = 'confere',
+    'professor deveria ver vigencia_situacao');
   perform pg_temp.ok067((r ->> 'vigencia_confere')::boolean, 'professor deveria ver vigencia_confere');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'bucket') = 'plano-trabalho-docs',
     'professor deveria ver o metadado do documento do plano');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'titulo') = 'Plano de trabalho ***.***.***-**',
+    'professor deveria ver o título do documento mascarado');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' -> 'caminho') = 'null'::jsonb,
+    'professor não pode receber caminho com CPF');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'arquivo_nome') = '***.***.***-**-plano.docx',
+    'professor deveria ver o nome do arquivo mascarado');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'nota') = 'arquivo com nome que parece CPF: peça ao admin',
+    'professor deveria receber a nota de arquivo mascarado');
 
   -- Professor de outro centro não atravessa o escopo.
   perform pg_temp.falha_com067(
@@ -571,13 +680,19 @@ begin
     'Acesso negado%'
   );
 
-  -- Agente do 51.X lê, mas também sem nota.
+  -- Agente do 51.X lê, mas também sem a nota; o documento sai
+  -- mascarado (ele pode ler documento_versoes no escopo por REST,
+  -- então isso não é uma barreira de segurança, só não piora).
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', true);
   r := public.get_termos_contrato_v2(x);
   perform pg_temp.ok067((r -> 'termos' -> 'vigencia_fim' ->> 'nota') is null,
     'agente não pode receber a nota');
-  perform pg_temp.ok067(r -> 'termos' -> 'taxa_total' -> 'documento' = 'null'::jsonb,
-    'agente não pode receber o caminho do documento do plano');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'titulo') = 'Plano de trabalho ***.***.***-**',
+    'agente deveria ver o título do documento mascarado');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' -> 'caminho') = 'null'::jsonb,
+    'agente não pode receber caminho com CPF');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'arquivo_nome') = '***.***.***-**-plano.docx',
+    'agente deveria ver o nome do arquivo mascarado');
 
   -- Nenhum papel humano lê a tabela direto: a nota sairia por
   -- GET /rest/v1/termos_contrato?select=nota. Agente, professores e
@@ -621,22 +736,27 @@ declare
   v_antes_x jsonb;
   v_antes_y jsonb;
   v_depois_y jsonb;
+  v_updated_y timestamptz;
 begin
   -- Contrato do 51.Y: fim 30/04/2027; cadastro 31/03/2027.
   perform public.registrar_termo_contrato_v2(
     pg_temp.corpo067(y, 'vigencia_inicio', '2025-10-15', null,
-      '20 meses contados da última assinatura (15/10/2025)',
-      'CLÁUSULA SEGUNDA — 20 meses contados da última assinatura.',
+      'vigência definida no contrato',
+      'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
       'A segunda assinatura foi posterior; o cadastro usa a primeira.'));
   perform public.registrar_termo_contrato_v2(
     pg_temp.corpo067(y, 'vigencia_fim', '2027-04-30', null,
-      '20 meses contados da última assinatura (15/10/2025)',
-      'CLÁUSULA SEGUNDA — 20 meses contados da última assinatura.',
+      'vigência definida no contrato',
+      'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
       'O cadastro está com 31/03/2027; a diferença veio da última assinatura.'));
 
   r := public.get_termos_contrato_v2(y);
+  perform pg_temp.ok067(r ->> 'start_date_cadastro' = '2025-10-01',
+    format('start_date_cadastro do 51.Y deveria ser 2025-10-01, veio %s', r ->> 'start_date_cadastro'));
   perform pg_temp.ok067(r ->> 'end_date_cadastro' = '2027-03-31',
     format('end_date_cadastro do 51.Y deveria ser 2027-03-31, veio %s', r ->> 'end_date_cadastro'));
+  perform pg_temp.ok067(r ->> 'vigencia_situacao' = 'diverge',
+    format('vigencia_situacao do 51.Y deveria ser diverge, veio %s', r ->> 'vigencia_situacao'));
   perform pg_temp.ok067(not (r ->> 'vigencia_confere')::boolean,
     'vigencia_confere do 51.Y deveria ser false');
 
@@ -670,11 +790,54 @@ begin
   );
 
   r := public.get_termos_contrato_v2(y);
-  perform pg_temp.ok067((r ->> 'vigencia_confere')::boolean,
+  perform pg_temp.ok067(r ->> 'vigencia_situacao' = 'confere',
     'depois de usar, a vigência do 51.Y deveria conferir');
+  perform pg_temp.ok067((r ->> 'vigencia_confere')::boolean,
+    'depois de usar, vigencia_confere do 51.Y deveria ser true');
+
+  select p.updated_at into v_updated_y
+    from public.projects p where p.id = y;
 
   u := public.usar_vigencia_do_contrato_v2(y);
   perform pg_temp.ok067(not (u ->> 'mudou')::boolean, 'usar_vigencia repetido deveria ser idempotente');
+  perform pg_temp.ok067(
+    (select p.updated_at from public.projects p where p.id = y) = v_updated_y,
+    'usar_vigencia sem mudança não pode tocar updated_at'
+  );
+
+  -- Projeto sem end_date cadastrado: sem_cadastro e usar a data.
+  perform public.registrar_termo_contrato_v2(
+    pg_temp.corpo067(
+      (select id from public.projects where code = '64.EDGE'),
+      'vigencia_fim', '2027-06-30', null,
+      'vigência definida no contrato',
+      'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.'));
+  r := public.get_termos_contrato_v2((select id from public.projects where code = '64.EDGE'));
+  perform pg_temp.ok067((r -> 'end_date_cadastro') = 'null'::jsonb,
+    '64.EDGE deveria estar sem end_date');
+  perform pg_temp.ok067(r ->> 'start_date_cadastro' = '2025-01-01',
+    '64.EDGE deveria manter o start_date cadastrado');
+  perform pg_temp.ok067(r ->> 'vigencia_situacao' = 'sem_cadastro',
+    format('64.EDGE deveria ser sem_cadastro, veio %s', r ->> 'vigencia_situacao'));
+  perform pg_temp.ok067((r -> 'vigencia_confere') = 'null'::jsonb,
+    'vigencia_confere do 64.EDGE deveria ser null');
+  u := public.usar_vigencia_do_contrato_v2((select id from public.projects where code = '64.EDGE'));
+  perform pg_temp.ok067((u -> 'antes' -> 'end_date') = 'null'::jsonb,
+    'antes.end_date do 64.EDGE deveria ser null');
+  perform pg_temp.ok067((u -> 'depois' ->> 'end_date') = '2027-06-30',
+    '64.EDGE deveria receber o fim do contrato');
+  perform pg_temp.ok067((u -> 'depois' ->> 'start_date') = '2025-01-01',
+    '64.EDGE sem termo de início deveria manter o start_date');
+  r := public.get_termos_contrato_v2((select id from public.projects where code = '64.EDGE'));
+  perform pg_temp.ok067(r ->> 'vigencia_situacao' = 'confere',
+    'depois de usar, o 64.EDGE deveria conferir');
+
+  -- Centro sem contrato: sem_contrato, vigencia_confere null.
+  r := public.get_termos_contrato_v2((select id from public.projects where code = '63.SB'));
+  perform pg_temp.ok067(r ->> 'vigencia_situacao' = 'sem_contrato',
+    '63.SB deveria ser sem_contrato');
+  perform pg_temp.ok067((r -> 'vigencia_confere') = 'null'::jsonb,
+    'vigencia_confere do 63.SB deveria ser null');
 
   -- Sem termo de vigência: recusa e não muda a data.
   perform pg_temp.falha_com067(
@@ -723,7 +886,7 @@ begin
   reset role;
   total := (select count(*) from public.termos_contrato);
   set local role authenticated;
-  perform pg_temp.ok067(total = 10, format('admin deveria ver 10 linhas (7 do 51.X + 2 do 51.Y + 1 do 63.INAT), viu %s', total));
+  perform pg_temp.ok067(total = 13, format('admin deveria ver 13 linhas (9 do 51.X + 2 do 51.Y + 1 do 63.INAT + 1 do 64.EDGE), viu %s', total));
 end $$;
 
 reset role;

@@ -4,9 +4,11 @@ Branch: `redesenho/f3-a-termos` (worktree `C:/Users/amara/dev/cf-f2-e`). Commit 
 **Nada foi aplicado em produção**, nenhuma variável `CF_*` real foi usada, nenhuma outra IA foi chamada e o
 runner só tocou no PGlite em memória.
 
-> Este relatório foi escrito na 1ª rodada e atualizado na 2ª e na 3ª. As seções 1–6 são o retrato da 1ª rodada
-> (5 mutantes, 111 testes); a **seção 7** é a 2ª rodada (taxa total, fonte em `documentos`, 7 mutantes,
-> 114 testes); a **seção 8** é a 3ª rodada (a `nota` não vaza pela tabela, 8 mutantes).
+> Este relatório foi escrito na 1ª rodada e atualizado na 2ª, 3ª e 4ª. As seções 1–6 são o retrato da
+> 1ª rodada (5 mutantes, 111 testes); a **seção 7** é a 2ª rodada (taxa total, fonte em `documentos`,
+> 7 mutantes, 114 testes); a **seção 8** é a 3ª rodada (a `nota` não vaza pela tabela, 8 mutantes); a
+> **seção 9** é a 4ª rodada (CPF robusto, máscara, `vigencia_situacao`, asserções fortes e fixtures
+> sintéticos, 8 mutantes, 115 testes).
 
 ## 1. Tamanho dos arquivos
 
@@ -45,9 +47,9 @@ Histórico **só insert** dos termos do contrato. O vigente é o registro mais r
 - `documento_url` só `https://drive.google.com/...` ou `https://docs.google.com/...`; `pagina` nula ou ≥ 1.
 - `nota` até 2.000 (análise/comentário livre); `origem` `ia`/`pessoa`; `autor` até 60.
 - `criado_em default now()`, `criado_por default auth.uid()`, `conferido_em/por`.
-- RLS ligado; uma única policy de SELECT por escopo, igual à de `pendencias`
-  (`is_admin() or project_id = any(allowed_project_ids())`); nenhuma policy de escrita; `revoke all` de
-  `public`/`anon`/`authenticated` e `grant select` só a `authenticated`.
+- RLS ligado, **sem policy** (default deny) e **sem grant** de SELECT/escrita para `authenticated`; a leitura
+  é só pela RPC definer. A versão original da 1ª rodada permitia SELECT direto a `authenticated`; removido
+  nas 3ª/4ª rodadas.
 - `trg_bloqueia_agente` **BEFORE INSERT OR UPDATE OR DELETE FOR EACH STATEMENT**, sem `WHEN`.
 - Índice `idx_termos_contrato_project_termo (project_id, termo, criado_em desc, id desc)`.
 
@@ -207,9 +209,9 @@ Os 5 testes pulados da raiz são os fixtures opcionais pré-existentes (`tests/f
   exclusiva do admin humano.
 - **Modo exemplo devolve a `nota` para todo mundo.** Não há papel no `dadosExemplo.js`; a tela só a renderiza
   para `isAdmin`. O mascaramento real é o da RPC (testado no PGlite: professor e agente recebem `null`).
-- **Cofre**: a 067 tem policy e funções `security definer`; pela regra do cofre, o relatório vai pedir revisão
-  técnica do SQL. Por instrução desta tarefa, **nenhuma outra IA foi chamada**; a revisão fica para o Victor
-  decidir. A migração não foi aplicada nem ensaiada.
+- **Cofre**: a 067 tem funções `security definer` e nenhuma policy (a barreira é a ACL); pela regra do
+  cofre, o relatório vai pedir revisão técnica do SQL. Por instrução desta tarefa, **nenhuma outra IA foi
+  chamada**; a revisão fica para o Victor decidir. A migração não foi aplicada nem ensaiada.
 - **Nada de produção**: não foi executado `ensaiar`/`aplicar`, nenhuma chamada ao Supabase de produção, nenhum
   `git push`, nenhuma variável `CF_*` real.
 
@@ -254,14 +256,19 @@ A migração continua abaixo de 90 KB, com `begin;`/`commit;` nas pontas e sem t
 - `registrar_termo_contrato_v2` aceita `documento_id`, valida UUID/existência/centro e exige a fonte; a
   idempotência passou a comparar também `documento_id`.
 - `get_termos_contrato_v2` devolve `documento_id` e, quando há documento, o metadado da **versão mais recente**
-  de `documento_versoes` (`bucket`, `caminho`, `arquivo_nome`, `formato`, `versao`, `registrado_em`). Para o
-  agente, `documento` vai `null` (o caminho do plano não é exposto a ele); professor e admin recebem.
+  de `documento_versoes` (`bucket`, `caminho`, `arquivo_nome`, `formato`, `versao`, `registrado_em`). Na versão
+  final da 4ª rodada, os metadados são **mascarados para não-admin** (título/arquivo com CPF viram
+  `***.***.***-**` e `caminho` vira null); o agente também pode ler `documento_versoes` no escopo por REST,
+  então isso não é uma barreira de segurança, só não piora.
 - **Não foi criada RPC nova.** O painel usa o metadado que o `get` já devolve e o mesmo serviço/visualizador da
   aba Documentos (`arquivoDeOrigem` + componente `Documento`). O `get_origem_v2` não foi usado.
 - As asserções da 067 ganharam a FK de documento (`RESTRICT`), o CHECK de fonte, `taxa_total` no CHECK do termo,
   o índice novo e a coluna `documento_id` no contrato de esquema.
 
 ### 7.3. Tela
+
+> Os números desta seção são o registro da 2ª rodada. A 4ª rodada trocou os fixtures/exemplos por sintéticos
+> (taxa total 9,75; divisão 5+6+4=15) e fechou a máscara de documento; ver seção 9.
 
 - Cabeçalho:
   - só `taxa_total`: `Taxas do contrato: 12,5% no total`;
@@ -287,8 +294,10 @@ A migração continua abaixo de 90 KB, com `begin;`/`commit;` nas pontas e sem t
 - `test_067` ganhou: `taxa_total` com `valor_data` recusada; fonte ausente recusada (`22023` e CHECK `23514`);
   `documento_id` de outro centro/não existente/inválido recusados; `taxa_total` com `documento_id` do plano do
   51.X; `get` devolvendo `documento_id` e o metadado da versão mais recente (bucket/caminho/formato/versão);
-  professor vendo o metadado, agente recebendo `documento: null`; total 12,5 × divisão 26 sem correção. As
+  professor vendo o metadado, agente recebendo `documento: null` **na 2ª rodada** (a 4ª rodada mascara para
+  todos os não-admin — ver seção 9); total 12,5 × divisão 26 sem correção. As
   contagens do 51.X passaram a 6 (antes da versão nova) e 7 (depois); o total geral, a 10.
+  (A 4ª rodada trocou os fixtures por 9,75 × 15 e as contagens por 9/13.)
 - O runner passou a carregar **064 + `stub-064`** antes da 067 (a FK `documento_id` e o teste de plano precisam
   de `documentos`/`documento_versoes`) e ganhou **2 mutantes novos**: termo sem `taxa_total` no CHECK da tabela
   e `registrar` sem exigir `documento_url`/`documento_id`. Total: **7 mutantes**, todos detectados.
@@ -306,7 +315,8 @@ A migração continua abaixo de 90 KB, com `begin;`/`commit;` nas pontas e sem t
 
 - **Metadado do documento na RPC, não RPC nova.** Era o único caminho sem inventar RPC para abrir o plano pelo
   mesmo visualizador. O `get_termos_contrato_v2` é `security definer` e já estava autorizado pelo escopo; o
-  metadado é o da versão mais recente e só é devolvido para humano (agente recebe `null`). O exemplo não tem o
+  metadado é o da versão mais recente e, desde a 4ª rodada, mascarado para não-admin. O agente também lê
+  `documento_versoes` no escopo por REST, então a máscara não é uma barreira de segurança. O exemplo não tem o
   arquivo do plano, então mostra só o nome — o caminho real é testado no SQL e no teste de tela com mock.
 - **Diferença total × divisão não é erro de gravação.** O banco aceita as duas linhas e a tela mostra os dois
   números; a nota (só admin) explica. Não há alerta automático nem "correção" silenciosa.
@@ -337,11 +347,11 @@ o desenho queria proteger.
 - **Nenhum acesso direto à tabela para `authenticated`**: `revoke all ... from public, anon, authenticated`
   e **sem** `grant select`. A leitura é só pela `get_termos_contrato_v2` (definer); a escrita continua só
   pelas RPCs definer.
-- **A RLS e a policy de SELECT foram mantidas** como defesa em profundidade. Se alguém conceder SELECT no
-  futuro, a policy ainda limita ao escopo (e a nota continuaria exigindo a RPC admin). A alternativa de
-  remover a policy foi descartada: sobraria menos defesa para um erro futuro de grant.
+- **Na 3ª rodada a RLS e a policy de SELECT foram mantidas** como defesa em profundidade; a **4ª rodada
+  removeu a policy**, porque sem grant ela não protege coluna e dava falsa sensação de barreira. O RLS fica
+  ligado **sem policy** (default deny) e a barreira real é a ACL.
 - As asserções do fim da 067 mudaram: `authenticated` **não pode** ter SELECT nem INSERT/UPDATE/DELETE/
-  TRUNCATE na tabela; `anon` continua sem nada; a policy única de SELECT continua conferida.
+  TRUNCATE na tabela; `anon` continua sem nada; a 4ª rodada confere que não existe nenhuma policy.
 - Nenhuma RPC mudou de corpo: todas já eram `security definer` e leem/escrevem como dona da tabela. O
   `trg_bloqueia_agente` continua barrando o agente em qualquer caminho.
 - **O app não lê a tabela direto**: grep em `app/src` só encontra o nome da RPC (`get_termos_contrato_v2`),
@@ -385,7 +395,7 @@ o desenho queria proteger.
 ### 8.4. Observações
 
 - **Não foi usada uma view/RPC nova.** A tabela continua existindo e as RPCs definer continuam sendo o
-  único caminho de leitura. A policy de SELECT é defesa em profundidade, não a barreira principal.
+  único caminho de leitura. A 4ª rodada removeu a policy; a barreira é a ACL (RLS sem policy = default deny).
 - **A `nota` deixa de ser alcançável por REST** mesmo com a anon key e um JWT de professor/agente: o
   privilégio de tabela foi revogado; o PostgREST responde 42501.
 - **Nada de produção**: sem `ensaiar`/`aplicar`, sem push, sem `CF_*` real e sem outra IA. A 067 segue não
@@ -393,3 +403,97 @@ o desenho queria proteger.
 - **Pronto quando (3ª rodada)**: runner com 8 mutantes **ok**; `npx vitest run`, `npm run lint`, testes e
   build de `app/` **ok**; linha da 067 em `docs/migracoes.md` atualizada **ok**; commit novo incluindo
   `docs/redesenho/tarefas/F3-A-rodada3.md` **ok** (local, sem push).
+
+## 9. 4ª rodada — revisões MiniMax max e DeepSeek max (19/11/2026)
+
+As duas revisões de `6f3988d..fd4ef46` convergiram nos itens abaixo. Esta seção registra o que foi corrigido,
+inclusive os baixos, e os números finais.
+
+### 9.1. CPF com espaço, hífen, barra ou quebra de linha
+
+- A 067 chamava `contem_cpf` (052), que não pega `529 982 247 25`, `529-982-247-25` nem
+  `529.982.247/25`. A regra passou a ser `_tem_cpf` (065), a mesma da 064/065.
+- **Não foi usado CHECK com helper de CPF.** CHECK chamando função sem EXECUTE para `authenticated` falha por
+  permissão em vez de 23514 (a lição da 063). A barreira de dado virou o gatilho **`trg_termos_sem_cpf`**
+  (`BEFORE INSERT OR UPDATE FOR EACH ROW`), com `_termos_sem_cpf()` `security definer` e sem EXECUTE para
+  `public`/`anon`/`authenticated`, no molde do `_pendencias_sem_cpf()` da 063. A RPC definer pré-checa com
+  `_tem_cpf`; o INSERT do dono também cai no gatilho.
+- O CHECK do trecho ficou só com tamanho/não-vazio; as asserções provam que nenhum CHECK chama
+  `contem_cpf`/`_tem_cpf`.
+- Testes com `529 982 247 25`, `529-982-247-25`, `529.982.247/25` e
+  `529     \n982     247     25`, pela RPC (`22023`) e por INSERT do dono (`23514`).
+
+### 9.2. Metadado de documento mascarado
+
+- `get_termos_contrato_v2` agora aplica a regra da 064/065 para **não-admin**: `_mascarar_cpf` em `titulo` e
+  `arquivo_nome`; `caminho` vira `null` quando `_tem_cpf`; e entra `documento.nota` "arquivo com nome que parece
+  CPF: peça ao admin". O admin vê o metadado cru.
+- O relatório **não promete** que o agente não vê o caminho: ele pode ler `documento_versoes` no próprio
+  escopo por REST. A máscara da RPC é só para não piorar; a fronteira real é o RLS/storage da 062/064.
+- O teste do SQL trocou o título/caminho do plano sintético do 51.X por um CPF e confere: admin cru;
+  professor e agente com `***.***.***-**`, `caminho` null e a nota de arquivo mascarado.
+
+### 9.3. `vigencia_situacao` e `start_date`
+
+- `get_termos_contrato_v2` devolve `start_date_cadastro` e `vigencia_situacao` =
+  `'confere' | 'diverge' | 'sem_cadastro' | 'sem_contrato'`, mantendo `vigencia_confere` por compatibilidade.
+- Tela: com `sem_cadastro`, o cabeçalho mostra `Vigência do contrato: dd/mm/aaaa · não está no cadastro` e o
+  admin vê "Usar a data do contrato". O teste cobre o centro sem `end_date`.
+- A confirmação do "Usar a data" mostra **início e fim** (antes → depois) quando o início também muda; o
+  validador do app confere `start_date` e `end_date` no retorno da RPC.
+- `usar_vigencia_do_contrato_v2` **não faz UPDATE** quando `start_date`/`end_date` já são os do contrato:
+  devolve `mudou: false` e não dispara `updated_at`. O teste compara o `updated_at` antes/depois.
+
+### 9.4. Idempotência, explicação e baixos
+
+- A idempotência de `registrar_termo_contrato_v2` passou a incluir `origem` e `autor`; testes criam versões
+  novas ao mudar cada um (o 51.X foi a 9 registros).
+- Depois de "Usar a data", o app recarrega também o "De onde vem" (`carregarExplicar()`), além de termos,
+  saldo e resumo — a árvore velha não fica.
+- **Policy removida.** A 3ª rodada manteve a policy; a 4ª constatou que, sem grant, ela não protege coluna e
+  dá falsa sensação. Agora é RLS ligado **sem policy** (default deny), sem grant de SELECT/escrita e sem
+  acesso direto — a barreira é a ACL. As asserções conferem 0 policies.
+- Asserções fortes: o `qual` da policy (inexistente) e o `pg_get_constraintdef` normalizado de **cada** CHECK,
+  não só o nome; o gatilho de CPF e o helper definer também são conferidos.
+- `versoes_anteriores` continua sem `nota`: o teste usa `not ?` em cada item.
+- O runner agora exige **42P01** no passo "antes da 067" (não aceita mais 42883).
+- O teste do professor "sem botões" usa o caso **divergente**, então prova a ausência tanto de "Marcar como
+  conferido" quanto de "Usar a data do contrato".
+- Fixtures/exemplos sem os números do caso real: taxa total 9,75, divisão 5+6+4=15, vigência definida no
+  contrato, 30.904 com 3+4+2=9. Os números 20 meses/8+8+10/12,5/16 que restam na seção 7 são registro
+  histórico da 2ª rodada; o código e os testes usam os sintéticos.
+- Limites e validações: `documento_nome` ≤ 300, `documento_url` ≤ 2.000, `valor_pct` passa por `numeric(6,3)`
+  e recusa NaN/Infinity/fora de 0–100, `pagina` fora de faixa vira `22023` (não `22003`), `termosSt` é zerado
+  na troca de centro e o link do painel usa `^https://(drive|docs)\.google\.com/`, a mesma regra do banco.
+- **Limitações conhecidas:** `registrar_termo_contrato_v2` não tem lock de concorrência (só um admin
+  registra); `documento_id` usa `on delete restrict` e `project_id` usa `on delete cascade` — são escolhas
+  diferentes para dados diferentes, registradas aqui para não parecer inconsistência.
+
+### 9.5. Tamanhos e resultados finais
+
+| Arquivo | Bytes | Linhas |
+|---|---:|---:|
+| `database/067_termos_contrato.sql` | **46.118** | 1.112 |
+| `tests/sql/test_067_termos_contrato.sql` | **40.068** | 893 |
+| `tools/replica-local/rodar-067-pglite.mjs` | **12.358** | 323 |
+| `app/src/paginas/Projeto.jsx` | 80.536 | 2.302 |
+| `app/src/servicos/dados.js` | 18.675 | 620 |
+| `app/src/servicos/dadosExemplo.js` | 70.651 | 2.238 |
+| `app/tests/termos-contrato.test.jsx` | 18.000 | 566 |
+| `app/tests/dados.test.js` | 29.008 | 684 |
+
+| Comando | Resultado |
+|---|---|
+| `node tools/replica-local/rodar-067-pglite.mjs` | **verde** (8 mutantes) |
+| `npx vitest run` | **44 arquivos, 699 passed, 5 skipped** |
+| `npm run lint` | **verde** |
+| `npm test --prefix app` | **15 arquivos, 115 passed** |
+| `npm run build --prefix app` | **verde** |
+
+### 9.6. Pronto quando (4ª rodada)
+
+- Runner PGlite com 8 mutantes: **ok**.
+- `npx vitest run`, `npm run lint`, testes e build de `app/`: **ok**.
+- Linha da 067 em `docs/migracoes.md` atualizada: **ok**.
+- Relatório com esta seção: **ok**.
+- Commit novo incluindo `docs/redesenho/tarefas/F3-A-rodada4.md`: **ok** (local, sem push).

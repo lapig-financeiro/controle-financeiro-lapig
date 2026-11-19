@@ -866,9 +866,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       vigencia_inicio: {
         id: 'termo-30901-inicio',
         valor: '2025-12-31',
-        regra: '20 meses contados da última assinatura (31/12/2025)',
+        regra: 'vigência definida no contrato',
         trecho:
-          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+          'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
         documento_nome: 'Contrato de prestação de serviços · 30.901',
         documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
         pagina: 2,
@@ -883,9 +883,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       vigencia_fim: {
         id: 'termo-30901-fim',
         valor: '2027-08-31',
-        regra: '20 meses contados da última assinatura (31/12/2025)',
+        regra: 'vigência definida no contrato',
         trecho:
-          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+          'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
         documento_nome: 'Contrato de prestação de serviços · 30.901',
         documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30901/view',
         pagina: 2,
@@ -899,17 +899,17 @@ const TERMOS_CONTRATO_EXEMPLO = {
       },
       taxa_total: {
         id: 'termo-30901-total',
-        valor: 12.5,
-        regra: 'Project Overhead de 12,5% sobre o valor total do projeto',
+        valor: 9.75,
+        regra: 'Project Overhead de 9,75% sobre o valor total do projeto',
         trecho:
-          'ANEXO — Project Overhead: 12,5% (doze e meio por cento) do valor total do projeto.',
+          'ANEXO — Project Overhead: 9,75% do valor total do projeto.',
         documento_nome: 'Plano de trabalho · 30.901 v2',
         documento_url: null,
         documento_id: 'documento-plano-30901-v2',
         documento: null,
         pagina: 8,
         nota:
-          'O contrato fixa 12,5% no total; a divisão por UFG, unidade e fundação aparece só em reais no plano. O arquivo do plano está no sistema, mas o modo exemplo não tem o PDF para abrir.',
+          'O contrato fixa 9,75% no total; a divisão por UFG, unidade e fundação aparece só em reais no plano. O arquivo do plano está no sistema, mas o modo exemplo não tem o PDF para abrir.',
         origem: 'ia',
         autor: 'Claude',
         criado_em: '2026-11-18T15:12:00Z',
@@ -924,9 +924,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       vigencia_inicio: {
         id: 'termo-30902-inicio',
         valor: '2025-08-30',
-        regra: '20 meses contados da última assinatura (30/08/2025)',
+        regra: 'vigência definida no contrato',
         trecho:
-          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+          'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
         documento_nome: 'Contrato de prestação de serviços · 30.902',
         documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30902/view',
         pagina: 3,
@@ -941,9 +941,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       vigencia_fim: {
         id: 'termo-30902-fim',
         valor: '2027-04-30',
-        regra: '20 meses contados da última assinatura (30/08/2025)',
+        regra: 'vigência definida no contrato',
         trecho:
-          'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
+          'CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.',
         documento_nome: 'Contrato de prestação de serviços · 30.902',
         documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30902/view',
         pagina: 3,
@@ -958,14 +958,14 @@ const TERMOS_CONTRATO_EXEMPLO = {
       },
       taxa_total: {
         id: 'termo-30902-total',
-        valor: 16,
-        regra: 'Custos Indiretos limitados a 16% pelo financiador',
-        trecho: 'CLÁUSULA SÉTIMA — os Custos Indiretos ficam limitados a 16% (dezesseis por cento).',
+        valor: 9.75,
+        regra: 'Custos Indiretos limitados a 9,75% pelo financiador',
+        trecho: 'CLÁUSULA SÉTIMA — os Custos Indiretos ficam limitados a 9,75%.',
         documento_nome: 'Contrato de prestação de serviços · 30.902',
         documento_url: 'https://drive.google.com/file/d/exemplo-contrato-30902/view',
         pagina: 6,
         nota:
-          'O contrato limita 16% de Custos Indiretos; o plano divide 8% + 8% + 10% = 26%. A diferença está no plano e não é corrigida aqui; conferir com a coordenação.',
+          'O contrato limita 9,75% de Custos Indiretos; o plano divide 5% + 6% + 4% = 15%. A diferença está no plano e não é corrigida aqui; conferir com a coordenação.',
         origem: 'ia',
         autor: 'Claude',
         criado_em: '2026-11-18T15:22:00Z',
@@ -975,9 +975,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       },
       taxa_cip_ufg: {
         id: 'termo-30902-cip-ufg',
-        valor: 8,
+        valor: 5,
         regra: 'divisão da taxa no plano de trabalho',
-        trecho: 'CLÁUSULA QUARTA — taxa de administração de 8% para a UFG.',
+        trecho: 'CLÁUSULA QUARTA — taxa de administração de 5% para a UFG.',
         documento_nome: 'Plano de trabalho · 30.902',
         documento_url: 'https://drive.google.com/file/d/exemplo-plano-30902/view',
         pagina: 4,
@@ -991,9 +991,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       },
       taxa_cip_ua: {
         id: 'termo-30902-cip-ua',
-        valor: 8,
+        valor: 6,
         regra: 'divisão da taxa no plano de trabalho',
-        trecho: 'CLÁUSULA QUARTA — taxa de administração de 8% para a unidade executora.',
+        trecho: 'CLÁUSULA QUARTA — taxa de administração de 6% para a unidade executora.',
         documento_nome: 'Plano de trabalho · 30.902',
         documento_url: 'https://drive.google.com/file/d/exemplo-plano-30902/view',
         pagina: 4,
@@ -1007,9 +1007,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       },
       taxa_dao: {
         id: 'termo-30902-dao',
-        valor: 10,
+        valor: 4,
         regra: 'divisão da taxa no plano de trabalho',
-        trecho: 'CLÁUSULA QUINTA — taxa de 10% para a fundação de apoio.',
+        trecho: 'CLÁUSULA QUINTA — taxa de 4% para a fundação de apoio.',
         documento_nome: 'Plano de trabalho · 30.902',
         documento_url: 'https://drive.google.com/file/d/exemplo-plano-30902/view',
         pagina: 5,
@@ -1045,9 +1045,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       },
       taxa_cip_ufg: {
         id: 'termo-30904-cip-ufg',
-        valor: 4,
+        valor: 3,
         regra: 'divisão da taxa no plano de trabalho',
-        trecho: 'CLÁUSULA QUARTA — taxa de administração de 4% para a UFG.',
+        trecho: 'CLÁUSULA QUARTA — taxa de administração de 3% para a UFG.',
         documento_nome: 'Termo aditivo · 30.904',
         documento_url: 'https://docs.google.com/document/d/exemplo-aditivo-30904/view',
         pagina: 2,
@@ -1077,9 +1077,9 @@ const TERMOS_CONTRATO_EXEMPLO = {
       },
       taxa_dao: {
         id: 'termo-30904-dao',
-        valor: 5,
+        valor: 2,
         regra: 'divisão da taxa no plano de trabalho',
-        trecho: 'CLÁUSULA QUINTA — taxa de 5% para a fundação de apoio.',
+        trecho: 'CLÁUSULA QUINTA — taxa de 2% para a fundação de apoio.',
         documento_nome: 'Termo aditivo · 30.904',
         documento_url: 'https://docs.google.com/document/d/exemplo-aditivo-30904/view',
         pagina: 3,
@@ -1217,12 +1217,22 @@ export async function termosContrato(projectId) {
   const termos = base?.termos ? structuredClone(base.termos) : {};
   const fim = normalizarDataCurta(termos.vigencia_fim?.valor);
   const cadastro = normalizarDataCurta(centro.end_date);
+  const inicio = normalizarDataCurta(centro.start_date);
   const vigenciaConfere = fim && cadastro ? fim === cadastro : null;
+  const vigenciaSituacao = !fim
+    ? 'sem_contrato'
+    : !cadastro
+      ? 'sem_cadastro'
+      : fim === cadastro
+        ? 'confere'
+        : 'diverge';
 
   return {
     dados: {
       termos,
+      start_date_cadastro: inicio,
       end_date_cadastro: cadastro,
+      vigencia_situacao: vigenciaSituacao,
       vigencia_confere: vigenciaConfere,
     },
     erro: null,

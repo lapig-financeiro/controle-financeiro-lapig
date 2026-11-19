@@ -323,6 +323,7 @@ export async function usarVigenciaDoContrato(projectId) {
   if (!projectId) {
     return { dados: null, erro: 'Centro de custo não informado.' };
   }
+  const dataOuNula = (v) => v === null || typeof v === 'string';
   const opcoes = {
     validar: (d) =>
       Boolean(
@@ -330,9 +331,12 @@ export async function usarVigenciaDoContrato(projectId) {
           typeof d === 'object' &&
           d.antes &&
           typeof d.antes === 'object' &&
+          dataOuNula(d.antes.start_date) &&
+          dataOuNula(d.antes.end_date) &&
           d.depois &&
           typeof d.depois === 'object' &&
-          (d.depois.end_date === null || typeof d.depois.end_date === 'string') &&
+          dataOuNula(d.depois.start_date) &&
+          dataOuNula(d.depois.end_date) &&
           typeof d.mudou === 'boolean'
       ),
   };
@@ -460,10 +464,11 @@ function validarTermoContrato(t) {
   }
   if (t.documento !== null && t.documento !== undefined) {
     if (!ehObjetoSimples(t.documento)) return false;
+    if (typeof t.documento.bucket !== 'string') return false;
     if (
-      typeof t.documento.bucket !== 'string' ||
-      typeof t.documento.caminho !== 'string' ||
-      !t.documento.caminho.trim()
+      t.documento.caminho !== null &&
+      t.documento.caminho !== undefined &&
+      (typeof t.documento.caminho !== 'string' || !t.documento.caminho.trim())
     ) {
       return false;
     }
@@ -503,7 +508,11 @@ function validarTermoContrato(t) {
 export function validarTermosContrato(d) {
   if (!ehObjetoSimples(d)) return false;
   if (!ehObjetoSimples(d.termos)) return false;
+  if (d.start_date_cadastro !== null && typeof d.start_date_cadastro !== 'string') return false;
   if (d.end_date_cadastro !== null && typeof d.end_date_cadastro !== 'string') return false;
+  if (!['confere', 'diverge', 'sem_cadastro', 'sem_contrato'].includes(d.vigencia_situacao)) {
+    return false;
+  }
   if (d.vigencia_confere !== null && typeof d.vigencia_confere !== 'boolean') return false;
   return Object.values(d.termos).every(validarTermoContrato);
 }

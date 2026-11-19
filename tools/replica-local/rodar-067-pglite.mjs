@@ -137,7 +137,7 @@ async function main() {
     try {
       await rodarTeste(test067);
     } catch (e) {
-      if (e.code !== '42P01' && e.code !== '42883') {
+      if (e.code !== '42P01') {
         throw new Error(`ANTES da 067 falhou com código inesperado (${e.code}): ${e.message}`);
       }
       falhouAntes = true;
@@ -209,13 +209,13 @@ async function main() {
         const fn = extrairFuncao(texto067, 'usar_vigencia_do_contrato_v2');
         const alvo = `  update public.projects
      set end_date   = v_fim,
-         start_date = coalesce(v_inicio, start_date)
+         start_date = v_inicio
    where id = p_project_id;`;
         const mut = fn.replace(
           alvo,
           `  update public.projects
      set end_date   = v_fim,
-         start_date = coalesce(v_inicio, start_date)
+         start_date = v_inicio
    where true;`,
         );
         if (mut === fn) throw new Error('Falha ao montar mutante 2.');
@@ -236,17 +236,17 @@ async function main() {
     );
 
     await esperarFalhaTest067(
-      '4) get_termos_contrato_v2 devolvendo o caminho do documento para o agente',
+      '4) get_termos_contrato_v2 devolvendo o título do documento cru para professor',
       async () => {
         const fn = extrairFuncao(texto067, 'get_termos_contrato_v2');
         const mut = fn.replace(
-          'or public.is_agente()',
-          'or false',
+          'else public._mascarar_cpf(d.titulo) end',
+          'else d.titulo end',
         );
         if (mut === fn) throw new Error('Falha ao montar mutante 4.');
         await sql(mut);
       },
-      'agente não pode receber o caminho do documento do plano',
+      'professor deveria ver o título do documento mascarado',
     );
 
     await esperarFalhaTest067(

@@ -318,6 +318,12 @@ function validarUrlDrive(url) {
   return /^https?:\/\//i.test(limpa) ? limpa : null;
 }
 
+function validarUrlDocumentoContrato(url) {
+  if (typeof url !== 'string') return null;
+  const limpa = url.trim();
+  return /^https:\/\/(drive|docs)\.google\.com\//i.test(limpa) ? limpa : null;
+}
+
 /**
  * Página individual do centro de custo (`#/projeto/<id>[/<aba>]`).
  */
@@ -666,7 +672,20 @@ export function Projeto({
       : {};
   const termoFimContrato = termosMapa.vigencia_fim || null;
   const dataFimContrato = dataDoTermo(termoFimContrato?.valor);
+  const dataInicioContrato = dataDoTermo(termosMapa.vigencia_inicio?.valor);
+  const dataInicioCadastro = dataDoTermo(termosDados?.start_date_cadastro);
   const vigenciaConfere = termosDados ? termosDados.vigencia_confere : null;
+  const inicioContratoMuda =
+    Boolean(dataInicioContrato) && dataInicioContrato !== dataInicioCadastro;
+  const vigenciaSituacao =
+    termosDados?.vigencia_situacao ||
+    (!dataFimContrato
+      ? 'sem_contrato'
+      : !endDate
+        ? 'sem_cadastro'
+        : vigenciaConfere === true
+          ? 'confere'
+          : 'diverge');
   const termosIndisponiveis = Boolean(termosSt.erro);
 
   const taxasContrato = ROTULOS_TAXA_CONTRATO
@@ -711,7 +730,17 @@ export function Projeto({
   );
 
   let contextoVigencia = null;
-  if (endDate) {
+  if (dataFimContrato && vigenciaSituacao === 'sem_cadastro') {
+    contextoVigencia = (
+      <>
+        Vigência do contrato:{' '}
+        <button type="button" class="projeto__link-contrato" onClick={abrirPainelContrato}>
+          {dataCompleta(dataFimContrato)}
+        </button>{' '}
+        · não está no cadastro
+      </>
+    );
+  } else if (endDate) {
     const textoMeses =
       meses === null
         ? null
@@ -721,7 +750,7 @@ export function Projeto({
             ? 'falta 1 mês'
             : `faltam ${meses} meses`;
 
-    if (dataFimContrato && vigenciaConfere === true) {
+    if (dataFimContrato && vigenciaSituacao === 'confere') {
       contextoVigencia = (
         <>
           Vigência até{' '}
@@ -732,7 +761,7 @@ export function Projeto({
           <span class="projeto__selo-contrato">do contrato</span>
         </>
       );
-    } else if (dataFimContrato && vigenciaConfere === false) {
+    } else if (dataFimContrato && vigenciaSituacao === 'diverge') {
       contextoVigencia = (
         <>
           Vigência até <Valor valor={endDate} tipo="data-completa" />
@@ -857,6 +886,7 @@ export function Projeto({
     setConfirmacaoContrato(false);
     await carregarTermos();
     await carregarSaldo();
+    await carregarExplicar();
     if (onRecarregarResumo) {
       try {
         await onRecarregarResumo();
@@ -1749,7 +1779,7 @@ export function Projeto({
         ? ' · conferido'
         : '';
     const registroTexto = `Registrado por ${termo.autor}${termo.origem === 'ia' ? ' (IA)' : ''} em ${dataCompleta(termo.criado_em)}${conferidoTexto}`;
-    const url = validarUrlDrive(termo.documento_url);
+    const url = validarUrlDocumentoContrato(termo.documento_url);
     const emConfirmacao = confirmacaoContrato && chave === 'vigencia_fim';
 
     return (
@@ -1810,26 +1840,38 @@ export function Projeto({
                 Marcar como conferido
               </Botao>
             )}
-            {chave === 'vigencia_fim' && vigenciaConfere === false && !emConfirmacao && (
-              <Botao
-                variante="secundario"
-                tamanho="compacto"
-                onClick={() => {
-                  setErroTermo(null);
-                  setConfirmacaoContrato(true);
-                }}
-              >
-                Usar a data do contrato
-              </Botao>
-            )}
+            {chave === 'vigencia_fim' &&
+              (vigenciaSituacao === 'diverge' || vigenciaSituacao === 'sem_cadastro') &&
+              !emConfirmacao && (
+                <Botao
+                  variante="secundario"
+                  tamanho="compacto"
+                  onClick={() => {
+                    setErroTermo(null);
+                    setConfirmacaoContrato(true);
+                  }}
+                >
+                  Usar a data do contrato
+                </Botao>
+              )}
           </div>
         )}
 
         {isAdmin && emConfirmacao && (
           <div class="projeto__confirmacao-contrato">
             <p class="projeto__pendencia-pergunta">
-              Usar a data do contrato? A vigência deste centro passa de{' '}
-              <strong>{endDate ? dataCompleta(endDate) : 'sem data'}</strong> para{' '}
+              Usar a data do contrato?{' '}
+              {inicioContratoMuda ? (
+                <>
+                  Início:{' '}
+                  <strong>{dataInicioCadastro ? dataCompleta(dataInicioCadastro) : 'sem data'}</strong>
+                  {' → '}
+                  <strong>{dataCompleta(dataInicioContrato)}</strong>.{' '}
+                </>
+              ) : null}
+              Fim:{' '}
+              <strong>{endDate ? dataCompleta(endDate) : 'sem data'}</strong>
+              {' → '}
               <strong>{dataCompleta(termo.valor)}</strong>.
             </p>
             <div class="projeto__acoes-contrato">

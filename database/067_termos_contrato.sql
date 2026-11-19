@@ -18,10 +18,10 @@
 --      antes/depois devolvido. `get_saldo_livre` e as árvores não
 --      mudam nesta migração.
 --   3. `trecho` é o texto do contrato que sustenta o valor. CPF é
---      barrado por CHECK com `public.contem_cpf` (só chamada; a
---      função não é alterada) e por pré-checagem na RPC. O CHECK
---      roda como dono da função definer, nunca como `authenticated`
---      (a tabela não tem INSERT direto para ninguém).
+--      barrado pela regra única `_tem_cpf` (065) na RPC definer e
+--      pelo gatilho definer `trg_termos_sem_cpf` (molde da 063),
+--      que roda como dono e não depende de EXECUTE do papel que
+--      insere. Nenhum CHECK chama helper de CPF (frágil por ACL).
 --   4. `nota` é análise/comentário livre; só o admin humano a lê
 --      pela RPC. Professor e agente recebem `null`.
 --   5. Nada de linha nova com `now()`/`gen_random_uuid()`: esta
@@ -133,29 +133,33 @@ alter table public.termos_contrato
   add constraint termos_contrato_regra_check
   check (regra is null or (btrim(regra) <> '' and char_length(regra) <= 300));
 
--- O trecho é obrigatório, não pode ser só espaço e não pode conter
--- CPF. `contem_cpf` é chamada, nunca recriada/alterada aqui.
+-- O trecho é obrigatório e não pode ser só espaço; o CPF é barrado
+-- pelo gatilho `trg_termos_sem_cpf` (não por CHECK com `_tem_cpf`,
+-- que exigiria EXECUTE do papel que insere).
 alter table public.termos_contrato drop constraint if exists termos_contrato_trecho_check;
 alter table public.termos_contrato
   add constraint termos_contrato_trecho_check
   check (
     btrim(trecho) <> ''
     and char_length(trecho) <= 600
-    and not public.contem_cpf(trecho)
   );
 
 alter table public.termos_contrato drop constraint if exists termos_contrato_documento_nome_check;
 alter table public.termos_contrato
   add constraint termos_contrato_documento_nome_check
-  check (btrim(documento_nome) <> '');
+  check (btrim(documento_nome) <> '' and char_length(documento_nome) <= 300);
 
--- Só links do Drive/Docs (o documento de origem mora lá).
+-- Só links do Drive/Docs (o documento de origem mora lá), com limite
+-- de tamanho para não guardar lixo.
 alter table public.termos_contrato drop constraint if exists termos_contrato_documento_url_check;
 alter table public.termos_contrato
   add constraint termos_contrato_documento_url_check
   check (
     documento_url is null
-    or documento_url ~ '^https://(drive|docs)\.google\.com/'
+    or (
+      char_length(documento_url) <= 2000
+      and documento_url ~ '^https://(drive|docs)\.google\.com/'
+    )
   );
 
 -- A fonte é um arquivo do Drive/Docs OU um documento do próprio sistema
@@ -226,20 +230,43 @@ revoke all on public.termos_contrato from public, anon, authenticated;
 -- Nenhum acesso direto à tabela: `nota` é análise interna e vazaria
 -- por `GET /rest/v1/termos_contrato?select=nota` se `authenticated`
 -- tivesse SELECT. A leitura é só pela `get_termos_contrato_v2`
--- (definer). A policy de SELECT continua existindo como defesa em
--- profundidade caso alguém conceda o privilégio no futuro.
-drop policy if exists termos_contrato_select_escopo on public.termos_contrato;
-create policy termos_contrato_select_escopo on public.termos_contrato
-  for select to authenticated
-  using (
-    public.is_admin()
-    or (project_id is not null and project_id = any(public.allowed_project_ids()))
-  );
+-- (definer). Sem policy e sem grant, o RLS fica em default deny: se
+-- alguém conceder SELECT no futuro, a tabela continua fechada.
 
 drop trigger if exists trg_bloqueia_agente on public.termos_contrato;
 create trigger trg_bloqueia_agente
   before insert or update or delete on public.termos_contrato
   for each statement execute function public.bloqueia_escrita_do_agente();
+
+-- CPF: a regra é a `_tem_cpf` (065), não a `contem_cpf` (052), que
+-- deixa passar espaço/hífen/barra. O gatilho é definer, no molde do
+-- `_pendencias_sem_cpf()` da 063: CHECK com helper sem EXECUTE para
+-- `authenticated` falharia por permissão em vez de 23514; o gatilho
+-- roda com o dono e vale para INSERT/UPDATE, inclusive INSERT do dono.
+create or replace function public._termos_sem_cpf()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if public._tem_cpf(
+    concat_ws(' ', new.trecho, new.regra, new.nota, new.documento_nome,
+              new.documento_url, new.autor)
+  ) then
+    raise exception 'Termo do contrato contém CPF e não pode ser gravado.'
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public._termos_sem_cpf() from public, anon, authenticated;
+
+drop trigger if exists trg_termos_sem_cpf on public.termos_contrato;
+create trigger trg_termos_sem_cpf
+  before insert or update on public.termos_contrato
+  for each row execute function public._termos_sem_cpf();
 
 -- ------------------------------------------------------------
 -- 2. RPCs
@@ -255,6 +282,7 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
+  v_start    date;
   v_end      date;
   v_fim      date;
   v_admin    boolean := public.is_admin() and not public.is_agente();
@@ -266,7 +294,8 @@ begin
 
   perform public.assert_project_allowed(p_project_id);
 
-  select p.end_date into v_end
+  select p.start_date, p.end_date
+    into v_start, v_end
     from public.projects p
    where p.id = p_project_id;
 
@@ -291,20 +320,28 @@ begin
           'documento_url',      t.documento_url,
           'documento_id',       t.documento_id,
           'documento',          case
-                                  when t.documento_id is null
-                                       or public.is_agente()
-                                       or v.bucket is null then null
+                                  when t.documento_id is null or v.bucket is null then null
                                   else jsonb_build_object(
                                     'id',           d.id,
-                                    'titulo',       d.titulo,
+                                    'titulo',       case when v_admin then d.titulo
+                                                         else public._mascarar_cpf(d.titulo) end,
                                     'tipo',         d.tipo,
                                     'bucket',       v.bucket,
-                                    'caminho',      v.caminho,
-                                    'arquivo_nome', v.arquivo_nome,
+                                    'caminho',      case when v_admin
+                                                              or not public._tem_cpf(v.caminho)
+                                                         then v.caminho else null end,
+                                    'arquivo_nome', case when v_admin then v.arquivo_nome
+                                                         else public._mascarar_cpf(v.arquivo_nome) end,
                                     'formato',      v.formato,
                                     'versao',       v.versao,
                                     'registrado_em', v.registrado_em
                                   )
+                                  || case
+                                       when not v_admin and public._tem_cpf(v.caminho)
+                                       then jsonb_build_object(
+                                         'nota', 'arquivo com nome que parece CPF: peça ao admin')
+                                       else '{}'::jsonb
+                                     end
                                 end,
           'pagina',             t.pagina,
           'nota',               case when v_admin then t.nota else null end,
@@ -356,18 +393,25 @@ begin
   v_fim := nullif((v_termos -> 'vigencia_fim' ->> 'valor'), '')::date;
 
   return jsonb_build_object(
-    'termos',            v_termos,
-    'end_date_cadastro', v_end,
-    'vigencia_confere',  case
-                           when v_fim is null or v_end is null then null
-                           else (v_fim = v_end)
-                         end
+    'termos',             v_termos,
+    'start_date_cadastro', v_start,
+    'end_date_cadastro',  v_end,
+    'vigencia_situacao',  case
+                            when v_fim is null then 'sem_contrato'
+                            when v_end is null then 'sem_cadastro'
+                            when v_fim = v_end then 'confere'
+                            else 'diverge'
+                          end,
+    'vigencia_confere',   case
+                            when v_fim is null or v_end is null then null
+                            else (v_fim = v_end)
+                          end
   );
 end;
 $$;
 
 comment on function public.get_termos_contrato_v2(uuid) is
-  'Lê o registro vigente de cada termo do contrato (mais recente por termo) e diz se a vigência final confere com projects.end_date. `nota` só para admin humano (mig. 067).';
+  'Lê o registro vigente de cada termo do contrato (mais recente por termo), o start/end_date do cadastro e vigencia_situacao (confere/diverge/sem_cadastro/sem_contrato). `nota` só para admin humano; metadados de documento mascarados para não-admin (mig. 067).';
 
 revoke all on function public.get_termos_contrato_v2(uuid) from public, anon;
 grant execute on function public.get_termos_contrato_v2(uuid) to authenticated;
@@ -388,6 +432,7 @@ declare
   v_termo            text;
   v_valor_data_txt   text;
   v_valor_data       date;
+  v_valor_pct_num    numeric;
   v_valor_pct        numeric(6,3);
   v_pagina_num       numeric;
   v_regra            text;
@@ -473,10 +518,15 @@ begin
     if jsonb_typeof(p -> 'valor_pct') is distinct from 'number' then
       raise exception 'Campo valor_pct é obrigatório para termos de taxa.' using errcode = '22023';
     end if;
-    v_valor_pct := round((p ->> 'valor_pct')::numeric, 3);
-    if v_valor_pct < 0 or v_valor_pct > 100 then
-      raise exception 'Campo valor_pct deve estar entre 0 e 100.' using errcode = '22023';
+    v_valor_pct_num := (p ->> 'valor_pct')::numeric;
+    if v_valor_pct_num is null
+       or v_valor_pct_num = 'NaN'::numeric
+       or v_valor_pct_num in ('Infinity'::numeric, '-Infinity'::numeric)
+       or v_valor_pct_num < 0
+       or v_valor_pct_num > 100 then
+      raise exception 'Campo valor_pct deve ser um número entre 0 e 100.' using errcode = '22023';
     end if;
+    v_valor_pct := round(v_valor_pct_num, 3)::numeric(6,3);
 
     if p ? 'valor_data' and jsonb_typeof(p -> 'valor_data') <> 'null' then
       raise exception 'Termo de taxa não aceita valor_data.' using errcode = '22023';
@@ -500,8 +550,9 @@ begin
   end if;
 
   if jsonb_typeof(p -> 'documento_nome') is distinct from 'string'
-     or btrim(p ->> 'documento_nome') = '' then
-    raise exception 'Campo documento_nome é obrigatório.' using errcode = '22023';
+     or btrim(p ->> 'documento_nome') = ''
+     or char_length(btrim(p ->> 'documento_nome')) > 300 then
+    raise exception 'Campo documento_nome deve ter de 1 a 300 caracteres.' using errcode = '22023';
   end if;
   v_doc_nome := btrim(p ->> 'documento_nome');
 
@@ -510,8 +561,11 @@ begin
   end if;
   v_doc_url := nullif(btrim(p ->> 'documento_url'), '');
   if v_doc_url is not null
-     and v_doc_url !~ '^https://(drive|docs)\.google\.com/' then
-    raise exception 'Campo documento_url deve apontar para drive.google.com ou docs.google.com.' using errcode = '22023';
+     and (
+       char_length(v_doc_url) > 2000
+       or v_doc_url !~ '^https://(drive|docs)\.google\.com/'
+     ) then
+    raise exception 'Campo documento_url deve apontar para drive.google.com ou docs.google.com (até 2000 caracteres).' using errcode = '22023';
   end if;
 
   if p ? 'documento_id' and jsonb_typeof(p -> 'documento_id') not in ('string', 'null') then
@@ -547,8 +601,10 @@ begin
   end if;
   if jsonb_typeof(p -> 'pagina') = 'number' then
     v_pagina_num := (p ->> 'pagina')::numeric;
-    if v_pagina_num <> trunc(v_pagina_num) or v_pagina_num < 1 then
-      raise exception 'Campo pagina deve ser um inteiro maior ou igual a 1.' using errcode = '22023';
+    if v_pagina_num <> trunc(v_pagina_num)
+       or v_pagina_num < 1
+       or v_pagina_num > 2147483647 then
+      raise exception 'Campo pagina deve ser um inteiro entre 1 e 2147483647.' using errcode = '22023';
     end if;
     v_pagina := v_pagina_num::integer;
   end if;
@@ -577,12 +633,10 @@ begin
     raise exception 'Campo autor deve ter de 1 a 60 caracteres.' using errcode = '22023';
   end if;
 
-  -- Pré-checagem: o CHECK da tabela cobre o trecho; aqui os demais
-  -- textos também são barrados antes de chegar ao banco.
-  if public.contem_cpf(
-       coalesce(v_trecho, '') || ' ' || coalesce(v_regra, '') || ' ' ||
-       coalesce(v_nota, '') || ' ' || coalesce(v_doc_nome, '') || ' ' ||
-       coalesce(v_doc_url, '') || ' ' || coalesce(v_autor, '')
+  -- Pré-checagem com a regra única da 065 (espaço/hífen/barra/quebra
+  -- de linha). O gatilho `trg_termos_sem_cpf` repete no nível do dado.
+  if public._tem_cpf(
+       concat_ws(' ', v_trecho, v_regra, v_nota, v_doc_nome, v_doc_url, v_autor)
      ) then
     raise exception 'Termo do contrato contém sequência no formato de CPF e não pode ser gravado.'
       using errcode = '22023';
@@ -606,7 +660,9 @@ begin
      and v_ultimo.documento_url is not distinct from v_doc_url
      and v_ultimo.documento_id is not distinct from v_doc_id
      and v_ultimo.pagina is not distinct from v_pagina
-     and v_ultimo.nota is not distinct from v_nota then
+     and v_ultimo.nota is not distinct from v_nota
+     and v_ultimo.origem is not distinct from v_origem
+     and v_ultimo.autor is not distinct from v_autor then
     return jsonb_build_object(
       'id',     v_ultimo.id,
       'termo',  v_ultimo.termo,
@@ -757,15 +813,30 @@ begin
    order by t.criado_em desc, t.id desc
    limit 1;
 
+  v_inicio := coalesce(v_inicio, v_project.start_date);
+
   v_antes  := jsonb_build_object(
     'start_date', v_project.start_date,
     'end_date',   v_project.end_date
   );
+
+  -- Nada a fazer: não dispara o gatilho de updated_at nem solta o
+  -- `for update` com uma escrita que não muda nada.
+  if v_project.end_date is not distinct from v_fim
+     and v_project.start_date is not distinct from v_inicio then
+    return jsonb_build_object(
+      'project_id', p_project_id,
+      'antes',      v_antes,
+      'depois',     v_antes,
+      'mudou',      false
+    );
+  end if;
+
   v_active := v_project.active;
 
   update public.projects
      set end_date   = v_fim,
-         start_date = coalesce(v_inicio, start_date)
+         start_date = v_inicio
    where id = p_project_id;
 
   -- O gatilho da 020 reativa projeto inativo quando end_date vira
@@ -812,33 +883,19 @@ declare
   v_fn   oid;
   v_sig  text;
   v_cols text;
+  v_con  text;
+  v_def  text;
+  v_def_got text;
 begin
   if not (select relrowsecurity from pg_class where oid = v_tab) then
     raise exception '067: RLS desligado em termos_contrato';
   end if;
 
-  if (select count(*) from pg_policies
-       where schemaname = 'public' and tablename = 'termos_contrato') <> 1 then
-    raise exception '067: esperada exatamente 1 policy em termos_contrato';
-  end if;
-
-  if not exists (
-    select 1 from pg_policies
-     where schemaname = 'public' and tablename = 'termos_contrato'
-       and policyname = 'termos_contrato_select_escopo'
-       and cmd = 'SELECT'
-       and coalesce(qual, '') ~ 'is_admin'
-       and coalesce(qual, '') ~ 'allowed_project_ids'
-  ) then
-    raise exception '067: policy termos_contrato_select_escopo ausente ou sem escopo';
-  end if;
-
   if exists (
     select 1 from pg_policies
      where schemaname = 'public' and tablename = 'termos_contrato'
-       and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
   ) then
-    raise exception '067: termos_contrato possui policy de escrita';
+    raise exception '067: termos_contrato não deve ter policy; a ACL é a barreira';
   end if;
 
   if not exists (
@@ -857,6 +914,20 @@ begin
   end if;
 
   if not exists (
+    select 1 from pg_trigger t
+     where t.tgrelid = v_tab
+       and t.tgname = 'trg_termos_sem_cpf'
+       and not t.tgisinternal
+       and t.tgenabled = 'O'
+       and (t.tgtype & 1) <> 0        -- row-level
+       and (t.tgtype & 2) <> 0        -- BEFORE
+       and (t.tgtype & (4|16)) = (4|16) -- INSERT | UPDATE
+       and t.tgfoid = 'public._termos_sem_cpf()'::regprocedure
+  ) then
+    raise exception '067: trg_termos_sem_cpf ausente ou incorreto em termos_contrato';
+  end if;
+
+  if not exists (
     select 1 from pg_constraint
      where conrelid = v_tab and contype = 'f'
        and conname = 'termos_contrato_project_id_fkey' and confdeltype = 'c'
@@ -872,39 +943,53 @@ begin
     raise exception '067: termos_contrato_documento_id_fkey ausente ou sem ON DELETE RESTRICT';
   end if;
 
-  if not exists (
+  -- Nenhum CHECK pode chamar helper de CPF: a regra é o gatilho definer.
+  if exists (
     select 1 from pg_constraint
      where conrelid = v_tab and contype = 'c'
-       and conname = 'termos_contrato_termo_check'
-       and pg_get_constraintdef(oid) ~ 'taxa_total'
+       and pg_get_constraintdef(oid) ~* '(contem_cpf|_tem_cpf)'
   ) then
-    raise exception '067: CHECK do termo sem taxa_total';
+    raise exception '067: CHECK em termos_contrato não pode chamar helper de CPF';
   end if;
 
-  if not exists (
-    select 1 from pg_constraint
-     where conrelid = v_tab and contype = 'c'
-       and conname = 'termos_contrato_documento_fonte_check'
-  ) then
-    raise exception '067: CHECK de documento_url/documento_id ausente';
-  end if;
+  -- Definição normalizada de cada CHECK (não só o nome), como a 064.
+  for v_con, v_def in
+    select * from (values
+      ('termos_contrato_autor_check',
+       $def$checkbtrimautor<>''::textandchar_lengthautor<=60$def$),
+      ('termos_contrato_conferido_check',
+       $def$checkconferido_porisnullorconferido_emisnotnull$def$),
+      ('termos_contrato_documento_fonte_check',
+       $def$checkdocumento_urlisnotnullordocumento_idisnotnull$def$),
+      ('termos_contrato_documento_nome_check',
+       $def$checkbtrimdocumento_nome<>''::textandchar_lengthdocumento_nome<=300$def$),
+      ('termos_contrato_documento_url_check',
+       $def$checkdocumento_urlisnullorchar_lengthdocumento_url<=2000anddocumento_url~'^https://drive|docs\.google\.com/'::text$def$),
+      ('termos_contrato_nota_check',
+       $def$checknotaisnullorbtrimnota<>''::textandchar_lengthnota<=2000$def$),
+      ('termos_contrato_origem_check',
+       $def$checkorigem=anyarray['ia'::text,'pessoa'::text]$def$),
+      ('termos_contrato_pagina_check',
+       $def$checkpaginaisnullorpagina>=1$def$),
+      ('termos_contrato_regra_check',
+       $def$checkregraisnullorbtrimregra<>''::textandchar_lengthregra<=300$def$),
+      ('termos_contrato_termo_check',
+       $def$checktermo=anyarray['vigencia_inicio'::text,'vigencia_fim'::text,'taxa_total'::text,'taxa_cip_ufg'::text,'taxa_cip_ua'::text,'taxa_dao'::text]$def$),
+      ('termos_contrato_trecho_check',
+       $def$checkbtrimtrecho<>''::textandchar_lengthtrecho<=600$def$),
+      ('termos_contrato_valor_check',
+       $def$checktermo=anyarray['vigencia_inicio'::text,'vigencia_fim'::text]andvalor_dataisnotnullandvalor_pctisnullortermo=anyarray['taxa_total'::text,'taxa_cip_ufg'::text,'taxa_cip_ua'::text,'taxa_dao'::text]andvalor_pctisnotnullandvalor_pct>=0::numericandvalor_pct<=100::numericandvalor_dataisnull$def$)
+    ) as x(con, def)
+  loop
+    select replace(regexp_replace(lower(pg_get_constraintdef(oid)), '[\s()]', '', 'g'), 'public.', '')
+      into v_def_got
+      from pg_constraint
+     where conrelid = v_tab and contype = 'c' and conname = v_con;
 
-  if not exists (
-    select 1 from pg_constraint
-     where conrelid = v_tab and contype = 'c'
-       and conname = 'termos_contrato_trecho_check'
-       and pg_get_constraintdef(oid) ~ 'contem_cpf'
-  ) then
-    raise exception '067: CHECK do trecho sem contem_cpf';
-  end if;
-
-  if not exists (
-    select 1 from pg_constraint
-     where conrelid = v_tab and contype = 'c'
-       and conname = 'termos_contrato_valor_check'
-  ) then
-    raise exception '067: CHECK de valor_data/valor_pct ausente';
-  end if;
+    if v_def_got is distinct from v_def then
+      raise exception '067: CHECK % inesperado: %', v_con, coalesce(v_def_got, '<ausente>');
+    end if;
+  end loop;
 
   if exists (
     select 1 from pg_constraint
@@ -992,6 +1077,28 @@ begin
       raise exception '067: ACL incorreta em %', v_sig;
     end if;
   end loop;
+
+  v_fn := 'public._termos_sem_cpf()'::regprocedure;
+  if not exists (
+    select 1 from pg_proc p
+     where p.oid = v_fn
+       and p.prosecdef
+       and p.proconfig = array['search_path=public, pg_temp']::text[]
+  ) then
+    raise exception '067: _termos_sem_cpf sem security definer ou search_path exato';
+  end if;
+  if has_function_privilege('anon', v_fn, 'EXECUTE')
+     or has_function_privilege('authenticated', v_fn, 'EXECUTE')
+     or exists (
+       select 1
+         from pg_proc p
+        cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+        where p.oid = v_fn
+          and a.grantee = 0
+          and a.privilege_type = 'EXECUTE'
+     ) then
+    raise exception '067: ACL incorreta em _termos_sem_cpf';
+  end if;
 
   if not exists (
     select 1 from pg_proc

@@ -277,7 +277,13 @@ function configurarPadrao({
   });
 
   termosContratoMock.mockResolvedValue({
-    dados: { termos: {}, end_date_cadastro: null, vigencia_confere: null },
+    dados: {
+      termos: {},
+      start_date_cadastro: null,
+      end_date_cadastro: null,
+      vigencia_situacao: 'sem_contrato',
+      vigencia_confere: null,
+    },
     erro: null,
   });
   conferirTermoContratoMock.mockResolvedValue({
