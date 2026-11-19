@@ -61,6 +61,7 @@ const ROTULOS_TIPO_PENDENCIA = {
 const ROTULOS_TERMO_CONTRATO = {
   vigencia_inicio: 'Início da vigência',
   vigencia_fim: 'Fim da vigência',
+  taxa_total: 'Taxa total do contrato',
   taxa_cip_ufg: 'Taxa CIP — UFG',
   taxa_cip_ua: 'Taxa CIP — unidade acadêmica',
   taxa_dao: 'Taxa DAO — fundação',
@@ -69,6 +70,7 @@ const ROTULOS_TERMO_CONTRATO = {
 const ORDEM_TERMOS_CONTRATO = [
   'vigencia_inicio',
   'vigencia_fim',
+  'taxa_total',
   'taxa_cip_ufg',
   'taxa_cip_ua',
   'taxa_dao',
@@ -675,12 +677,22 @@ export function Projeto({
     })
     .filter(Boolean);
   const somaTaxasMilesimos = taxasContrato.reduce((soma, t) => soma + t.milesimos, 0);
-  const textoTaxas =
+  const totalContratoMilesimos = milesimosDePct(termosMapa.taxa_total?.valor);
+  const divisaoTaxasTexto =
     taxasContrato.length > 0
-      ? `Taxas do contrato: ${textoPct(somaTaxasMilesimos)}% (${taxasContrato
+      ? `${textoPct(somaTaxasMilesimos)}% (${taxasContrato
           .map((t) => `${t.rotulo} ${textoPct(t.milesimos)}`)
           .join(' · ')})`
       : null;
+
+  let textoTaxas = null;
+  if (totalContratoMilesimos !== null && divisaoTaxasTexto) {
+    textoTaxas = `Taxas do contrato: ${textoPct(totalContratoMilesimos)}% no total · por rubrica: ${divisaoTaxasTexto}`;
+  } else if (totalContratoMilesimos !== null) {
+    textoTaxas = `Taxas do contrato: ${textoPct(totalContratoMilesimos)}% no total`;
+  } else if (divisaoTaxasTexto) {
+    textoTaxas = `Taxas do contrato: ${divisaoTaxasTexto}`;
+  }
   const contextoTaxas = textoTaxas ? (
     <button type="button" class="projeto__link-contrato" onClick={abrirPainelContrato}>
       {textoTaxas}
@@ -1116,6 +1128,27 @@ export function Projeto({
         : null,
     })),
   ].sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+
+  const abrirDocumentoDoTermo = (termo) => {
+    const documento = termo?.documento;
+    if (!documento || !documento.bucket || !documento.caminho) return;
+    setDocAbaSt({
+      carregandoId: null,
+      erro: null,
+      nota: null,
+      refPendente: null,
+      doc: {
+        titulo: termo.documento_nome || documento.arquivo_nome || 'Documento do contrato',
+        documento,
+        tipoOrigem: 'documento',
+        fato: null,
+        busca: null,
+        nota: null,
+        valor: null,
+        parte: termo.documento_nome || '',
+      },
+    });
+  };
 
   const abrirDocumentoDaAba = async (docItem) => {
     if (!docItem?.ref) {
@@ -1743,6 +1776,15 @@ export function Projeto({
                 <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
               </a>
             )}
+            {termo.documento_id && termo.documento?.bucket && termo.documento?.caminho ? (
+              <button
+                type="button"
+                class="projeto__link-documento"
+                onClick={() => abrirDocumentoDoTermo(termo)}
+              >
+                {termo.documento?.tipo === 'plano' ? 'Abrir o plano' : 'Abrir o documento'}
+              </button>
+            ) : null}
             {termo.pagina ? <span class="projeto__nota-discreta">p. {termo.pagina}</span> : null}
           </span>
         </div>

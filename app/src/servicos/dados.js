@@ -446,6 +446,43 @@ function validarTermoContrato(t) {
     return false;
   }
   if (
+    t.documento_id !== null &&
+    t.documento_id !== undefined &&
+    (typeof t.documento_id !== 'string' || !t.documento_id.trim())
+  ) {
+    return false;
+  }
+  if (
+    (t.documento_url === null || t.documento_url === undefined || !t.documento_url.trim()) &&
+    (t.documento_id === null || t.documento_id === undefined)
+  ) {
+    return false;
+  }
+  if (t.documento !== null && t.documento !== undefined) {
+    if (!ehObjetoSimples(t.documento)) return false;
+    if (
+      typeof t.documento.bucket !== 'string' ||
+      typeof t.documento.caminho !== 'string' ||
+      !t.documento.caminho.trim()
+    ) {
+      return false;
+    }
+    if (
+      t.documento.arquivo_nome !== null &&
+      t.documento.arquivo_nome !== undefined &&
+      typeof t.documento.arquivo_nome !== 'string'
+    ) {
+      return false;
+    }
+    if (
+      t.documento.formato !== null &&
+      t.documento.formato !== undefined &&
+      !['pdf', 'docx'].includes(t.documento.formato)
+    ) {
+      return false;
+    }
+  }
+  if (
     t.pagina !== null &&
     t.pagina !== undefined &&
     (!Number.isInteger(t.pagina) || t.pagina < 1)

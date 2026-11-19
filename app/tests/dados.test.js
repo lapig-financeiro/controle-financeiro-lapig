@@ -181,6 +181,52 @@ describe('camada de dados', () => {
     expect(invalido.dados).toBeNull();
     expect(invalido.erro).toContain('Não foi possível');
 
+    const comPlano = {
+      ...payload,
+      termos: {
+        taxa_total: {
+          ...termo,
+          documento_url: null,
+          documento_id: 'documento-plano-1',
+          documento: {
+            id: 'documento-plano-1',
+            titulo: 'Plano de trabalho',
+            tipo: 'plano',
+            bucket: 'plano-trabalho-docs',
+            caminho: 'p-1/plano.docx',
+            arquivo_nome: 'plano.docx',
+            formato: 'docx',
+            versao: 1,
+          },
+        },
+      },
+    };
+    expect(validarTermosContrato(comPlano)).toBe(true);
+    expect(
+      validarTermosContrato({
+        ...payload,
+        termos: { taxa_total: { ...termo, documento_url: null, documento_id: 'documento-plano-1' } },
+      })
+    ).toBe(true);
+    expect(
+      validarTermosContrato({
+        ...payload,
+        termos: { taxa_total: { ...termo, documento_url: null } },
+      })
+    ).toBe(false);
+    expect(
+      validarTermosContrato({
+        ...payload,
+        termos: {
+          taxa_total: {
+            ...termo,
+            documento_id: 'documento-plano-1',
+            documento: { bucket: 'plano-trabalho-docs' },
+          },
+        },
+      })
+    ).toBe(false);
+
     rpcMock.mockResolvedValueOnce({
       data: { id: 'termo-fim-1', conferido_em: '2026-11-18T17:00:00Z', ja_estava: false },
       error: null,
@@ -574,16 +620,22 @@ describe('camada de dados', () => {
     expect(confere.erro).toBeNull();
     expect(validarTermosContrato(confere.dados)).toBe(true);
     expect(confere.dados.vigencia_confere).toBe(true);
-    expect(Object.keys(confere.dados.termos)).toHaveLength(5);
-    expect(confere.dados.termos.taxa_cip_ufg.valor).toBe(8);
-    expect(confere.dados.termos.taxa_cip_ua.valor).toBe(8);
-    expect(confere.dados.termos.taxa_dao.valor).toBe(10);
+    expect(Object.keys(confere.dados.termos)).toHaveLength(3);
+    expect(confere.dados.termos.taxa_total.valor).toBe(12.5);
+    expect(confere.dados.termos.taxa_cip_ufg).toBeUndefined();
+    expect(confere.dados.termos.taxa_total.documento_id).toBe('documento-plano-30901-v2');
+    expect(confere.dados.termos.taxa_total.documento).toBeNull();
     expect(confere.dados.termos.vigencia_fim.nota).toBeNull();
 
     const diverge = await dadosExemplo.termosContrato(idPorCodigo.get('30.902'));
     expect(diverge.dados.vigencia_confere).toBe(false);
     expect(diverge.dados.termos.vigencia_fim.valor).toBe('2027-04-30');
     expect(diverge.dados.termos.vigencia_fim.nota).toContain('diferença');
+    expect(diverge.dados.termos.taxa_total.valor).toBe(16);
+    expect(diverge.dados.termos.taxa_cip_ufg.valor).toBe(8);
+    expect(diverge.dados.termos.taxa_cip_ua.valor).toBe(8);
+    expect(diverge.dados.termos.taxa_dao.valor).toBe(10);
+    expect(diverge.dados.termos.taxa_total.nota).toContain('16%');
 
     const semTermos = await dadosExemplo.termosContrato(idPorCodigo.get('30.903'));
     expect(semTermos.erro).toBeNull();
@@ -593,6 +645,10 @@ describe('camada de dados', () => {
     const comNota = await dadosExemplo.termosContrato(idPorCodigo.get('30.904'));
     expect(comNota.dados.vigencia_confere).toBe(true);
     expect(comNota.dados.termos.vigencia_fim.nota).toContain('aditivo');
+    expect(comNota.dados.termos.taxa_total).toBeUndefined();
+    expect(comNota.dados.termos.taxa_cip_ufg.valor).toBe(4);
+    expect(comNota.dados.termos.taxa_cip_ua.valor).toBe(4);
+    expect(comNota.dados.termos.taxa_dao.valor).toBe(5);
 
     const idFimAtlas = diverge.dados.termos.vigencia_fim.id;
     const conferido = await dadosExemplo.conferirTermoContrato(idFimAtlas);

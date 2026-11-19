@@ -98,6 +98,35 @@ const TERMO_FIM = {
   versoes_anteriores: [],
 };
 
+const TERMO_TOTAL = {
+  id: 'termo-total-1',
+  valor: 12.5,
+  regra: 'Project Overhead de 12,5% sobre o valor total do projeto',
+  trecho: 'ANEXO — Project Overhead: 12,5% do valor total do projeto.',
+  documento_nome: 'Plano de trabalho · 30.901 v2',
+  documento_url: null,
+  documento_id: 'documento-plano-30901-v2',
+  documento: {
+    id: 'documento-plano-30901-v2',
+    titulo: 'Plano de trabalho · 30.901 v2',
+    tipo: 'plano',
+    bucket: 'plano-trabalho-docs',
+    caminho: 'p-1/__EXEMPLO_CF__/plano-trabalho-30901-v2.docx',
+    arquivo_nome: 'plano-trabalho-30901-v2.docx',
+    formato: 'docx',
+    versao: 2,
+    registrado_em: '2026-11-18T15:05:00Z',
+  },
+  pagina: 8,
+  nota: null,
+  origem: 'ia',
+  autor: 'Claude',
+  criado_em: '2026-11-18T15:12:00Z',
+  conferido: false,
+  conferido_em: null,
+  versoes_anteriores: [],
+};
+
 const TAXAS = {
   taxa_cip_ufg: {
     id: 'termo-cip-ufg',
@@ -170,6 +199,31 @@ const TERMOS_DIVERGE = {
     },
     end_date_cadastro: '2027-03-31',
     vigencia_confere: false,
+  },
+  erro: null,
+};
+
+const TERMOS_SO_TOTAL = {
+  dados: {
+    termos: {
+      vigencia_fim: TERMO_FIM,
+      taxa_total: TERMO_TOTAL,
+    },
+    end_date_cadastro: '2027-08-31',
+    vigencia_confere: true,
+  },
+  erro: null,
+};
+
+const TERMOS_TOTAL_E_DIVISAO = {
+  dados: {
+    termos: {
+      vigencia_fim: TERMO_FIM,
+      taxa_total: { ...TERMO_TOTAL, valor: 16 },
+      ...TAXAS,
+    },
+    end_date_cadastro: '2027-08-31',
+    vigencia_confere: true,
   },
   erro: null,
 };
@@ -351,6 +405,26 @@ describe('termos do contrato no cabeçalho', () => {
     await tick();
     expect(document.querySelector('.painel-lateral__titulo').textContent).toBe('Do contrato');
   });
+
+  it('mostra só o total quando o contrato não divide a taxa por rubrica', async () => {
+    configurarBase({ termos: TERMOS_SO_TOTAL });
+    renderizar();
+    await tick();
+
+    expect(contexto().textContent).toContain('Taxas do contrato: 12,5% no total');
+    expect(contexto().textContent).not.toContain('por rubrica');
+  });
+
+  it('mostra total e divisão quando os dois existem e não corrige a diferença', async () => {
+    configurarBase({ termos: TERMOS_TOTAL_E_DIVISAO });
+    renderizar();
+    await tick();
+
+    expect(contexto().textContent).toContain('Taxas do contrato: 16% no total');
+    expect(contexto().textContent).toContain(
+      'por rubrica: 26% (UFG 8 · unidade 8 · fundação 10)'
+    );
+  });
 });
 
 describe('painel Do contrato', () => {
@@ -395,6 +469,24 @@ describe('painel Do contrato', () => {
 
     expect(conferirTermoContratoMock).toHaveBeenCalledWith(TERMO_FIM.id);
     expect(termosContratoMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('abre o plano do sistema no mesmo visualizador da aba Documentos', async () => {
+    configurarBase({ termos: TERMOS_SO_TOTAL });
+    renderizar({ isAdmin: true });
+    await tick();
+    botaoComTexto('31/08/2027').click();
+    await tick();
+
+    const abrirPlano = botaoComTexto('Abrir o plano');
+    expect(abrirPlano).toBeDefined();
+    abrirPlano.click();
+    await tick();
+
+    expect(arquivoDeOrigemMock).toHaveBeenCalledWith(TERMO_TOTAL.documento);
+    expect(document.querySelector('.documento__titulo').textContent).toBe(
+      'Plano de trabalho · 30.901 v2'
+    );
   });
 
   it('admin usa a data do contrato com confirmação antes → depois e recarrega resumo e saldo', async () => {

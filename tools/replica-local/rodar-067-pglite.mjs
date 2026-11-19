@@ -112,8 +112,12 @@ async function main() {
   }
 
   try {
-    console.log('1. Montando base real (025 + 026 + 051/052/054/053/056/062 + 038/048 + 063)...');
+    console.log('1. Montando base real (025 + 026 + 051/052/054/053/056/062 + 038/048 + 063 + 064/stub-064)...');
     await montarBase064(db, { quiet: true });
+    // A 067 referencia public.documentos (064) e o roteiro usa o plano
+    // sintético do 51.X como fonte de um termo.
+    await arquivo('database/064_rastreabilidade.sql');
+    await arquivo('tools/replica-local/sintetico/stub-064.sql');
     // A base 064 pára antes da 020 e não tem a coluna active em
     // scholarship_holders; para o teste de "não reativa o centro",
     // aplica só o gatilho de projetos da 020, que é o que a 067 usa.
@@ -123,7 +127,7 @@ async function main() {
     );
     if (!gatilho020) throw new Error('Não foi possível extrair o gatilho de projetos da 020.');
     await sql(gatilho020[0]);
-    console.log('  [BASE] gatilho auto_reactivate_project (020) aplicado.');
+    console.log('  [BASE] 064 + stub-064 + gatilho auto_reactivate_project (020) aplicados.');
 
     const helpersAntes = (await q(helpersQuery)).rows;
 
@@ -259,6 +263,33 @@ async function main() {
       'não pode reativar o centro inativo',
     );
 
+    await esperarFalhaTest067(
+      '6) termo sem taxa_total no CHECK da tabela',
+      async () => {
+        await sql(`
+          alter table public.termos_contrato drop constraint termos_contrato_termo_check;
+          alter table public.termos_contrato
+            add constraint termos_contrato_termo_check
+            check (termo in ('vigencia_inicio', 'vigencia_fim', 'taxa_cip_ufg', 'taxa_cip_ua', 'taxa_dao'));
+        `);
+      },
+      'termos_contrato_termo_check',
+    );
+
+    await esperarFalhaTest067(
+      '7) registrar_termo_contrato_v2 sem exigir documento_url/documento_id',
+      async () => {
+        const fn = extrairFuncao(texto067, 'registrar_termo_contrato_v2');
+        const alvo = `  if v_doc_url is null and v_doc_id is null then
+    raise exception 'Informe documento_url ou documento_id.' using errcode = '22023';
+  end if;`;
+        const mut = fn.replace(alvo, '');
+        if (mut === fn) throw new Error('Falha ao montar mutante 7.');
+        await sql(mut);
+      },
+      'termos_contrato_documento_fonte_check',
+    );
+
     console.log('8. Conferência final depois dos mutantes...');
     await arquivo(sql067);
     await rodarTeste(test067);
@@ -268,7 +299,7 @@ async function main() {
       throw new Error('Mutantes deixaram helper protegido alterado!');
     }
 
-    console.log('067 OK em PGlite: base real + test_067 falhando antes + test_067 + idempotência + barreira 051 + helpers intactos + 5 mutantes + roteiro final.');
+    console.log('067 OK em PGlite: base real + 064/stub-064 + test_067 falhando antes + test_067 + idempotência + barreira 051 + helpers intactos + 7 mutantes + roteiro final.');
   } catch (e) {
     console.error('ERRO:', e.message, e.detail || '', e.where || '');
     process.exitCode = 1;

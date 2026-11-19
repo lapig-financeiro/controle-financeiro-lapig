@@ -60,7 +60,8 @@ create or replace function pg_temp.corpo067(
   p_url        text default 'https://drive.google.com/file/d/stub-067/view',
   p_pagina     integer default 2,
   p_origem     text default 'ia',
-  p_autor      text default 'Claude'
+  p_autor      text default 'Claude',
+  p_doc_id     uuid default null
 ) returns jsonb
 language sql immutable as $$
   select jsonb_build_object(
@@ -72,6 +73,7 @@ language sql immutable as $$
     'trecho',         p_trecho,
     'documento_nome', p_doc,
     'documento_url',  p_url,
+    'documento_id',   p_doc_id,
     'pagina',         p_pagina,
     'nota',           p_nota,
     'origem',         p_origem,
@@ -86,12 +88,25 @@ begin;
 -- ------------------------------------------------------------
 do $$
 begin
+  if to_regclass('public.documentos') is null then
+    raise exception '067 FALHOU: base sem a 064 (tabela public.documentos ausente)' using errcode = '42P01';
+  end if;
+
   if to_regclass('public.termos_contrato') is null then
     raise exception '067 FALHOU: tabela public.termos_contrato ausente' using errcode = '42P01';
   end if;
 
   if (select count(*) from public.projects where code in ('51.X', '51.Y', '63.SB', '63.INAT', '64.EDGE')) <> 5 then
     raise exception '067 FALHOU: base 064 incompleta (faltam projetos 51.X/51.Y/63.SB/63.INAT/64.EDGE)';
+  end if;
+
+  if not exists (
+    select 1
+      from public.documentos d
+      join public.projects p on p.id = d.project_id
+     where p.code = '51.X' and d.tipo = 'plano'
+  ) then
+    raise exception '067 FALHOU: stub-064 sem documento de plano no 51.X';
   end if;
 end $$;
 
@@ -114,6 +129,27 @@ update public.projects
 update public.projects
    set start_date = '2025-01-01', end_date = '2027-12-31', active = true
  where code = '64.EDGE';
+
+select set_config(
+  'test067.doc_x',
+  (select d.id::text
+     from public.documentos d
+     join public.projects p on p.id = d.project_id
+    where p.code = '51.X' and d.tipo = 'plano'
+    order by d.criado_em desc
+    limit 1),
+  true
+);
+select set_config(
+  'test067.doc_y',
+  (select d.id::text
+     from public.documentos d
+     join public.projects p on p.id = d.project_id
+    where p.code = '51.Y' and d.tipo = 'balancete'
+    order by d.criado_em desc
+    limit 1),
+  true
+);
 
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
 set local role authenticated;
@@ -196,6 +232,36 @@ begin
   perform pg_temp.falha_com067(
     format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
       (pg_temp.corpo067(x, 'taxa_cip_ufg', '2027-08-31', 8, 'regra', 'trecho'))::text),
+    '22023'
+  );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      (pg_temp.corpo067(x, 'taxa_total', '2027-08-31', 12.5, 'regra', 'trecho'))::text),
+    '22023'
+  );
+
+  -- Fonte: pelo menos um entre documento_url e documento_id.
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'trecho',
+        p_url => null)::text),
+    '22023'
+  );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'trecho',
+        p_url => null, p_doc_id => current_setting('test067.doc_y')::uuid)::text),
+    '22023'
+  );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      pg_temp.corpo067(x, 'vigencia_fim', '2027-08-31', null, 'regra', 'trecho',
+        p_url => null, p_doc_id => gen_random_uuid())::text),
+    '22023'
+  );
+  perform pg_temp.falha_com067(
+    format($q$select public.registrar_termo_contrato_v2(%L::jsonb)$q$,
+      jsonb_set(base, '{documento_id}', '"nao-e-uuid"')::text),
     '22023'
   );
   perform pg_temp.falha_com067(
@@ -287,6 +353,13 @@ select pg_temp.falha_com067(
     (select id from public.projects where code = '51.X')::text),
   '23514'
 );
+select pg_temp.falha_com067(
+  format($q$insert into public.termos_contrato
+             (project_id, termo, valor_data, trecho, documento_nome, origem, autor)
+           values (%L::uuid, 'vigencia_fim', '2027-08-31', 'trecho', 'Contrato', 'pessoa', 'Teste')$q$,
+    (select id from public.projects where code = '51.X')::text),
+  '23514'
+);
 set local role authenticated;
 
 -- ------------------------------------------------------------
@@ -297,6 +370,7 @@ declare
   x       uuid := (select id from public.projects where code = '51.X');
   v_ini   jsonb;
   v_fim   jsonb;
+  v_total jsonb;
   v_t1    jsonb;
   v_t2    jsonb;
   v_t3    jsonb;
@@ -321,6 +395,14 @@ begin
       'CLÁUSULA SEGUNDA — a vigência é de 20 (vinte) meses, contados da data da última assinatura.',
       'O cadastro estava com a mesma data; a regra veio do contrato. Conferido com a coordenação.'));
 
+  -- Taxa total do financiador, com o plano de trabalho como fonte (064).
+  v_total := public.registrar_termo_contrato_v2(
+    pg_temp.corpo067(x, 'taxa_total', null, 12.5,
+      'percentual total de custos indiretos do financiador',
+      'ANEXO — Project Overhead: 12,5% do valor total do projeto.',
+      'O contrato fixa 12,5% no total; o plano divide 8+8+10=26%. A diferença está no plano e não é corrigida aqui.',
+      p_url => null, p_doc_id => current_setting('test067.doc_x')::uuid));
+
   v_t1 := public.registrar_termo_contrato_v2(
     pg_temp.corpo067(x, 'taxa_cip_ufg', null, 8,
       'percentual sobre o valor do projeto',
@@ -337,14 +419,15 @@ begin
   v_id_fim := (v_fim ->> 'id')::uuid;
 
   perform pg_temp.ok067((v_ini ->> 'criado')::boolean, 'vigencia_inicio deveria ser criada');
+  perform pg_temp.ok067((v_total ->> 'criado')::boolean, 'taxa_total deveria ser criada');
   perform pg_temp.ok067((v_t1 ->> 'criado')::boolean, 'taxa_cip_ufg deveria ser criada');
   perform pg_temp.ok067((v_t2 ->> 'criado')::boolean, 'taxa_cip_ua deveria ser criada');
   perform pg_temp.ok067((v_t3 ->> 'criado')::boolean, 'taxa_dao deveria ser criada');
 
   v_count := (select count(*) from public.termos_contrato where project_id = x);
-  perform pg_temp.ok067(v_count = 5, format('deveriam existir 5 registros no 51.X, há %s', v_count));
+  perform pg_temp.ok067(v_count = 6, format('deveriam existir 6 registros no 51.X, há %s', v_count));
   perform pg_temp.ok067(
-    (select count(*) from public.termos_contrato where project_id = x and criado_por = '00000000-0000-0000-0000-0000000000a1') = 5,
+    (select count(*) from public.termos_contrato where project_id = x and criado_por = '00000000-0000-0000-0000-0000000000a1') = 6,
     'criado_por deveria ser o admin que registrou'
   );
 
@@ -358,7 +441,7 @@ begin
   perform pg_temp.ok067(v_id_2 = v_id_fim, 'idempotência deveria devolver o mesmo id');
   perform pg_temp.ok067(not (v_novo ->> 'criado')::boolean, 'idempotência deveria devolver criado=false');
   v_count := (select count(*) from public.termos_contrato where project_id = x);
-  perform pg_temp.ok067(v_count = 5, format('idempotência não pode inserir (há %s registros)', v_count));
+  perform pg_temp.ok067(v_count = 6, format('idempotência não pode inserir (há %s registros)', v_count));
 
   -- Regra diferente = versão nova (o texto que explica a data mudou).
   v_novo := public.registrar_termo_contrato_v2(
@@ -370,7 +453,7 @@ begin
   perform pg_temp.ok067(v_id_3 <> v_id_fim, 'regra diferente deveria criar uma versão nova');
   perform pg_temp.ok067((v_novo ->> 'criado')::boolean, 'versão com regra nova deveria ser criada');
   v_count := (select count(*) from public.termos_contrato where project_id = x);
-  perform pg_temp.ok067(v_count = 6, format('deveriam existir 6 registros no 51.X, há %s', v_count));
+  perform pg_temp.ok067(v_count = 7, format('deveriam existir 7 registros no 51.X, há %s', v_count));
 
   -- Conferência: marca uma vez e não muda a data na segunda chamada.
   -- A versão vigente é a última (v_id_3), não a primeira.
@@ -423,7 +506,22 @@ begin
   perform pg_temp.ok067((t -> 'versoes_anteriores' -> 0 ->> 'valor') = '2027-08-31',
     'versão anterior deveria manter o valor');
 
+  -- Taxa total: 12,5%, fonte documento_id (plano), sem URL.
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' ->> 'valor')::numeric = 12.5,
+    'taxa_total deveria ser 12,5');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' ->> 'documento_id') = current_setting('test067.doc_x'),
+    'taxa_total deveria apontar para o documento do plano');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'bucket') = 'plano-trabalho-docs',
+    'metadado do documento deveria ter bucket de plano');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'caminho') is not null,
+    'metadado do documento deveria ter caminho');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'formato') = 'docx',
+    'metadado do documento deveria ter formato docx');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'versao')::integer >= 1,
+    'metadado do documento deveria ter versão');
+
   -- Taxas: 8 + 8 + 10 = 26 (soma só para exibir; nada arredondado aqui).
+  -- O total do contrato é 12,5: o banco devolve os dois números e não corrige.
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_cip_ufg' ->> 'valor')::numeric = 8, 'taxa_cip_ufg errada');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_cip_ua' ->> 'valor')::numeric = 8, 'taxa_cip_ua errada');
   perform pg_temp.ok067((r -> 'termos' -> 'taxa_dao' ->> 'valor')::numeric = 10, 'taxa_dao errada');
@@ -432,6 +530,14 @@ begin
     (r -> 'termos' -> 'taxa_cip_ua' ->> 'valor')::numeric +
     (r -> 'termos' -> 'taxa_dao' ->> 'valor')::numeric = 26,
     'soma das taxas deveria ser 26'
+  );
+  perform pg_temp.ok067(
+    (r -> 'termos' -> 'taxa_total' ->> 'valor')::numeric is distinct from (
+      (r -> 'termos' -> 'taxa_cip_ufg' ->> 'valor')::numeric +
+      (r -> 'termos' -> 'taxa_cip_ua' ->> 'valor')::numeric +
+      (r -> 'termos' -> 'taxa_dao' ->> 'valor')::numeric
+    ),
+    'o banco não pode corrigir a diferença entre total e divisão'
   );
 
   -- Professor do 51.X vê os termos, mas não a nota.
@@ -442,6 +548,8 @@ begin
   perform pg_temp.ok067((r -> 'termos' -> 'vigencia_fim' ->> 'valor') = '2027-08-31',
     'professor deveria ver o valor');
   perform pg_temp.ok067((r ->> 'vigencia_confere')::boolean, 'professor deveria ver vigencia_confere');
+  perform pg_temp.ok067((r -> 'termos' -> 'taxa_total' -> 'documento' ->> 'bucket') = 'plano-trabalho-docs',
+    'professor deveria ver o metadado do documento do plano');
 
   -- Professor de outro centro não atravessa o escopo.
   perform pg_temp.falha_com067(
@@ -456,11 +564,13 @@ begin
   r := public.get_termos_contrato_v2(x);
   perform pg_temp.ok067((r -> 'termos' -> 'vigencia_fim' ->> 'nota') is null,
     'agente não pode receber a nota');
+  perform pg_temp.ok067(r -> 'termos' -> 'taxa_total' -> 'documento' = 'null'::jsonb,
+    'agente não pode receber o caminho do documento do plano');
 
   -- Escopo direto na tabela: b1 (51.X) não vê o 51.Y; b2 (51.Y) não vê o 51.X.
   perform pg_temp.ok067(
-    (select count(*) from public.termos_contrato where project_id = x) = 6,
-    'professor do 51.X deveria ler as 6 linhas do próprio centro'
+    (select count(*) from public.termos_contrato where project_id = x) = 7,
+    'professor do 51.X deveria ler as 7 linhas do próprio centro'
   );
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b2', true);
   perform pg_temp.ok067(
@@ -586,7 +696,7 @@ declare
   total integer;
 begin
   total := (select count(*) from public.termos_contrato);
-  perform pg_temp.ok067(total = 9, format('admin deveria ver 9 linhas (6 do 51.X + 2 do 51.Y + 1 do 63.INAT), viu %s', total));
+  perform pg_temp.ok067(total = 10, format('admin deveria ver 10 linhas (7 do 51.X + 2 do 51.Y + 1 do 63.INAT), viu %s', total));
 end $$;
 
 reset role;

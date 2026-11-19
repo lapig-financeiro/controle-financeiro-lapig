@@ -27,6 +27,16 @@
 --   5. Nada de linha nova com `now()`/`gen_random_uuid()`: esta
 --      migração não insere dados.
 --
+-- 2ª rodada (19/11/2026):
+--   • `taxa_total` entra como termo de taxa: alguns financiadores
+--     fixam só o percentual total e a divisão UFG/unidade/fundação
+--     aparece só em reais no plano.
+--   • `documento_id` aponta para `public.documentos` (064) quando a
+--     fonte é o plano já importado. Pelo menos um entre
+--     `documento_url` e `documento_id` é obrigatório; a RPC `get`
+--     devolve o metadado da versão mais recente do documento para o
+--     painel abrir o mesmo visualizador da aba Documentos.
+--
 -- Conferência: tests/sql/test_067_termos_contrato.sql
 -- Executor:    tools/replica-local/rodar-067-pglite.mjs
 -- ============================================================
@@ -46,6 +56,7 @@ create table if not exists public.termos_contrato (
   trecho         text not null,
   documento_nome text not null,
   documento_url  text,
+  documento_id   uuid,
   pagina         integer,
   nota           text,
   origem         text not null,
@@ -67,6 +78,7 @@ alter table public.termos_contrato add column if not exists regra          text;
 alter table public.termos_contrato add column if not exists trecho         text;
 alter table public.termos_contrato add column if not exists documento_nome text;
 alter table public.termos_contrato add column if not exists documento_url  text;
+alter table public.termos_contrato add column if not exists documento_id   uuid;
 alter table public.termos_contrato add column if not exists pagina         integer;
 alter table public.termos_contrato add column if not exists nota           text;
 alter table public.termos_contrato add column if not exists origem         text;
@@ -94,7 +106,7 @@ alter table public.termos_contrato
 alter table public.termos_contrato drop constraint if exists termos_contrato_termo_check;
 alter table public.termos_contrato
   add constraint termos_contrato_termo_check
-  check (termo in ('vigencia_inicio', 'vigencia_fim', 'taxa_cip_ufg', 'taxa_cip_ua', 'taxa_dao'));
+  check (termo in ('vigencia_inicio', 'vigencia_fim', 'taxa_total', 'taxa_cip_ufg', 'taxa_cip_ua', 'taxa_dao'));
 
 -- Vigência só tem data; taxa só tem percentual entre 0 e 100.
 alter table public.termos_contrato drop constraint if exists termos_contrato_valor_check;
@@ -108,7 +120,7 @@ alter table public.termos_contrato
     )
     or
     (
-      termo in ('taxa_cip_ufg', 'taxa_cip_ua', 'taxa_dao')
+      termo in ('taxa_total', 'taxa_cip_ufg', 'taxa_cip_ua', 'taxa_dao')
       and valor_pct is not null
       and valor_pct >= 0
       and valor_pct <= 100
@@ -146,6 +158,18 @@ alter table public.termos_contrato
     or documento_url ~ '^https://(drive|docs)\.google\.com/'
   );
 
+-- A fonte é um arquivo do Drive/Docs OU um documento do próprio sistema
+-- (`documentos`, 064). Pelo menos um dos dois precisa existir.
+alter table public.termos_contrato drop constraint if exists termos_contrato_documento_fonte_check;
+alter table public.termos_contrato
+  add constraint termos_contrato_documento_fonte_check
+  check (documento_url is not null or documento_id is not null);
+
+alter table public.termos_contrato drop constraint if exists termos_contrato_documento_id_fkey;
+alter table public.termos_contrato
+  add constraint termos_contrato_documento_id_fkey
+  foreign key (documento_id) references public.documentos(id) on delete restrict;
+
 alter table public.termos_contrato drop constraint if exists termos_contrato_pagina_check;
 alter table public.termos_contrato
   add constraint termos_contrato_pagina_check
@@ -176,7 +200,9 @@ alter table public.termos_contrato
 comment on table public.termos_contrato is
   'Histórico só insert dos termos do contrato (vigência e taxas). O vigente é o mais recente por (project_id, termo); escrita só pelas RPCs v2 (mig. 067).';
 comment on column public.termos_contrato.termo is
-  'vigencia_inicio, vigencia_fim, taxa_cip_ufg, taxa_cip_ua ou taxa_dao (os códigos de taxa são os das rubricas da 066).';
+  'vigencia_inicio, vigencia_fim, taxa_total, taxa_cip_ufg, taxa_cip_ua ou taxa_dao (os códigos de taxa por rubrica são os das rubricas da 066).';
+comment on column public.termos_contrato.documento_id is
+  'Documento do próprio sistema (documentos, 064) de onde o valor saiu. Pelo menos um entre documento_url e documento_id (mig. 067).';
 comment on column public.termos_contrato.regra is
   'Como o valor foi obtido, ex.: "20 meses contados da última assinatura" (até 300 caracteres).';
 comment on column public.termos_contrato.trecho is
@@ -190,6 +216,9 @@ comment on column public.termos_contrato.conferido_em is
 
 create index if not exists idx_termos_contrato_project_termo
   on public.termos_contrato (project_id, termo, criado_em desc, id desc);
+
+create index if not exists idx_termos_contrato_documento
+  on public.termos_contrato (documento_id);
 
 alter table public.termos_contrato enable row level security;
 revoke all on public.termos_contrato from public, anon, authenticated;
@@ -256,6 +285,23 @@ begin
           'trecho',             t.trecho,
           'documento_nome',     t.documento_nome,
           'documento_url',      t.documento_url,
+          'documento_id',       t.documento_id,
+          'documento',          case
+                                  when t.documento_id is null
+                                       or public.is_agente()
+                                       or v.bucket is null then null
+                                  else jsonb_build_object(
+                                    'id',           d.id,
+                                    'titulo',       d.titulo,
+                                    'tipo',         d.tipo,
+                                    'bucket',       v.bucket,
+                                    'caminho',      v.caminho,
+                                    'arquivo_nome', v.arquivo_nome,
+                                    'formato',      v.formato,
+                                    'versao',       v.versao,
+                                    'registrado_em', v.registrado_em
+                                  )
+                                end,
           'pagina',             t.pagina,
           'nota',               case when v_admin then t.nota else null end,
           'origem',             t.origem,
@@ -289,6 +335,16 @@ begin
           )
         ) as obj
         from public.termos_contrato t
+        left join public.documentos d
+          on d.id = t.documento_id
+         and d.project_id = t.project_id
+        left join lateral (
+          select v.bucket, v.caminho, v.arquivo_nome, v.formato, v.versao, v.registrado_em
+            from public.documento_versoes v
+           where v.documento_id = d.id
+           order by v.registrado_em desc, v.versao desc
+           limit 1
+        ) v on true
        where t.project_id = p_project_id
        order by t.termo, t.criado_em desc, t.id desc
     ) x;
@@ -334,6 +390,8 @@ declare
   v_trecho           text;
   v_doc_nome         text;
   v_doc_url          text;
+  v_doc_id_txt       text;
+  v_doc_id           uuid;
   v_pagina           integer;
   v_nota             text;
   v_origem           text;
@@ -354,7 +412,7 @@ begin
     from jsonb_object_keys(p) as k
    where k not in (
      'project_id', 'termo', 'valor_data', 'valor_pct', 'regra', 'trecho',
-     'documento_nome', 'documento_url', 'pagina', 'nota', 'origem', 'autor'
+     'documento_nome', 'documento_url', 'documento_id', 'pagina', 'nota', 'origem', 'autor'
    );
 
   if v_chaves_invalidas is not null then
@@ -385,7 +443,7 @@ begin
   end if;
   v_termo := nullif(btrim(p ->> 'termo'), '');
   if v_termo is null or v_termo not in (
-    'vigencia_inicio', 'vigencia_fim', 'taxa_cip_ufg', 'taxa_cip_ua', 'taxa_dao'
+    'vigencia_inicio', 'vigencia_fim', 'taxa_total', 'taxa_cip_ufg', 'taxa_cip_ua', 'taxa_dao'
   ) then
     raise exception 'Termo inválido.' using errcode = '22023';
   end if;
@@ -452,6 +510,34 @@ begin
     raise exception 'Campo documento_url deve apontar para drive.google.com ou docs.google.com.' using errcode = '22023';
   end if;
 
+  if p ? 'documento_id' and jsonb_typeof(p -> 'documento_id') not in ('string', 'null') then
+    raise exception 'Campo documento_id deve ser UUID ou nulo.' using errcode = '22023';
+  end if;
+  if p ? 'documento_id' and jsonb_typeof(p -> 'documento_id') = 'string' then
+    v_doc_id_txt := nullif(btrim(p ->> 'documento_id'), '');
+    if v_doc_id_txt is not null then
+      if v_doc_id_txt !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        raise exception 'Campo documento_id inválido.' using errcode = '22023';
+      end if;
+      begin
+        v_doc_id := v_doc_id_txt::uuid;
+      exception when invalid_text_representation then
+        raise exception 'Campo documento_id inválido.' using errcode = '22023';
+      end;
+
+      if not exists (
+        select 1 from public.documentos d
+         where d.id = v_doc_id and d.project_id = v_project_id
+      ) then
+        raise exception 'Documento não encontrado neste centro.' using errcode = '22023';
+      end if;
+    end if;
+  end if;
+
+  if v_doc_url is null and v_doc_id is null then
+    raise exception 'Informe documento_url ou documento_id.' using errcode = '22023';
+  end if;
+
   if p ? 'pagina' and jsonb_typeof(p -> 'pagina') not in ('number', 'null') then
     raise exception 'Campo pagina deve ser um inteiro.' using errcode = '22023';
   end if;
@@ -514,6 +600,7 @@ begin
      and v_ultimo.trecho is not distinct from v_trecho
      and v_ultimo.documento_nome is not distinct from v_doc_nome
      and v_ultimo.documento_url is not distinct from v_doc_url
+     and v_ultimo.documento_id is not distinct from v_doc_id
      and v_ultimo.pagina is not distinct from v_pagina
      and v_ultimo.nota is not distinct from v_nota then
     return jsonb_build_object(
@@ -529,10 +616,11 @@ begin
   -- ordem do histórico para o id. O default da tabela continua `now()`.
   insert into public.termos_contrato (
     project_id, termo, valor_data, valor_pct, regra, trecho,
-    documento_nome, documento_url, pagina, nota, origem, autor, criado_em, criado_por
+    documento_nome, documento_url, documento_id, pagina, nota, origem, autor,
+    criado_em, criado_por
   ) values (
     v_project_id, v_termo, v_valor_data, v_valor_pct, v_regra, v_trecho,
-    v_doc_nome, v_doc_url, v_pagina, v_nota, v_origem, v_autor,
+    v_doc_nome, v_doc_url, v_doc_id, v_pagina, v_nota, v_origem, v_autor,
     clock_timestamp(), auth.uid()
   )
   returning id into v_id;
@@ -774,6 +862,31 @@ begin
 
   if not exists (
     select 1 from pg_constraint
+     where conrelid = v_tab and contype = 'f'
+       and conname = 'termos_contrato_documento_id_fkey' and confdeltype = 'r'
+  ) then
+    raise exception '067: termos_contrato_documento_id_fkey ausente ou sem ON DELETE RESTRICT';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = v_tab and contype = 'c'
+       and conname = 'termos_contrato_termo_check'
+       and pg_get_constraintdef(oid) ~ 'taxa_total'
+  ) then
+    raise exception '067: CHECK do termo sem taxa_total';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = v_tab and contype = 'c'
+       and conname = 'termos_contrato_documento_fonte_check'
+  ) then
+    raise exception '067: CHECK de documento_url/documento_id ausente';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
      where conrelid = v_tab and contype = 'c'
        and conname = 'termos_contrato_trecho_check'
        and pg_get_constraintdef(oid) ~ 'contem_cpf'
@@ -799,6 +912,7 @@ begin
          'termos_contrato_trecho_check',
          'termos_contrato_documento_nome_check',
          'termos_contrato_documento_url_check',
+         'termos_contrato_documento_fonte_check',
          'termos_contrato_pagina_check',
          'termos_contrato_nota_check',
          'termos_contrato_origem_check',
@@ -817,6 +931,14 @@ begin
     raise exception '067: índice idx_termos_contrato_project_termo ausente';
   end if;
 
+  if not exists (
+    select 1 from pg_indexes
+     where schemaname = 'public' and tablename = 'termos_contrato'
+       and indexname = 'idx_termos_contrato_documento'
+  ) then
+    raise exception '067: índice idx_termos_contrato_documento ausente';
+  end if;
+
   if has_table_privilege('anon', v_tab, 'SELECT,INSERT,UPDATE,DELETE') then
     raise exception '067: anon possui acesso a termos_contrato';
   end if;
@@ -829,7 +951,7 @@ begin
     into v_cols
     from pg_attribute a
    where a.attrelid = v_tab and a.attnum > 0 and not a.attisdropped;
-  if v_cols <> 'id:uuid, project_id:uuid, termo:text, valor_data:date, valor_pct:numeric(6,3), regra:text, trecho:text, documento_nome:text, documento_url:text, pagina:integer, nota:text, origem:text, autor:text, criado_em:timestamp with time zone, criado_por:uuid, conferido_em:timestamp with time zone, conferido_por:uuid' then
+  if v_cols <> 'id:uuid, project_id:uuid, termo:text, valor_data:date, valor_pct:numeric(6,3), regra:text, trecho:text, documento_nome:text, documento_url:text, documento_id:uuid, pagina:integer, nota:text, origem:text, autor:text, criado_em:timestamp with time zone, criado_por:uuid, conferido_em:timestamp with time zone, conferido_por:uuid' then
     raise exception '067: colunas/tipos inesperados em termos_contrato: %', v_cols;
   end if;
 

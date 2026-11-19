@@ -4,6 +4,10 @@ Branch: `redesenho/f3-a-termos` (worktree `C:/Users/amara/dev/cf-f2-e`). Commit 
 **Nada foi aplicado em produção**, nenhuma variável `CF_*` real foi usada, nenhuma outra IA foi chamada e o
 runner só tocou no PGlite em memória.
 
+> Este relatório foi escrito na 1ª rodada e atualizado na 2ª. As seções 1–6 são o retrato da 1ª rodada
+> (5 mutantes, 111 testes); a **seção 7** é a 2ª rodada (taxa total, fonte em `documentos`, 7 mutantes,
+> 114 testes).
+
 ## 1. Tamanho dos arquivos
 
 | Arquivo | Bytes | Linhas |
@@ -217,3 +221,105 @@ Os 5 testes pulados da raiz são os fixtures opcionais pré-existentes (`tests/f
 - Linha da 067 em `docs/migracoes.md` ("ainda não aplicada"): **ok**.
 - Relatório: este arquivo.
 - Commit inclui `docs/redesenho/tarefas/F3-A-termos-contrato.md`: **ok** (commit local, sem push).
+
+## 7. 2ª rodada — taxa total e fonte no próprio sistema (19/11/2026)
+
+O levantamento dos contratos mostrou dois casos que a 1ª rodada não cobria: financiador que fixa só o
+percentual total (a divisão UFG/unidade/fundação aparece só em reais no plano) e valor que sai de um plano já
+importado (em `documentos`, 064), não de um arquivo do Drive. Esta seção cobre o que mudou e os testes.
+
+### 7.1. Tamanho dos arquivos nesta rodada
+
+| Arquivo | Bytes | Linhas |
+|---|---:|---:|
+| `database/067_termos_contrato.sql` | **40.477** | 1.001 |
+| `tests/sql/test_067_termos_contrato.sql` | **30.944** | 703 |
+| `tools/replica-local/rodar-067-pglite.mjs` | **12.083** | 313 |
+| `app/src/paginas/Projeto.jsx` | 78.960 | 2.260 |
+| `app/src/servicos/dados.js` | 18.205 | 611 |
+| `app/src/servicos/dadosExemplo.js` | 70.613 | 2.228 |
+| `app/tests/termos-contrato.test.jsx` | 16.453 | 517 |
+
+A migração continua abaixo de 90 KB, com `begin;`/`commit;` nas pontas e sem termos proibidos do cofre.
+
+### 7.2. Banco
+
+- **`taxa_total`** entrou na lista de termos e no CHECK de valor: é taxa, só aceita `valor_pct` entre 0 e 100
+  (nada de `valor_data`). A divisão por rubrica (`taxa_cip_ufg`/`taxa_cip_ua`/`taxa_dao`) continua como antes.
+  O banco **não** compara `taxa_total` com a soma das rubricas; se o contrato diz 16% e o plano diz 8+8+10=26%,
+  as duas linhas ficam gravadas e a tela mostra os dois números. A nota (admin) é que explica.
+- **`documento_id uuid references public.documentos(id) on delete restrict`** (opcional). A tabela ganhou
+  `termos_contrato_documento_fonte_check`: pelo menos um entre `documento_url` e `documento_id`. A RPC valida
+  que o documento existe **e é do mesmo centro**. O índice `idx_termos_contrato_documento` cobre a FK.
+- `registrar_termo_contrato_v2` aceita `documento_id`, valida UUID/existência/centro e exige a fonte; a
+  idempotência passou a comparar também `documento_id`.
+- `get_termos_contrato_v2` devolve `documento_id` e, quando há documento, o metadado da **versão mais recente**
+  de `documento_versoes` (`bucket`, `caminho`, `arquivo_nome`, `formato`, `versao`, `registrado_em`). Para o
+  agente, `documento` vai `null` (o caminho do plano não é exposto a ele); professor e admin recebem.
+- **Não foi criada RPC nova.** O painel usa o metadado que o `get` já devolve e o mesmo serviço/visualizador da
+  aba Documentos (`arquivoDeOrigem` + componente `Documento`). O `get_origem_v2` não foi usado.
+- As asserções da 067 ganharam a FK de documento (`RESTRICT`), o CHECK de fonte, `taxa_total` no CHECK do termo,
+  o índice novo e a coluna `documento_id` no contrato de esquema.
+
+### 7.3. Tela
+
+- Cabeçalho:
+  - só `taxa_total`: `Taxas do contrato: 12,5% no total`;
+  - total e divisão: `Taxas do contrato: 16% no total · por rubrica: 26% (UFG 8 · unidade 8 · fundação 10)`;
+  - só divisão: como na 1ª rodada, `Taxas do contrato: 26% (UFG 8 · unidade 8 · fundação 10)`.
+  Em nenhum caso a tela corrige ou recalcula: a soma é só de exibição e os dois números ficam visíveis.
+- Painel "Do contrato": cartão "Taxa total do contrato"; documento com `documento_url` mostra "Abrir no
+  Drive"; com `documento_id` e metadado mostra **"Abrir o plano"**, que abre o componente `Documento` (mesmo
+  visualizador da aba Documentos). Sem metadado (ex.: modo exemplo sem o arquivo), fica só o nome do documento,
+  sem link.
+- `dados.js`: o validador aceita `documento_id`/`documento`, exige ao menos uma fonte e rejeita metadado de
+  documento sem `bucket`/`caminho` ou formato desconhecido.
+- `dadosExemplo.js`:
+  - **30.901** só tem `taxa_total` (12,5%) e `documento_id` para um plano, sem `documento` (o modo exemplo não
+    tem o arquivo do plano; o painel mostra o nome, sem link);
+  - **30.902** tem `taxa_total` 16% e a divisão 8+8+10=26% que não bate, com nota explicando;
+  - **30.904** continua com divisão por rubrica (4+4+5=13%) e sem total, cobrindo o caso "só divisão".
+- Testes do app: "só total", "total + divisão sem corrigir", "Abrir o plano" (chama `arquivoDeOrigem` e abre o
+  `Documento` com o título) e o modo exemplo atualizado (3/6/0/4 termos nos quatro centros).
+
+### 7.4. Testes e resultados
+
+- `test_067` ganhou: `taxa_total` com `valor_data` recusada; fonte ausente recusada (`22023` e CHECK `23514`);
+  `documento_id` de outro centro/não existente/inválido recusados; `taxa_total` com `documento_id` do plano do
+  51.X; `get` devolvendo `documento_id` e o metadado da versão mais recente (bucket/caminho/formato/versão);
+  professor vendo o metadado, agente recebendo `documento: null`; total 12,5 × divisão 26 sem correção. As
+  contagens do 51.X passaram a 6 (antes da versão nova) e 7 (depois); o total geral, a 10.
+- O runner passou a carregar **064 + `stub-064`** antes da 067 (a FK `documento_id` e o teste de plano precisam
+  de `documentos`/`documento_versoes`) e ganhou **2 mutantes novos**: termo sem `taxa_total` no CHECK da tabela
+  e `registrar` sem exigir `documento_url`/`documento_id`. Total: **7 mutantes**, todos detectados.
+- Comandos:
+
+| Comando | Resultado |
+|---|---|
+| `node tools/replica-local/rodar-067-pglite.mjs` | **verde** (7 mutantes) |
+| `npx vitest run` | **44 arquivos, 699 passed, 5 skipped** |
+| `npm run lint` | **verde** |
+| `npm test --prefix app` | **15 arquivos, 114 passed** |
+| `npm run build --prefix app` | **verde** |
+
+### 7.5. Desvios e observações desta rodada
+
+- **Metadado do documento na RPC, não RPC nova.** Era o único caminho sem inventar RPC para abrir o plano pelo
+  mesmo visualizador. O `get_termos_contrato_v2` é `security definer` e já estava autorizado pelo escopo; o
+  metadado é o da versão mais recente e só é devolvido para humano (agente recebe `null`). O exemplo não tem o
+  arquivo do plano, então mostra só o nome — o caminho real é testado no SQL e no teste de tela com mock.
+- **Diferença total × divisão não é erro de gravação.** O banco aceita as duas linhas e a tela mostra os dois
+  números; a nota (só admin) explica. Não há alerta automático nem "correção" silenciosa.
+- **A nota continua admin-only.** O professor vê os dois números no cabeçalho e no painel, mas não a análise
+  interna que explica a diferença. É a mesma regra da 1ª rodada.
+- **`documento_id` é do mesmo centro.** A RPC recusa documento de outro projeto; a FK sozinha não faria essa
+  checagem.
+- **Nada de produção**: sem `ensaiar`/`aplicar`, sem push, sem `CF_*` real e sem outra IA.
+
+### 7.6. Pronto quando (2ª rodada)
+
+- Runner PGlite com 064/stub-064: **ok** (7 mutantes).
+- `npx vitest run`, `npm run lint`, testes e build de `app/`: **ok**.
+- Linha da 067 em `docs/migracoes.md` atualizada: **ok**.
+- Relatório com esta seção: **ok**.
+- Commit novo incluindo `docs/redesenho/tarefas/F3-A-rodada2.md`: **ok** (local, sem push).

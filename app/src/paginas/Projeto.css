@@ -228,6 +228,21 @@
   text-underline-offset: var(--sublinhado-ativo);
 }
 
+button.projeto__link-documento {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.projeto__link-documento:focus-visible {
+  outline: none;
+  box-shadow: var(--anel-foco);
+  border-radius: var(--raio-1);
+}
+
 .projeto__nota-contrato {
   display: flex;
   flex-direction: column;
