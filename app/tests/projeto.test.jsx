@@ -296,12 +296,12 @@ describe('página do Projeto', () => {
     expect(destaques[0].textContent).toContain('balancete de out/26');
 
     // Bolsas por mês soma só end_date >= 2026-11-18 (6000 + 4000 = 10.000; ignora 3500 encerrada).
-    expect(destaques[1].textContent).toContain('10.000');
-    expect(destaques[1].textContent).toContain('2 bolsistas ativos');
+    expect(destaques[2].textContent).toContain('10.000');
+    expect(destaques[2].textContent).toContain('2 bolsistas ativos');
 
     // Repasses via situacaoDasParcelas: 2 recebidas de 3, próxima em jan/27.
-    expect(destaques[2].textContent).toContain('2 de 3');
-    expect(destaques[2].textContent).toContain('próximo em jan/27');
+    expect(destaques[3].textContent).toContain('2 de 3');
+    expect(destaques[3].textContent).toContain('próximo em jan/27');
 
     // Aviso vindo da RPC é exibido no topo da aba Dinheiro.
     expect(document.querySelector('.abas__painel .aviso-falha').textContent).toContain(
@@ -473,7 +473,7 @@ describe('página do Projeto', () => {
     await tick();
 
     expect(document.querySelector('h1').textContent).toContain('Projeto B');
-    expect(document.querySelectorAll('.destaque')[1].textContent).toContain('7.000');
+    expect(document.querySelectorAll('.destaque')[2].textContent).toContain('7.000');
 
     // Resposta atrasada de p-A chega depois e NÃO pode sobrescrever p-B.
     resolverSaldoA({
@@ -492,8 +492,8 @@ describe('página do Projeto', () => {
     await tick();
 
     expect(document.querySelector('h1').textContent).toContain('Projeto B');
-    expect(document.querySelectorAll('.destaque')[1].textContent).toContain('7.000');
-    expect(document.querySelectorAll('.destaque')[1].textContent).not.toContain('1.111');
+    expect(document.querySelectorAll('.destaque')[2].textContent).toContain('7.000');
+    expect(document.querySelectorAll('.destaque')[2].textContent).not.toContain('1.111');
   });
 
   it('nunca converte nulo em zero em bolsas/grupos/recursos, separa bolsa sem data e prioriza parcela a conferir', async () => {
@@ -545,13 +545,13 @@ describe('página do Projeto', () => {
 
     // Bolsa vigente com valor_mensal null -> "—" e "valor incompleto" (não zero).
     const destaques = Array.from(document.querySelectorAll('.destaque'));
-    expect(destaques[1].textContent).toContain('—');
-    expect(destaques[1].textContent).toContain('valor incompleto');
+    expect(destaques[2].textContent).toContain('—');
+    expect(destaques[2].textContent).toContain('valor incompleto');
 
     // Parcela 2 é parcial (150k recebido para 100k + 100k): "1 parcela parcial" tem prioridade sobre "próximo em fev/27".
-    expect(destaques[2].textContent).toContain('1 de 3');
-    expect(destaques[2].textContent).toContain('1 parcela parcial');
-    expect(destaques[2].textContent).not.toContain('próximo em fev/27');
+    expect(destaques[3].textContent).toContain('1 de 3');
+    expect(destaques[3].textContent).toContain('1 parcela parcial');
+    expect(destaques[3].textContent).not.toContain('próximo em fev/27');
 
     // Aba Dinheiro: grupo com saldo_livre null quando has_balancete=true mostra situação e título "sem dado".
     const linhasGrupos = Array.from(document.querySelectorAll('.abas__painel tbody tr'));
@@ -635,7 +635,7 @@ describe('página do Projeto', () => {
       document.body
     );
     await tick();
-    const repSemDado = Array.from(document.querySelectorAll('.destaque'))[2];
+    const repSemDado = Array.from(document.querySelectorAll('.destaque'))[3];
     expect(repSemDado.textContent).toContain('—');
     expect(repSemDado.textContent).toContain('sem dados de recurso');
   });
@@ -705,8 +705,10 @@ describe('página do Projeto', () => {
     expect(destaques[0].textContent).toContain('—');
     expect(destaques[0].textContent).toContain('sem plano');
     expect(destaques[1].textContent).toContain('—');
-    expect(destaques[1].textContent).toContain('sem plano');
-    expect(destaques[1].textContent).not.toContain('0 bolsas');
+    expect(destaques[1].textContent).toContain('sem balancete');
+    expect(destaques[2].textContent).toContain('—');
+    expect(destaques[2].textContent).toContain('sem plano');
+    expect(destaques[2].textContent).not.toContain('0 bolsas');
     expect(document.querySelector('.abas__painel .vazio').textContent).toContain('não tem plano de trabalho ativo');
 
     saldoLivreMock.mockResolvedValue({
@@ -766,9 +768,9 @@ describe('página do Projeto', () => {
     expect(destaquesSemBal[0].textContent).toContain('—');
     expect(destaquesSemBal[0].textContent).toContain('sem balancete');
     expect(destaquesSemBal[0].querySelector('button.valor--origem')).toBeNull();
-    expect(destaquesSemBal[2].textContent).toContain('—');
-    expect(destaquesSemBal[2].textContent).toContain('sem balancete');
-    expect(destaquesSemBal[2].textContent).not.toContain('0 de 1');
+    expect(destaquesSemBal[3].textContent).toContain('—');
+    expect(destaquesSemBal[3].textContent).toContain('sem balancete');
+    expect(destaquesSemBal[3].textContent).not.toContain('0 de 1');
 
     // Centro com plano e balancete mas sem números: destaque fica — e não abre árvore.
     saldoLivreMock.mockResolvedValue({
@@ -1092,10 +1094,10 @@ describe('página do Projeto', () => {
     await tick();
 
     const destaquesSemAr = Array.from(document.querySelectorAll('.destaque'));
-    expect(destaquesSemAr[2].textContent).toContain('—');
-    expect(destaquesSemAr[2].textContent).toContain('sem dados de recurso');
-    expect(destaquesSemAr[2].textContent).not.toContain('parcial');
-    expect(destaquesSemAr[2].textContent).not.toContain('nota');
+    expect(destaquesSemAr[3].textContent).toContain('—');
+    expect(destaquesSemAr[3].textContent).toContain('sem dados de recurso');
+    expect(destaquesSemAr[3].textContent).not.toContain('parcial');
+    expect(destaquesSemAr[3].textContent).not.toContain('nota');
 
     // Item 5a (clicabilidade): com resumoCentro.livre finito mas grupos=[], Destaque NÃO abre árvore.
     expect(destaquesSemAr[0].querySelector('button.valor--origem')).toBeNull();
@@ -1213,5 +1215,222 @@ describe('página do Projeto', () => {
       'leitura parcial pendente'
     );
     expect(painelRaizMotivo.textContent).toContain('Pessoal');
+  });
+});
+
+describe('destaque Dinheiro em conta', () => {
+  const resumoCentro = {
+    id: 'p-1',
+    code: '30.901',
+    name: 'Bacia do Cerrado',
+    end_date: '2027-08-31',
+    livre: 84300,
+    situacao: 'em dia',
+    data_referencia: '2026-10-15',
+  };
+
+  const renderizarCentro = async () => {
+    render(<Projeto projectId="p-1" hoje="2026-11-18" resumoCentro={resumoCentro} />, document.body);
+    await tick();
+  };
+
+  const dinheiroEmConta = () => document.querySelectorAll('.destaque')[1];
+
+  it('usa o balancete mais recente por data_referencia, mesmo fora de ordem, sem somar o rendimento', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValue({
+      dados: [
+        {
+          id: 'bal-antigo',
+          data_referencia: '2026-09-15',
+          saldo_disponivel: 210400,
+          rendimento_liquido: 9800.5,
+          created_at: '2026-09-16T14:00:00Z',
+        },
+        {
+          id: 'bal-novo',
+          data_referencia: '2026-10-15',
+          saldo_disponivel: 184250.4,
+          rendimento_liquido: 11240.15,
+          created_at: '2026-10-16T14:00:00Z',
+        },
+      ],
+      erro: null,
+    });
+
+    await renderizarCentro();
+
+    expect(document.querySelectorAll('.destaque')).toHaveLength(5);
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.querySelector('.destaque__rotulo').textContent).toBe('Dinheiro em conta');
+    expect(dinheiro.textContent).toContain('184.250');
+    expect(dinheiro.textContent).toContain('balancete de 15/10/2026');
+    expect(dinheiro.textContent).toContain('inclui');
+    expect(dinheiro.textContent).toContain('11.240,15');
+    expect(dinheiro.textContent).toContain('de rendimento');
+    expect(
+      dinheiro.querySelector('.destaque__contexto').textContent.replace(/\u00a0/g, ' ')
+    ).toBe('balancete de 15/10/2026 · inclui R$ 11.240,15 de rendimento');
+
+    // O rendimento já está dentro do saldo: nunca aparece a soma dos dois.
+    expect(dinheiro.textContent).not.toContain('195.490');
+    // Nunca cai para o balancete anterior.
+    expect(dinheiro.textContent).not.toContain('210.400');
+    expect(dinheiro.textContent).not.toContain('9.800');
+  });
+
+  it('no empate de data_referencia, escolhe o created_at mais novo e trata rendimento zero', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValue({
+      dados: [
+        {
+          id: 'bal-empate-antigo',
+          data_referencia: '2026-10-15',
+          saldo_disponivel: 111,
+          rendimento_liquido: 0,
+          created_at: '2026-10-16T10:00:00Z',
+        },
+        {
+          id: 'bal-empate-novo',
+          data_referencia: '2026-10-15',
+          saldo_disponivel: 222,
+          rendimento_liquido: 0,
+          created_at: '2026-10-17T10:00:00Z',
+        },
+      ],
+      erro: null,
+    });
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.textContent).toContain('222');
+    expect(dinheiro.textContent).not.toContain('111');
+    expect(dinheiro.textContent).toContain('sem rendimento');
+  });
+
+  it('saldo_disponivel null no balancete mais recente vira — com saldo não lido, sem fallback', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValue({
+      dados: [
+        {
+          id: 'bal-antigo',
+          data_referencia: '2026-09-15',
+          saldo_disponivel: 210400,
+          rendimento_liquido: 9800.5,
+          created_at: '2026-09-16T14:00:00Z',
+        },
+        {
+          id: 'bal-novo',
+          data_referencia: '2026-10-15',
+          saldo_disponivel: null,
+          rendimento_liquido: null,
+          created_at: '2026-10-16T14:00:00Z',
+        },
+      ],
+      erro: null,
+    });
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.textContent).toContain('—');
+    expect(dinheiro.querySelector('.valor[title="saldo não lido"]')).not.toBeNull();
+    expect(dinheiro.textContent).toContain('rendimento não lido');
+    expect(dinheiro.textContent).not.toContain('210.400');
+    expect(dinheiro.textContent).not.toContain('9.800');
+  });
+
+  it('erro ao carregar balancetes vira — com o motivo e nunca R$ 0,00', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValue({ dados: null, erro: 'Falha ao carregar balancetes.' });
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.textContent).toContain('—');
+    expect(dinheiro.textContent).toContain('indisponível');
+    expect(dinheiro.textContent).not.toContain('0,00');
+    expect(dinheiro.querySelector('.valor').getAttribute('title')).toBe(
+      'Falha ao carregar balancetes.'
+    );
+  });
+
+  it('centro sem balancete mostra sem balancete', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValue({ dados: [], erro: null });
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.textContent).toContain('sem balancete');
+    expect(dinheiro.querySelector('.valor[title="sem balancete"]')).not.toBeNull();
+  });
+
+  it('mostra consultando enquanto os balancetes não chegam', async () => {
+    configurarPadrao();
+    balancetesMock.mockImplementation(() => new Promise(() => {}));
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.textContent).toContain('consultando');
+    expect(dinheiro.querySelector('.valor[title="consultando"]')).not.toBeNull();
+  });
+
+  it('clicar no valor e no rendimento chama a origem com o campo certo', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValue({
+      dados: [
+        {
+          id: 'bal-novo',
+          data_referencia: '2026-10-15',
+          saldo_disponivel: 184250.4,
+          rendimento_liquido: 11240.15,
+          created_at: '2026-10-16T14:00:00Z',
+        },
+      ],
+      erro: null,
+    });
+    origemMock.mockResolvedValue({
+      dados: {
+        tipo: 'legado',
+        valor: 184250.4,
+        documento: null,
+        fato: null,
+        busca: { texto: 'saldo disponivel', valor: 184250.4 },
+        nota: 'Sem arquivo no modo teste.',
+      },
+      erro: null,
+    });
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.querySelector('.destaque__rotulo').getAttribute('title')).toContain(
+      'O livre desconta'
+    );
+    expect(dinheiro.getAttribute('title')).toContain('O livre desconta');
+
+    const botaoSaldo = dinheiro.querySelector('.destaque__valor button.valor--origem');
+    expect(botaoSaldo.getAttribute('aria-label')).toContain('saldo em conta');
+    botaoSaldo.click();
+    await tick();
+    expect(origemMock).toHaveBeenNthCalledWith(1, {
+      alvo_tabela: 'balancetes',
+      alvo_id: 'bal-novo',
+      campo: 'saldo_disponivel',
+    });
+
+    const botaoRendimento = dinheiro.querySelector('.destaque__contexto button.valor--origem');
+    expect(botaoRendimento.getAttribute('aria-label')).toContain('rendimento');
+    expect(botaoRendimento.getAttribute('title')).toBe('Rendimento tem regras próprias de uso.');
+    botaoRendimento.click();
+    await tick();
+    expect(origemMock).toHaveBeenNthCalledWith(2, {
+      alvo_tabela: 'balancetes',
+      alvo_id: 'bal-novo',
+      campo: 'rendimento_liquido',
+    });
   });
 });

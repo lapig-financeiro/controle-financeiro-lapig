@@ -334,6 +334,30 @@ describe('camada de dados', () => {
     expect(origDoc.dados.documento.formato).toBe('pdf');
     expect(origDoc.dados.documento.caminho).toContain(dadosExemplo.SENTINELA_EXEMPLO);
 
+    const origRendimento = await dadosExemplo.origem({
+      alvo_tabela: 'balancetes',
+      alvo_id: '00000000-0000-4000-8000-000000090102',
+      campo: 'rendimento_liquido',
+    });
+    expect(origRendimento.erro).toBeNull();
+    expect(origRendimento.dados.tipo).toBe('documento');
+    expect(origRendimento.dados.valor).toBe(11240.15);
+    expect(origRendimento.dados.fato.trecho).toContain('RENDIMENTO LIQUIDO');
+
+    const origRendimentoLegado = await dadosExemplo.origem({
+      alvo_tabela: 'balancetes',
+      alvo_id: '00000000-0000-4000-8000-000000090201',
+      campo: 'rendimento_liquido',
+    });
+    expect(origRendimentoLegado.erro).toBeNull();
+    expect(origRendimentoLegado.dados.tipo).toBe('legado');
+    expect(origRendimentoLegado.dados.valor).toBe(3180);
+    expect(origRendimentoLegado.dados.busca.texto).toBe('rendimento liquido');
+
+    // Centro de exemplo com rendimento não lido: null não vira zero.
+    const balancetesFlorestal = await dadosExemplo.balancetes(florestalId);
+    expect(balancetesFlorestal.dados[0].rendimento_liquido).toBeNull();
+
     const origLegado = await dadosExemplo.origem({
       alvo_tabela: 'balancete_lancamentos',
       alvo_id: '00000000-0000-4000-8000-000000050105',

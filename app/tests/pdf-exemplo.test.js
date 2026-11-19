@@ -38,6 +38,7 @@ describe('PDF sintético de exemplo', () => {
       '7.1.3.05.01.08124',
       '7.1.3.20.01.05012',
       'saldo_disponivel',
+      'rendimento_liquido',
     ];
     expect(Object.keys(manifesto.fatos)).toEqual(chavesEsperadas);
 

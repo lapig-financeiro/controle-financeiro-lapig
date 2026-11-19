@@ -148,6 +148,7 @@ const ALVOS_MANIFESTO = [
   { chave: '7.1.3.05.01.08124', alvo: { conta_codigo: '7.1.3.05.01.08124', valor: 41549.25 } },
   { chave: '7.1.3.20.01.05012', alvo: { conta_codigo: '7.1.3.20.01.05012', valor: 68000 } },
   { chave: 'saldo_disponivel', alvo: { texto: 'SALDO DISPONIVEL EM CONTA MOVIMENTO', valor: 184250.4 } },
+  { chave: 'rendimento_liquido', alvo: { texto: 'RENDIMENTO LIQUIDO APURADO', valor: 11240.15 } },
 ];
 
 export async function gerarPdfExemploEmMemoria() {

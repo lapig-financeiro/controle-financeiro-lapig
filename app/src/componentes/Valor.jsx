@@ -17,6 +17,8 @@ export function Valor({
   origem = null,
   onOrigem = null,
   semOrigem = '',
+  rotuloOrigem = '',
+  dica = '',
   className = '',
 }) {
   const ehTipoMoeda = tipo === 'moeda' || tipo === 'moeda-compacta';
@@ -54,15 +56,18 @@ export function Valor({
   ].filter(Boolean).join(' ');
 
   if (origem && onOrigem) {
-    const rotuloOrigem = origem.resumo
-      ? `${texto} (${origem.resumo}). Ver origem`
-      : `Ver origem de ${texto}`;
+    const rotuloAcessivel =
+      rotuloOrigem ||
+      (origem.resumo
+        ? `${texto} (${origem.resumo}). Ver origem`
+        : `Ver origem de ${texto}`);
     return (
       <button
         type="button"
         class={`${classes} valor--origem`}
         onClick={(e) => onOrigem(origem, e)}
-        aria-label={rotuloOrigem}
+        aria-label={rotuloAcessivel}
+        title={dica || undefined}
       >
         {texto}
       </button>

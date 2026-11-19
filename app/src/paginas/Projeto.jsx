@@ -31,6 +31,7 @@ import {
 } from '../servicos/dados.js';
 import {
   dataCompacta,
+  dataCompleta,
   dinheiro,
   hojeISO,
   mesesRestantes,
@@ -55,6 +56,43 @@ const ROTULOS_TIPO_PENDENCIA = {
 };
 
 const DATA_ISO_RE = /^\d{4}-\d{2}-\d{2}/;
+
+const AJUDA_DINHEIRO_CONTA =
+  'Tudo o que está na conta do projeto hoje. O livre desconta o que já está comprometido (bolsas, taxas).';
+const AJUDA_RENDIMENTO = 'Rendimento tem regras próprias de uso.';
+
+/**
+ * Balancete mais recente por `data_referencia` (a mesma regra de
+ * `v_balancete_vigente`); no empate, vale o `created_at` mais novo.
+ * Balancete sem data de referência não concorre.
+ */
+function balanceteMaisRecente(lista) {
+  if (!Array.isArray(lista)) return null;
+  let maisRecente = null;
+
+  for (const balancete of lista) {
+    const data = String(balancete?.data_referencia || '').slice(0, 10);
+    if (!DATA_ISO_RE.test(data)) continue;
+    if (!maisRecente) {
+      maisRecente = balancete;
+      continue;
+    }
+
+    const dataAtual = String(maisRecente.data_referencia || '').slice(0, 10);
+    if (data > dataAtual) {
+      maisRecente = balancete;
+    } else if (data === dataAtual) {
+      const criado = Date.parse(balancete.created_at || '');
+      const criadoAtual = Date.parse(maisRecente.created_at || '');
+      const maisNovo = Number.isFinite(criado) && Number.isFinite(criadoAtual)
+        ? criado > criadoAtual
+        : String(balancete.created_at || '') > String(maisRecente.created_at || '');
+      if (maisNovo) maisRecente = balancete;
+    }
+  }
+
+  return maisRecente;
+}
 
 function numeroFinito(valor) {
   if (valor === null || valor === undefined || valor === '') return null;
@@ -865,6 +903,116 @@ export function Projeto({
     });
   };
 
+  // Destaque "Dinheiro em conta" (F2-H): o saldo_disponivel do balancete mais
+  // recente, sem recálculo. O rendimento_liquido é só contexto: ele já está
+  // dentro do saldo (rodapé da FUNAPE), então nunca é somado de novo.
+  const balanceteDinheiro = balanceteMaisRecente(docsSt.balancetes);
+  const saldoDinheiro = numeroFinito(balanceteDinheiro?.saldo_disponivel);
+  const rendimentoDinheiro = numeroFinito(balanceteDinheiro?.rendimento_liquido);
+
+  let valorDinheiro = (
+    <Valor valor={null} motivoSemDado="consultando" semOrigem="Consultando balancetes" />
+  );
+  let contextoDinheiro = 'consultando';
+
+  if (!docsSt.carregando) {
+    if (docsSt.erroBalancetes) {
+      valorDinheiro = (
+        <Valor
+          valor={null}
+          motivoSemDado={docsSt.erroBalancetes}
+          semOrigem="Falha ao consultar os balancetes"
+        />
+      );
+      contextoDinheiro = 'indisponível';
+    } else if (!balanceteDinheiro) {
+      valorDinheiro = (
+        <Valor
+          valor={null}
+          motivoSemDado="sem balancete"
+          semOrigem="Centro sem balancete importado"
+        />
+      );
+      contextoDinheiro = 'sem balancete';
+    } else {
+      const dataBalancete = dataCompleta(balanceteDinheiro.data_referencia);
+      const podeAbrirOrigemDoBalancete = Boolean(balanceteDinheiro.id);
+      const itemOrigemDoBalancete = (campo, valor) => ({
+        id: `destaque-${campo}-${balanceteDinheiro.id}`,
+        nome:
+          balanceteDinheiro.arquivo_nome ||
+          `Balancete de ${dataCompleta(balanceteDinheiro.data_referencia)}`,
+        valor,
+        ref: {
+          alvo_tabela: 'balancetes',
+          alvo_id: balanceteDinheiro.id,
+          campo,
+        },
+      });
+
+      if (saldoDinheiro === null) {
+        valorDinheiro = (
+          <Valor
+            valor={null}
+            motivoSemDado="saldo não lido"
+            semOrigem="Saldo não lido no balancete mais recente"
+          />
+        );
+      } else {
+        valorDinheiro = (
+          <Valor
+            valor={saldoDinheiro}
+            centavos={false}
+            problema={saldoDinheiro < 0}
+            origem={{ resumo: 'Ver origem do saldo em conta' }}
+            onOrigem={
+              podeAbrirOrigemDoBalancete
+                ? () => abrirDocumentoDaAba(itemOrigemDoBalancete('saldo_disponivel', saldoDinheiro))
+                : null
+            }
+            rotuloOrigem={`Ver origem do saldo em conta de ${dinheiro(saldoDinheiro, {
+              centavos: false,
+            })} no balancete de ${dataBalancete}`}
+            dica={AJUDA_DINHEIRO_CONTA}
+            semOrigem="Saldo em conta sem origem disponível"
+          />
+        );
+      }
+
+      const prefixoContexto = `balancete de ${dataBalancete} · `;
+      if (rendimentoDinheiro === null) {
+        contextoDinheiro = `${prefixoContexto}rendimento não lido`;
+      } else if (rendimentoDinheiro === 0) {
+        contextoDinheiro = `${prefixoContexto}sem rendimento`;
+      } else {
+        contextoDinheiro = (
+          <>
+            {prefixoContexto}inclui{' '}
+            <Valor
+              valor={rendimentoDinheiro}
+              centavos
+              origem={{ resumo: 'Ver origem do rendimento' }}
+              onOrigem={
+                podeAbrirOrigemDoBalancete
+                  ? () =>
+                      abrirDocumentoDaAba(
+                        itemOrigemDoBalancete('rendimento_liquido', rendimentoDinheiro)
+                      )
+                  : null
+              }
+              rotuloOrigem={`Ver origem do rendimento de ${dinheiro(rendimentoDinheiro, {
+                centavos: true,
+              })} no balancete de ${dataBalancete}`}
+              dica={AJUDA_RENDIMENTO}
+              semOrigem="Rendimento sem origem disponível"
+            />{' '}
+            de rendimento
+          </>
+        );
+      }
+    }
+  }
+
   const colunasGrupos = [
     {
       chave: 'grupo_name',
@@ -1484,12 +1632,19 @@ export function Projeto({
         <AvisoFalha mensagem={erroResumo} aoTentarNovamente={onRecarregarResumo} />
       )}
 
-      <GradeDestaques>
+      <GradeDestaques className="grade-destaques--cinco">
         <Destaque
           principal
           rotulo={rotuloPrincipal}
           valor={valorPrincipal}
           contexto={contextoPrincipal}
+        />
+        <Destaque
+          className="destaque--largo"
+          rotulo="Dinheiro em conta"
+          valor={valorDinheiro}
+          contexto={contextoDinheiro}
+          ajuda={AJUDA_DINHEIRO_CONTA}
         />
         <Destaque
           rotulo="Bolsas por mês"

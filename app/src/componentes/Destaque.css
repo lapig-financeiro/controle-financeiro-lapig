@@ -40,9 +40,33 @@
   gap: var(--esp-4);
 }
 
+/* Cinco destaques: os dois de dinheiro dividem a primeira linha e os três
+   operacionais ocupam a segunda, em vez de espremer cinco colunas. */
+.grade-destaques--cinco {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.grade-destaques--cinco > .destaque {
+  grid-column: span 2;
+}
+
+.grade-destaques--cinco > .destaque--principal,
+.grade-destaques--cinco > .destaque--largo {
+  grid-column: span 3;
+}
+
 @media (max-width: 1024px) {
   .grade-destaques {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grade-destaques--cinco > .destaque,
+  .grade-destaques--cinco > .destaque--largo {
+    grid-column: auto;
+  }
+
+  .grade-destaques--cinco > .destaque--principal {
+    grid-column: 1 / -1;
   }
 }
 

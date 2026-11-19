@@ -730,6 +730,7 @@ const BALANCETES_EXEMPLO = {
       data_referencia: '2026-10-15',
       arquivo_nome: 'balancete-30901-out-26.pdf',
       saldo_disponivel: 184250.4,
+      rendimento_liquido: 11240.15,
       created_at: '2026-10-16T14:00:00Z',
     },
     {
@@ -737,6 +738,7 @@ const BALANCETES_EXEMPLO = {
       data_referencia: '2026-09-15',
       arquivo_nome: 'balancete-30901-set-26.pdf',
       saldo_disponivel: 210400,
+      rendimento_liquido: 9800.5,
       created_at: '2026-09-16T14:00:00Z',
     },
   ],
@@ -746,6 +748,7 @@ const BALANCETES_EXEMPLO = {
       data_referencia: '2026-08-15',
       arquivo_nome: 'balancete-30902-ago-26.pdf',
       saldo_disponivel: 62100,
+      rendimento_liquido: 3180,
       created_at: '2026-08-16T10:00:00Z',
     },
   ],
@@ -755,6 +758,7 @@ const BALANCETES_EXEMPLO = {
       data_referencia: '2026-10-20',
       arquivo_nome: 'balancete-30903-out-26.pdf',
       saldo_disponivel: 54000,
+      rendimento_liquido: 2100,
       created_at: '2026-10-21T10:00:00Z',
     },
   ],
@@ -764,7 +768,28 @@ const BALANCETES_EXEMPLO = {
       data_referencia: '2026-10-10',
       arquivo_nome: 'balancete-30905-out-26.pdf',
       saldo_disponivel: 48000,
+      rendimento_liquido: null,
       created_at: '2026-10-11T10:00:00Z',
+    },
+  ],
+  [IDS.corredor]: [
+    {
+      id: '00000000-0000-4000-8000-000000090701',
+      data_referencia: '2026-10-18',
+      arquivo_nome: 'balancete-30907-out-26.pdf',
+      saldo_disponivel: 92000,
+      rendimento_liquido: 1850,
+      created_at: '2026-10-19T10:00:00Z',
+    },
+  ],
+  [IDS.solos]: [
+    {
+      id: '00000000-0000-4000-8000-000000090801',
+      data_referencia: '2026-10-22',
+      arquivo_nome: 'balancete-30908-out-26.pdf',
+      saldo_disponivel: 78000,
+      rendimento_liquido: 1400,
+      created_at: '2026-10-23T10:00:00Z',
     },
   ],
 };
@@ -988,6 +1013,11 @@ const MANIFESTO_FALLBACK = {
     saldo_disponivel: {
       pagina: 2,
       trecho: 'SALDO DISPONIVEL EM CONTA MOVIMENTO: R$ 184.250,40.',
+      bbox: null,
+    },
+    rendimento_liquido: {
+      pagina: 2,
+      trecho: 'RENDIMENTO LIQUIDO APURADO: R$ 11.240,15.',
       bbox: null,
     },
   },
@@ -1765,19 +1795,29 @@ export async function origem(ref) {
     };
   }
 
-  if (ref.alvo_tabela === 'balancetes' && ref.campo === 'saldo_disponivel') {
+  if (
+    ref.alvo_tabela === 'balancetes' &&
+    (ref.campo === 'saldo_disponivel' || ref.campo === 'rendimento_liquido')
+  ) {
+    const ehRendimento = ref.campo === 'rendimento_liquido';
+    const valorDoDocumento = ehRendimento ? 11240.15 : 184250.4;
+    const trechoDoDocumento = ehRendimento
+      ? 'RENDIMENTO LIQUIDO APURADO: R$ 11.240,15.'
+      : 'SALDO DISPONIVEL EM CONTA MOVIMENTO: R$ 184.250,40.';
+    const textoDeBusca = ehRendimento ? 'rendimento liquido' : 'saldo disponivel';
+
     if (ref.alvo_id === DOC_BALANCETE_30901.id) {
       const manifesto = await obterManifestoExemplo();
-      const fatoSaldo = manifesto.fatos?.saldo_disponivel;
+      const fato = manifesto.fatos?.[ref.campo];
       return {
         dados: {
           tipo: 'documento',
-          valor: 184250.4,
+          valor: valorDoDocumento,
           documento: { ...DOC_BALANCETE_30901 },
           fato: {
-            pagina: fatoSaldo?.pagina ?? 2,
-            trecho: fatoSaldo?.trecho ?? 'SALDO DISPONIVEL EM CONTA MOVIMENTO: R$ 184.250,40.',
-            bbox: fatoSaldo?.bbox ?? null,
+            pagina: fato?.pagina ?? 2,
+            trecho: fato?.trecho ?? trechoDoDocumento,
+            bbox: fato?.bbox ?? null,
             parser: 'balancete-parser',
             parser_versao: '1.0',
           },
@@ -1790,14 +1830,17 @@ export async function origem(ref) {
     for (const lista of Object.values(BALANCETES_EXEMPLO)) {
       const bal = lista.find((b) => b.id === ref.alvo_id);
       if (bal) {
+        const valor = ehRendimento ? bal.rendimento_liquido : bal.saldo_disponivel;
         return {
           dados: {
             tipo: 'legado',
-            valor: bal.saldo_disponivel,
+            valor,
             documento: null,
             fato: null,
-            busca: { texto: 'saldo disponivel', valor: bal.saldo_disponivel },
-            nota: 'Balancete anterior à rastreabilidade, sem PDF sintético gerado para este centro no modo exemplo.',
+            busca: { texto: textoDeBusca, valor },
+            nota: ehRendimento
+              ? 'Rendimento lido no balancete, sem PDF sintético gerado para este centro no modo exemplo.'
+              : 'Balancete anterior à rastreabilidade, sem PDF sintético gerado para este centro no modo exemplo.',
           },
           erro: null,
         };
