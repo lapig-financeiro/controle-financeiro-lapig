@@ -1,0 +1,145 @@
+# Relatório F2-A — Banco da Fase 2: rastreabilidade (migração 064)
+
+Branch: `redesenho/f2-a-banco` (worktree fora do OneDrive).
+
+## 1. Tamanho da migração
+
+- **`database/064_rastreabilidade.sql`**: **85.793 bytes** em UTF-8 (2.242 linhas com terminação LF; `begin;` como primeiro comando SQL e `commit;` como último), dentro do limite de 90 KB do cofre.
+
+## 2. O que foi feito
+
+- **Migração `database/064_rastreabilidade.sql`** (aditiva, idempotente, sem inserção de linhas e sem alterar os 6 helpers protegidos `is_agente`, `is_admin`, `allowed_project_ids`, `assert_project_allowed`, `contem_cpf`, `bloqueia_escrita_do_agente`):
+  - **Tabelas novas**:
+    - `public.documentos` (`id`, `project_id` FK `on delete restrict`, `tipo` em `'balancete'|'plano'`, `chave` única e não vazia, `titulo` não vazio, `criado_em`, índice `idx_documentos_project`). Comentário de coluna documentando a chave por `project_id`: `balancete:<project_id>:<AAAA-MM-DD>` e `plano:<project_id>:<plano_id>`.
+    - `public.documento_versoes` (`id`, `documento_id` FK `on delete restrict`, `versao >= 1`, `sha256` 64 hex, `bucket` em `'balancete-pdfs'|'plano-trabalho-docs'`, `caminho` não vazio, `arquivo_nome`, `formato` em `'pdf'|'docx'`, `paginas` nulo quando `docx`, `parser`, `parser_versao`, `origem` em `'backfill'|'site'|'ingestao'`, `registrado_em`, `registrado_por` FK para `auth.users(id) on delete set null`), unicidades `(documento_id, versao)` e `(documento_id, sha256)`, índices `idx_documento_versoes_doc_rec` e `idx_documento_versoes_registrado_por`.
+    - `public.fatos`: identificação por **chave estável** `(alvo_tabela, alvo_pai_id uuid not null, alvo_chave text not null)` em vez de `alvo_id` (porque `upsert_plano_trabalho` na 025 e `upsert_balancete` na 053 apagam e recriam as linhas filhas a cada gravação), `campo`, `valor numeric(14,2)`, `pagina` (`>= 1` ou nula), `trecho` (`1..500` caracteres não vazios), `bbox` (`{x0,x1,yMin,yMax}` numéricos ordenados ou nulo), `criado_em`, unicidade `(versao_id, alvo_tabela, alvo_pai_id, alvo_chave, campo)`, FK `versao_id on delete cascade` e índice `idx_fatos_alvo (alvo_tabela, alvo_pai_id, alvo_chave, campo)`.
+    - **Sem coluna nova em `balancetes`/`planos_trabalho`**: não foi criada `documento_versao_id` (conforme correção nº 3 pós-revisão).
+  - **Controle de acesso das três tabelas**: RLS ligado; `revoke all ... from public, anon, authenticated` e `grant select ... to authenticated`; exatamente **1 policy SELECT** em cada (`documentos_select_escopo` e `documento_versoes_select_escopo` por `is_admin()` ou `allowed_project_ids()`, `fatos_select_admin` estritamente `is_admin()`); nenhuma policy de escrita; gatilho `trg_bloqueia_agente` (`before insert or update or delete ... for each statement execute function public.bloqueia_escrita_do_agente()`, sem `WHEN`) nas três. Comentário explícito em tabela e cabeçalho registra que a máscara protege `fatos.trecho` entregue pela RPC, enquanto o arquivo em storage segue governado pela migração `062`.
+  - **Funções auxiliares internas** (todas `security definer`, `set search_path = public, pg_temp`, `revoke all ... from public, anon, authenticated`):
+    - `_tem_cpf(text)`: combina `public.contem_cpf(t)`, `public.contem_cpf` sobre dígitos com `[ \t\n\r.-]+` intermediário colapsado e blocos `3-3-3-2`, preservando a checagem de dígito verificador da 052 (ex.: `123.456.789-00` não é bloqueado; códigos de conta e datas não geram falso positivo).
+    - `_mascarar_cpf(text)`: substitui sequências no formato de CPF (incluindo espaçamento/quebra de linha entre grupos) por `***.***.***-**`.
+    - `_fmt_brl_num(numeric)`: formatação `pt-BR` com duas casas decimais (`1.234,50`) para rótulos de bolsas e notas de divergência.
+    - `_resolver_origem_alvo(text, uuid, text, boolean)`: fonte única da regra `documento` / `legado` / `digitado`, compartilhada entre `get_origem_v2` e `explicar_livre_v2`.
+  - **RPCs novas** (`security definer`, `set search_path = public, pg_temp`, `revoke all ... from public, anon`, `grant execute ... to authenticated`):
+    - `registrar_documento_v2(p jsonb)`: exclusiva de admin humano (`is_admin() and not is_agente()`); recusa chaves desconhecidas (inclusive `vincular`); valida matriz `tipo × bucket × alvo_tabela × formato × paginas/pagina/bbox` e prefixo `<project_id>/` em `caminho`; bloqueia CPF via `_tem_cpf` em cada `trecho`, em `titulo`, em `arquivo_nome` e no `string_agg` entre múltiplos trechos; faz upsert por `chave` conferindo mesmo `project_id` e `tipo`; deduplica versão por `(documento_id, sha256)` devolvendo `criada = false, fatos = 0`; traduz `alvo_id` para `(alvo_pai_id, alvo_chave)`; falha atomicamente (`22023` com `detail` em JSON `[{tabela, id, campo, esperado, lido}]`) se qualquer fato apontar outro centro, não existir, tiver valor vigente nulo ou divergir do valor atual no banco.
+    - `get_origem_v2(p_alvo_tabela text, p_alvo_id uuid, p_campo text)`: descobre o projeto, evita oráculo de existência para não-admin (`42501`), executa `assert_project_allowed`, mascara `trecho` para não-admin; busca o fato mais recente por `registrado_em desc, versao desc, id desc`; quando o valor atual no banco mudou após a leitura do documento (ou é nulo), rebaixa para `tipo = 'legado'` com `documento`, `busca` e `nota` `"o valor mudou depois da leitura do documento (lido R$ X)"`; para alvo sem fato gera `legado` com documento derivado de `arquivo_storage_path`/`arquivo_nome` (extensão ou padrão do tipo quando sem extensão) e objeto `busca` no formato exato de `acharAlvo`; para `scholarships.amount` retorna `digitado` com o `amount` mensal e `nota` explicativa.
+    - `explicar_livre_v2(p_project_id uuid)`: executa `assert_project_allowed` e chama `get_saldo_livre(p_project_id)`; trata `has_plano = false` (`'sem plano'`), `has_balancete = false` (`'sem balancete'`) e `grupos = []` (`'sem números'`); monta a árvore raiz → `grupo:<code>` → `rubrica:<code>:previsto|realizado|comprometido` → `linha:<id>` exatamente sobre `grupos[]`, `rubricas[]`, `bolsas_ativas[]`, `balancete_id` e plano ativo (`order by versao desc limit 1`), usando `_resolver_origem_alvo` para o `tipo` das folhas; omite nó de previsto quando `valor_previsto` e total são `0`; preserva previsto negativo e estornos negativos; define `conta = 'previsto − realizado'` e `nota = 'compromissos fora de bolsas não são rastreados'` para grupos com `compromissos_cobertura = 'nenhuma'`; funciona normalmente para centros inativos quando chamado por admin.
+  - **Pendências (§8 e correção nº 15)**:
+    - Constraints `pendencias_chave_nao_vazia` e `pendencias_titulo_nao_vazio` atualizadas para `btrim(..., E' \t\n\r') <> ''`.
+    - Criado `idx_pendencias_resolvida_por` em `pendencias(resolvida_por)`.
+    - `_pendencias_sem_cpf()` passa a usar `_tem_cpf` e no `UPDATE` revalida apenas as colunas que mudaram entre `chave`, `titulo` e `detalhe`.
+    - `criar_pendencia_v2(jsonb)` usa `_tem_cpf`, converte `detalhe: null` para `'{}'::jsonb`, recusa `project_id: ""` / whitespace (não transforma em pendência geral) e permite repetir chave de pendência aberta cujo centro ficou inativo, recusando centro inativo apenas ao inserir chave nova.
+    - `resolver_pendencia_v2(uuid, text)` devolve erro explícito (`22023`, `'p_id é obrigatório.'`) quando `p_id` é nulo.
+  - **Asserções finais na transação** (`do $$ ... $$`): RLS, ACL exata (`anon`/`PUBLIC` sem nada, `authenticated` só SELECT), 1 policy SELECT única e `trg_bloqueia_agente` habilitado (`tgenabled = 'O'`), sem `WHEN` e apontando para `'public.bloqueia_escrita_do_agente()'::regprocedure` em `documentos`, `documento_versoes`, `fatos` e `pendencias`; ausência de `documento_versao_id` em `balancetes`/`planos_trabalho`; colunas, tipos, FKs, unicidades, índices, `_pendencias_sem_cpf` e ACL/`search_path` de todas as 5 funções internas e 5 RPCs.
+- **Ambiente sintético, roteiros e documentação**:
+  - `tools/replica-local/sintetico/stub-064.sql`: registra documentos e fatos sintéticos (PDF e DOCX, sem PII) para `51.X` e `51.Y` exclusivamente por `registrar_documento_v2` como admin (`a1`), deixando alvos selecionados sem fato para cobrir `legado`.
+  - `tests/sql/test_064_rastreabilidade.sql`: 5 blocos (`BLOCO 1` a `BLOCO 5`) cobrindo ACL/RLS/barreira do agente, validações/atomicidade/CPF de `registrar_documento_v2`, chave estável após regravação real via `upsert_plano_trabalho`/`upsert_balancete`, rebaixamento por valor alterado, desempate entre dois documentos, máscara de CPF para professor, `legado` e `digitado` em `get_origem_v2`, oráculo de `explicar_livre_v2` contra `resumo_projetos_v2` com verificador recursivo da árvore + bordas `64.EDGE` / `63.SB` / `63.SP` / `64.SN` / `63.INAT`, e todos os itens do §8 em `pendencias`.
+  - `tools/replica-local/rodar-064-pglite.mjs`: sobe a base **real** (`025`, `026`, `051`, `052`, `054`, `053`, `056`, `062`, `038`, `048`, `063`), prova que `test_064` falha antes da 064, valida regras estáticas do cofre, aplica 064 + `stub-064` + `test_064`, reaplica 064 + `test_064` (idempotência), valida BLOCO 1 da 051, confere MD5 dos 6 helpers protegidos, executa 5 mutantes e roda conferência final pós-restauração. Exporta `montarBase064` e `carregarArquivo` para reaproveitamento no Vitest.
+  - `tests/origem-busca-064.test.js`: suíte Vitest que testa `acharAlvo` para as 5 tabelas (`balancete_lancamentos`, `balancetes`, `planos_trabalho`, `plano_rubricas`, `plano_desembolsos`) de forma determinística (sempre ativa) e, quando `.cache/pglite-064` existe (`describe.runIf(temPglite)`), executa integração real contra `public.get_origem_v2` no PGlite alimentando `acharAlvo`.
+  - `docs/migracoes.md`: adicionada a linha da `064_rastreabilidade.sql` (explicitamente marcada como **ainda não aplicada em produção**).
+
+## 3. Como foi testado
+
+1. **Dependências locais**:
+   - `npm.cmd ci` na raiz e instalação do PGlite em `.cache/pglite-064` (`@electric-sql/pglite`, ignorado pelo git em `.cache/`).
+2. **`node tools/replica-local/rodar-064-pglite.mjs`** — **verde (exit 0)**:
+   - Falha antes da 064 provada: `ANTES da 064: roteiro detectou a falta da 064 (42P01) -> relation "public.documentos" does not exist`.
+   - Conferência estática do cofre passou (`85793 bytes, begin;/commit; válidos, sem termos proibidos`).
+   - Todos os 5 blocos de `tests/sql/test_064_rastreabilidade.sql` passaram na 1ª execução, após reaplicação idempotente da `064` e na conferência final após restauração dos mutantes.
+   - BLOCO 1 da 051 (`trg_bloqueia_agente` em todas as tabelas de `public`, exceto `propostas_agente`) passou; MD5 dos 6 helpers protegidos permaneceu inalterado.
+3. **`npm.cmd run lint`** (`eslint frontend/js/ mcp/ app/`) — **verde (exit 0)**.
+4. **`npm.cmd test`** (`vitest run`) — **verde (exit 0)**:
+   - `37 passed (37)` arquivos de teste; `575 passed | 5 skipped (580)` testes (os 5 pulados são fixtures opcionais locais pré-existentes em `tests/fixtures/pt-html/`).
+5. **`.\node_modules\.bin\vitest.cmd run tests/origem-busca-064.test.js`** — **verde (exit 0)**:
+   - `1 passed (1)` arquivo; `4 passed (4)` testes executados e aprovados (0 pulados), validando tanto os 3 cenários determinísticos de `acharAlvo` quanto o fluxo integrado real PGlite (`get_origem_v2` legado → `acharAlvo`) nas 5 tabelas.
+
+## 4. Mutantes testados
+
+Executados automaticamente na etapa 9 de `node tools/replica-local/rodar-064-pglite.mjs` e todos reprovados conforme esperado:
+
+1. **`registrar_documento_v2` sem conferência de valor**: `064 FALHOU: divergência de valor falha com 22023 e detail em JSON`.
+2. **Policy permissiva extra em `fatos` aberta a `authenticated`**: barrada pela asserção interna da `064` (`policy SELECT`) e pelo roteiro: `064 FALHOU: b1 não lê nenhuma linha direta de fatos`.
+3. **`get_origem_v2`/`_resolver_origem_alvo` sem máscara de CPF**: `064 FALHOU: professor recebe trecho com CPF pontuado e espaçado mascarado: TOTAL CRÉDITOS 315.000,00 ref 529.982.247-25 e 529 982 247 25`.
+4. **`trg_bloqueia_agente` em `pendencias` apontando para função dummy (mesmo nome)**: barrada pela asserção `tgfoid` da `064` e pelo roteiro: `064 FALHOU: policy SELECT única e trg_bloqueia_agente ativo/sem WHEN/função certa em pendencias`.
+5. **`get_origem_v2`/`_resolver_origem_alvo` não rebaixando para `legado` quando valor muda**: `064 FALHOU: valor alterado após leitura devolve legado com nota do valor lido, documento e busca`.
+
+## 5. Desvios do contrato
+
+- **Sem desvios do contrato**: assinaturas, parâmetros, nomes de nós/campos e chaves de retorno de `registrar_documento_v2`, `get_origem_v2`, `explicar_livre_v2`, `documentos`, `documento_versoes` e `fatos` seguem integralmente o contrato da tarefa e todas as 18 correções pós-revisão de `docs/redesenho/tarefas/F2-A-banco.md`.
+- **Arquivo acrescentado à lista conforme correção nº 14**: criado `tests/origem-busca-064.test.js` para exercitar `acharAlvo` sobre o `busca` retornado por `get_origem_v2`.
+
+## 6. Dúvidas e itens em aberto
+
+- **Produção e push**: conforme regra da tarefa, nada foi aplicado em produção nem enviado com `git push`. A migração aguarda revisão independente, `ensaiar` no cofre, aprovação explícita do Victor no chat e `aplicar` com o site em manutenção.
+- **Backfill e documentação de junção**: o backfill de documentos/fatos fica para a tarefa F2-B (usando `registrar_documento_v2`), e a atualização de `docs/redesenho/ESTADO.md` e `README.md` fica para a junção.
+- **Execução na CI vs. ambiente local**: `.github/workflows/ci.yml` instala apenas dependências raiz (`npm ci`), sem `@electric-sql/pglite`; por isso `tests/origem-busca-064.test.js` roda os testes determinísticos de `acharAlvo` sempre e condiciona o bloco integrado com PGlite (`describe.runIf(temPglite)`) à presença de `.cache/pglite-064`. Como na F1-A, o PGlite valida Postgres, PL/pgSQL e RLS puros, sem a camada HTTP do PostgREST.
+
+## 7. 2ª rodada (revisão de fase — `F2-A-rodada2.md`)
+
+### Tamanho final da migração
+- **`database/064_rastreabilidade.sql`**: **86.496 bytes** em UTF-8 (1.922 linhas com terminação LF; encurtados apenas comentários/espaços de alinhamento e deduplicado o retorno de raiz nula em `explicar_livre_v2`, sem remover nenhuma checagem), dentro do limite de 90 KB do cofre.
+
+### Correções na migração `database/064_rastreabilidade.sql` e nos testes (itens 1–15)
+1. **CPF mais largo e máscara nunca mais estreita que a detecção**:
+   - `_tem_cpf` passa a aplicar `public.contem_cpf` também após remover qualquer sequência de 1 a 3 não-dígitos entre dígitos (`(?<=[0-9])[^0-9]{1,3}(?=[0-9])`) e amplia os separadores para NBSP (`\u00A0`), barra (`/`), underscore (`_`), en/em dash (`\u2013`/`\u2014`) e quebras de linha, mantendo o dígito verificador da 052.
+   - `_mascarar_cpf` substitui toda sequência `3-3-3-2` com 0..4 não-dígitos quaisquer (ou 5+ espaços/quebras/pontuação/NBSP/travessão/barra), além de 11 dígitos seguidos, e possui segunda passada guiada por `_tem_cpf` para que nenhum agrupamento detectável escape sem máscara.
+2. **Agente isolado e mascarado**: `fatos_select_admin` atualizada para `using (public.is_admin() and not public.is_agente())`; `get_origem_v2` e `explicar_livre_v2` mascaram sempre que `is_agente()` (`(not public.is_admin()) or public.is_agente()`), cobrindo também os rótulos/notas da árvore.
+3. **Pendências — CPF partido (`_texto_pendencia`)**: criada função interna `public._texto_pendencia(text, text, jsonb)` (`security definer`, sem grant) que concatena `chave`, `titulo` e todos os valores string/numéricos e chaves extraídos do `detalhe` via `jsonb_path_query(..., 'strict ...')` sem pontuação JSON. `_pendencias_sem_cpf()` e `criar_pendencia_v2` usam `_texto_pendencia`: recusam CPF partido em duas gravações ou em duas chaves do `detalhe` numa gravação, permitindo limpar CPF legado e atualizar campo alheio quando o CPF não foi recém-introduzido.
+4. **Sem oráculo em `get_origem_v2`**: para não-admin, alvo de centro fora do escopo e UUID inexistente checam o escopo antes de `assert_project_allowed` e devolvem exatamente o mesmo SQLSTATE (`42501`) e a mesma mensagem (`'Acesso negado ao alvo.'`).
+5. **Chave canônica e amarração fato ↔ documento**: `documentos` ganha `documentos_chave_formato_check` (`balancete:<project_id>:<AAAA-MM-DD>` ou `plano:<project_id>:<plano_id>`); `registrar_documento_v2` valida data real de calendário, exige chave exata com o `project_id` do payload e amarra todo fato à `data_referencia` do balancete ou ao `plano_id` da chave. Teste de ordem ajustado para múltiplas versões (`v2`/`v3`) na chave canônica do balancete de `51.X`.
+6. **Linha ambígua em `plano_rubricas`**: se houver mais de uma linha no mesmo plano com igual `(rubrica_code, coalesce(descricao_livre, ''))` (ex.: duas `null` ou `null` + `''`), `registrar_documento_v2` recusa o fato (`22023`, `'Linha ambígua no plano...'`) e `_resolver_origem_alvo` retorna `tipo = 'legado'` com `nota = 'linha ambígua no plano'`.
+7. **CPF no caminho/chave e máscara de `arquivo_nome` no `legado`**: `registrar_documento_v2` aplica `_tem_cpf` também em `caminho` e `chave`; no `legado` e no `documento`, `arquivo_nome` (e `titulo` em `documento`) sai por `_mascarar_cpf` para não-admin e agente, mantendo `caminho` intacto para URL assinada.
+8. **Atualização do título em versão nova**: quando a `chave` já existe e o `sha256` é novo, `registrar_documento_v2` atualiza `documentos.titulo` (não alterando no dedup do mesmo `sha256`).
+9. **Nota da folha em `explicar_livre_v2`**: cada folha copia a `nota` retornada por `_resolver_origem_alvo` via `lateral` (`'o valor mudou depois da leitura...'`, `'linha ambígua no plano'`, nota mensal de `scholarships`).
+10. **`paginas`/`pagina`/`bbox` em PDF sem `22P02`**: `documento_versoes_formato_paginas_check` exige `paginas` não nulo e `>= 1` quando `formato = 'pdf'`; `fatos` ganha `fatos_pagina_bbox_check` (`bbox is null or pagina is not null`) e `fatos_bbox_check` com `case when` validando tipo antes de cast; `registrar_documento_v2` valida tipo de `paginas`, `pagina` e das coordenadas de `bbox` em `if`s anteriores aos casts (`22023`, testado com `x0 = "abc"` e `"40"`).
+11. **UUID maiúsculo no `caminho`**: primeiro segmento de `caminho` é validado como UUID e comparado como `uuid` (`v_cam_seg::uuid is distinct from v_project_id`).
+12. **`_fmt_brl_num` `stable` e independente de `lc_numeric`**: alterada para `stable`, montando os separadores de milhar/decimal manualmente a partir de `to_char(abs(round(p_val, 2)), 'FM999999999999990.00')`. Testado no PGlite com `lc_numeric` = `'C'`, `'pt_BR.UTF-8'` e `'de_DE.UTF-8'` (os três foram aceitos pelo PGlite com saída idêntica).
+13. **Asserções exatas na transação + 3 mutantes novos**: ACL das 4 tabelas validada por `aclexplode` (`anon` e `PUBLIC` com 0 privilégios; `authenticated` exatamente `array['SELECT']::text[]`) e `qual` das 4 policies conferida por igualdade `=` com a expressão esperada (sem regex).
+14. **Pré-checagem de `pendencias` antes do CHECK**: bloco `do $$` antes dos `add constraint` falha listando os `ids` caso exista linha com `chave`/`titulo` em branco (`E'\t'` etc.), sem modificar dados; testado em `rodar-064-pglite.mjs` inserindo linha `E'\t'` antes da 064 (`[PRE-064 OK] CHECK bloqueou linha E'\t' com lista de ids -> 064: pendencias possui chave ou titulo em branco (ids: ...). Corrija antes de aplicar.`).
+15. **`pg_temp.verificar_arvore` (`ref` exato)**: tornado `security definer` com `search_path = public, pg_temp`; confere chaves exatas `['alvo_id', 'alvo_tabela', 'campo']`, formato UUID e existência real do `alvo_id` em `plano_rubricas`, `balancete_lancamentos` ou `scholarships`.
+
+### Itens de "Não corrigir agora" (registrados conforme solicitado)
+- **`get_saldo_livre` (048:257) com previsto negativo ou lançamento negativo isolados**: na migração `048`, o CTE `base` filtra `where coalesce(p.v, 0) > 0 or coalesce(rr.v, 0) > 0 or (r.code = 'a.bolsas' and v_compromissos > 0)`, portanto uma rubrica que só tenha `valor_previsto < 0` (com realizado `<= 0`) ou só tenha estorno (`saldo_atual < 0`, com previsto `<= 0`) é ignorada pelo `get_saldo_livre` pré-existente (e consequentemente por `resumo_projetos_v2` e `explicar_livre_v2`). Como o contrato exige fechamento com `resumo_projetos_v2` e a 064 não mexe na 048, o comportamento foi preservado e o nome do teste de `64.EDGE` (`grupo:d`) foi atualizado para descrever exatamente o que ele prova: `'rubrica d com previsto negativo e realizado positivo (incluída pela 048) entra na árvore e fecha (-2000 - 500 = -2500)'`.
+- **`conta` dos nós de rubrica**: mantidas as frases atuais (`'soma das linhas do plano'`, `'soma das contas do balancete'`, `'soma das bolsas na janela'`), aguardando a atualização contratual para aceitar frases descritivas de rubrica em `conta`.
+
+### Novos mutantes testados e verificações finais (etapas finais pós-edição)
+Além dos 5 mutantes da 1ª rodada (todos mantidos verdes em `node tools/replica-local/rodar-064-pglite.mjs`), os 3 mutantes da 2ª rodada (total **8 mutantes**) também foram rejeitados tanto pela asserção da 064 quanto pelo `test_064_rastreabilidade.sql`:
+- **Mutante 6 (`grant truncate on public.documentos to anon;`)**: asserção `aclexplode` da 064 barrou (`064: anon/PUBLIC possui privilégio em documentos`) e roteiro barrou: `064 FALHOU: ACL exata de tabela via aclexplode em public.documentos`.
+- **Mutante 7 (`fatos_select_admin` com `using (public.is_admin() or true)`)**: asserção exata de `qual` da 064 barrou (`policy fatos_select_admin de fatos com qual inesperada`) e roteiro barrou: `064 FALHOU: b1 não lê nenhuma linha direta de fatos`.
+- **Mutante 8 (`documentos_select_escopo` com `using (true)`)**: asserção exata de `qual` da 064 barrou (`policy documentos_select_escopo de documentos com qual inesperada`) e roteiro barrou: `064 FALHOU: b1 lê documentos apenas de 51.X`.
+
+Resultado das execuções finais após todas as edições da 2ª rodada:
+- **`node tools/replica-local/rodar-064-pglite.mjs`** — **verde (exit 0)**: falha pré-064 (`42P01`), pré-checagem `E'\t'` em `pendencias`, cofre OK (`86496 bytes`), 5 blocos + idempotência + BLOCO 1 da 051 + MD5 dos 6 helpers protegidos + **8 mutantes** + conferência final verdes.
+- **`npm.cmd run lint`** — **verde (exit 0)**.
+- **`npm.cmd test`** — **verde (exit 0)**: `37 passed (37)` arquivos, `575 passed | 5 skipped (580)` testes (5 pulados pré-existentes de fixtures opcionais em `tests/fixtures/pt-html/`).
+- **`.\node_modules\.bin\vitest.cmd run tests/origem-busca-064.test.js`** — **verde (exit 0)**: `1 passed (1)` arquivo, `4 passed (4)` testes (0 pulados).
+
+## 8. 3ª rodada (revisão final DeepSeek max — `F2-A-rodada3.md`)
+
+### Tamanho final da migração
+- **`database/064_rastreabilidade.sql`**: **88.760 bytes** em UTF-8 (1.992 linhas com LF; `begin;` como primeiro comando e `commit;` como último), abaixo do limite de 90 KB. O espaço extra veio de `_cpfs` (novo helper interno) e das checagens da 3ª rodada; nenhuma checagem anterior foi removida.
+
+### Correções na migração, testes e roteiro (itens 1–8)
+1. **`busca.texto` com máscara**: `_resolver_origem_alvo` agora aplica `_mascarar_cpf` em `busca.texto` sempre que `p_mascarar` (cobre `descricao_livre` de `plano_rubricas` e qualquer `texto` livre futuro). Teste novo em BLOCO 3 cria um plano inativo de 51.X com `descricao_livre = 'Consultoria 529.982.247-25'` e confere: admin lê o texto cru; b1 (professor) e c1 (agente) recebem `'Consultoria ***.***.***-**'` com `tipo = 'legado'` e `documento = null`.
+2. **Caminho canônico**: o primeiro segmento de `caminho` passou a ser comparado como **texto** com `v_project_id::text` (minúsculo), não mais como `uuid`. UUID maiúsculo agora falha com a mensagem `Primeiro segmento do caminho deve ser o project_id em minúsculas: …`. O teste da 2ª rodada foi ajustado: `v2` usa caminho minúsculo e um novo caso com `upper(x)` espera `22023` e a mensagem clara.
+3. **Pré-checagem de `pendencias`**: o `do $$` anterior aos `ADD CONSTRAINT` agora lista também linhas com `chave` ou `titulo` nulos (`where chave is null or titulo is null or btrim(...) = ''`) e a mensagem virou `pendencias possui chave/titulo nulo ou em branco (ids: …)`. O roteiro (`rodar-064-pglite.mjs`) remove temporariamente o `NOT NULL` local, insere uma linha com `chave` nula e outra com `titulo` nulo, confirma que a 064 falha listando **os dois ids** e restaura o `NOT NULL`/apaga as linhas de teste.
+4. **Gatilho de CPF de `pendencias` — troca de CPF**: novo helper interno `_cpfs(text)` (`security definer`, `search_path = public, pg_temp`, sem grant) extrai os CPFs válidos de um texto (mesmo padrão largo de `_mascarar_cpf`, dígito verificador da 052, sem repetir). No `UPDATE`, `_pendencias_sem_cpf` recusa quando o texto novo contém algum CPF que não estava no texto antigo (`exists … unnest(_cpfs(v_novo)) c where not (c = any(_cpfs(v_antigo)))`), o que bloqueia trocar um CPF por outro e continua permitindo limpar CPF legado e editar campo alheio. Teste novo: a linha legada com `529 982 247 25` no `detalhe` recusa a troca para `111.444.777-35` com `23514`; limpar o detalhe continua permitido.
+5. **Índice `idx_fatos_versao`**: criado em `public.fatos (versao_id)` (além do `idx_fatos_alvo`). A asserção da 064 e o BLOCO 5 do teste conferem a presença dos dois índices (`idx_fatos_alvo`, `idx_fatos_versao`) e de `idx_pendencias_resolvida_por`.
+6. **Plano/balancete existentes mesmo com `fatos: []`**: `registrar_documento_v2`, depois de validar a chave canônica, exige: para `tipo = 'balancete'`, um `balancetes` do `project_id` na `data_referencia` da chave (`22023`, `Não existe balancete do projeto … na data … da chave.`); para `tipo = 'plano'`, um `planos_trabalho` com o `id` da chave e do `project_id` (`22023`, `Plano … não encontrado no projeto …`). Dois testes novos com `fatos: []` cobrem plano inexistente e data sem balancete.
+7. **`parser`/`parser_versao` com CPF**: ambos entraram no bloco de metadados que chama `_tem_cpf`, junto de `titulo` e `arquivo_nome` (mesma mensagem `Metadados do documento contêm CPF…`, `22023`). Testes novos com CPF pontuado no `parser` e espaçado no `parser_versao`.
+8. **Asserção do `qual` robusta ao deparse**: tanto na 064 quanto no BLOCO 5, os dois lados são normalizados com `lower`, remoção de todo espaço/parenteses (`regexp_replace(..., '[\s()]', '', 'g')`) e remoção de `public.` antes da igualdade. Os mutantes 7 (`fatos_select_admin … or true`) e 8 (`documentos_select_escopo … using (true)`) continuam reprovando com a mesma mensagem (`policy … com qual inesperada`).
+
+### Verificação das correções novas
+Além dos **8 mutantes** oficiais (todos continuam reprovando no roteiro: 5 da 1ª rodada + 3 da 2ª rodada), as cinco correções com teste novo foram conferidas contra versões estragadas em memória (script descartável, sem alterar arquivos do repositório):
+- sem a máscara em `busca.texto` → `064 FALHOU: b1 recebe busca.texto de rubrica mascarado`;
+- gatilho sem a comparação de CPFs (`_cpfs`) → `064 FALHOU: operação deveria falhar mas passou: update … 111.444.777-35`;
+- `registrar_documento_v2` sem a existência de plano/balancete → `064 FALHOU: operação deveria falhar mas passou` nos dois casos com `fatos: []`;
+- caminho comparado como `uuid` (maiúsculo aceito) → `064 FALHOU: operação deveria falhar mas passou`;
+- `parser` sem `_tem_cpf` → `064 FALHOU: operação deveria falhar mas passou`.
+A pré-checagem de `pendencias` com `chave`/`titulo` nulos foi provada diretamente pelo roteiro, que lista os dois ids antes de restaurar a tabela.
+
+### Resultado das execuções finais da 3ª rodada
+- **`node tools/replica-local/rodar-064-pglite.mjs`** — **verde (exit 0)**: falha pré-064 (`42P01`), pré-checagem `E'\t'` + linhas com `chave`/`titulo` nulos, cofre OK (`88760 bytes`), 5 blocos + idempotência + BLOCO 1 da 051 + MD5 dos 6 helpers protegidos + **8 mutantes** + conferência final verdes.
+- **`npm run lint`** — **verde (exit 0)**.
+- **`npx vitest run`** — **verde (exit 0)**: `37 passed (37)` arquivos, `575 passed | 5 skipped (580)` testes (os 5 pulados são fixtures opcionais pré-existentes em `tests/fixtures/pt-html/`).
+- **Sem push e sem aplicar em produção**, conforme a tarefa.
