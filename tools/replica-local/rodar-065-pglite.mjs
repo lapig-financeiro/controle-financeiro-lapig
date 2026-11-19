@@ -139,6 +139,89 @@ async function main() {
     return { x, bal, bl };
   }
 
+  // Centro sintético grande (320 rubricas, 960 lançamentos), criado e desfeito
+  // dentro de uma transação; mede só a chamada de explicar_livre_v2.
+  async function criarCentroGrande() {
+    const id = (await q(`
+      insert into public.projects (name, code, start_date, end_date)
+      values ('Bench 065 (sintético)', '99.BENCH', '2025-01-01', '2030-12-31')
+      returning id`)).rows[0].id;
+
+    await sql(`
+      insert into public.rubricas (code, parent_code, name, ordem)
+      values ('bench.065', null, 'Bench 065', 900)
+      on conflict (code) do nothing;
+      insert into public.rubricas (code, parent_code, name, ordem)
+        select 'bench.065.' || lpad(g::text, 3, '0'), 'bench.065',
+               'Rubrica bench ' || g, 900 + g
+          from generate_series(1, 320) g
+        on conflict (code) do nothing;
+    `);
+
+    const planoId = (await q(`
+      insert into public.planos_trabalho
+        (project_id, versao, tipo, ativo, valor_total_plano, arquivo_storage_path, arquivo_nome)
+      values ($1, 0, 'original', true, 320000, '99.BENCH/bench_plano.docx', 'bench_plano.docx')
+      returning id`, [id])).rows[0].id;
+
+    await sql(`
+      insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto)
+        select '${planoId}'::uuid, 'bench.065.' || lpad(g::text, 3, '0'), 1000
+          from generate_series(1, 320) g;
+    `);
+
+    const balId = (await q(`
+      insert into public.balancetes
+        (project_id, data_referencia, saldo_disponivel, rendimento_liquido,
+         arquivo_storage_path, arquivo_nome)
+      values ($1, date '2026-10-31', 500000, 0,
+              '99.BENCH/bench_balancete.pdf', 'bench_balancete.pdf')
+      returning id`, [id])).rows[0].id;
+
+    await sql(`
+      insert into public.balancete_lancamentos
+        (balancete_id, conta_codigo, conta_descricao, valor_debito, valor_credito, saldo_atual, rubrica_code)
+        select '${balId}'::uuid,
+               '9.9.9.' || lpad(g::text, 3, '0') || '.' || k::text,
+               'Conta bench ' || g || '-' || k,
+               case when k = 2 then 100 else 0 end,
+               case when k = 3 then 100 else 0 end,
+               100,
+               'bench.065.' || lpad(g::text, 3, '0')
+          from generate_series(1, 320) g
+         cross join generate_series(1, 3) k;
+    `);
+
+    return id;
+  }
+
+  async function medirCentroGrande(rotulo) {
+    await sql('begin;');
+    try {
+      const id = await criarCentroGrande();
+      await sql(`select set_config('request.jwt.claim.sub', '${a1}', true); set local role authenticated;`);
+      const t0 = performance.now();
+      const ex = (await q('select public.explicar_livre_v2($1) as ex', [id])).rows[0].ex;
+      const ms = performance.now() - t0;
+      if (!ex || !Array.isArray(ex.partes) || ex.partes.length === 0) {
+        throw new Error(`bench ${rotulo}: árvore vazia`);
+      }
+      return { ms, bytes: Buffer.byteLength(JSON.stringify(ex)) };
+    } finally {
+      try { await sql('rollback;'); } catch { /* a transação já pode ter sido desfeita */ }
+    }
+  }
+
+  async function medirMediana(rotulo, repeticoes) {
+    const medidas = [];
+    for (let i = 0; i < repeticoes; i += 1) {
+      medidas.push(await medirCentroGrande(rotulo));
+    }
+    medidas.sort((a, b) => a.ms - b.ms);
+    const meio = Math.floor(medidas.length / 2);
+    return { ...medidas[meio], todas: medidas.map((m) => Math.round(m.ms)) };
+  }
+
   async function criarColisao() {
     await sql(`
       create or replace function pg_temp.colide065() returns trigger
@@ -330,6 +413,10 @@ async function main() {
     console.log(`  [ITEM 7] alvo nulo de b1 devolve: ${await probeItem7()}`);
     console.log(`  [ITEM 8] asserção da 064 sem nomes: ${await probeItem8()}`);
 
+    console.log('4.1. Medindo explicar_livre_v2 na 064 num centro grande (320 rubricas, 960 lançamentos)...');
+    const bench064 = await medirMediana('064', 3);
+    console.log(`  [BENCH 064] ${bench064.ms.toFixed(1)} ms (3 medidas: ${bench064.todas.join(', ')} ms; árvore ${bench064.bytes} bytes)`);
+
     console.log('5. Conferindo que test_065 FALHA antes da 065, pelo motivo do item 1...');
     let falhouAntes = false;
     let msgAntes = '';
@@ -360,6 +447,13 @@ async function main() {
     const qtdArvores = compararArvores(arvoresAntes, arvoresDepois);
     console.log(`  [ÁRVORE OK] ${qtdArvores} árvores idênticas (admin por centro, professor e agente em 51.X/63.INAT).`);
 
+    console.log('7.1. Medindo explicar_livre_v2 na 065 no mesmo centro grande...');
+    const bench065 = await medirMediana('065', 3);
+    console.log(`  [BENCH 065] ${bench065.ms.toFixed(1)} ms (3 medidas: ${bench065.todas.join(', ')} ms; árvore ${bench065.bytes} bytes)`);
+    if (bench065.ms > bench064.ms) {
+      throw new Error(`065 ficou mais lenta que a 064 no centro grande (${bench064.ms.toFixed(1)} -> ${bench065.ms.toFixed(1)} ms).`);
+    }
+
     console.log('8. Executando test_064 e test_065 depois da 065...');
     await rodarTeste(test064);
     await rodarTeste(test065);
@@ -388,7 +482,7 @@ async function main() {
     `)).rows[0].v;
     if (semBarreira) throw new Error('Tabela sem trg_bloqueia_agente válido depois da 065: ' + semBarreira);
 
-    console.log('11. Provando os mutantes (itens 1, 2, 3, 4, 5, 6 e 7) e a asserção do item 8...');
+    console.log('11. Provando os mutantes (itens 1, 2, 3, 4, 5, 6, 7 e 2b), a asserção do item 8 e o search_path exato...');
 
     // Mutante 1: _tem_cpf sem o candidato (só contem_cpf)
     await esperarFalhaTest065(
@@ -428,6 +522,20 @@ async function main() {
       '065 FALHOU: item 3',
     );
 
+    // Mutante 2b (2ª rodada): caminho do ramo documento com CPF volta cru
+    await esperarFalhaTest065(
+      '2b) caminho do ramo documento com CPF sem anulação',
+      async () => {
+        const fn = extrairFuncao(texto065, '_resolver_origens_v2');
+        const alvo = `'caminho', case when p_mascarar and public._tem_cpf(fa.doc_caminho) then null
+                      else fa.doc_caminho end,`;
+        const mut = fn.replace(alvo, `'caminho', fa.doc_caminho,`);
+        if (mut === fn) throw new Error('Falha ao montar mutante 2b.');
+        await sql(mut);
+      },
+      '065 FALHOU: item 2b',
+    );
+
     // Mutante 4: criar_pendencia_v2 com a checagem prévia da 064
     await esperarFalhaTest065(
       '4) criar_pendencia_v2 com checagem prévia (não limpa CPF legado)',
@@ -454,8 +562,8 @@ async function main() {
       '5) explicar_livre_v2 com folha de previsto trocada de tipo',
       async () => {
         const fn = extrairFuncao(texto065, 'explicar_livre_v2');
-        const alvo = `'valor', pr.valor_previsto, 'tipo', coalesce(o.origem ->> 'tipo', 'legado'),`;
-        const mut = fn.replace(alvo, `'valor', pr.valor_previsto, 'tipo', 'legado',`);
+        const alvo = `        'tipo', coalesce(v_origens_prev -> ('plano_rubricas|' || pr.id::text || '|valor_previsto') ->> 'tipo', 'legado'),`;
+        const mut = fn.replace(alvo, `        'tipo', 'legado',`);
         if (mut === fn) throw new Error('Falha ao montar mutante 5.');
         await sql(mut);
       },
@@ -537,6 +645,25 @@ async function main() {
       console.log(`  [ASSERÇÃO OK] item 8 -> ${msg}`);
     });
 
+    // Item 3 da 2ª rodada: a asserção de search_path é exata; um search_path mais
+    // frouxo numa função interna faz a própria 065 falhar.
+    await emTransacao(async () => {
+      const fn = extrairFuncao(texto065, '_resolver_origens_v2');
+      const mutFn = fn.replace('set search_path = public, pg_temp', 'set search_path = public');
+      if (mutFn === fn) throw new Error('Falha ao montar a sonda de search_path.');
+      const mut = texto065.replace(fn, () => mutFn);
+      let msg = '';
+      try {
+        await sql(mut);
+      } catch (e) {
+        msg = e.message;
+      }
+      if (!msg.includes('sem security definer ou search_path')) {
+        throw new Error(`item 3 (2ª rodada): search_path frouxo não foi recusado (${msg || 'passou'}).`);
+      }
+      console.log(`  [SEARCH_PATH OK] ${msg}`);
+    });
+
     console.log('12. Conferência final depois dos mutantes...');
     await arquivo(sql065);
     await rodarTeste(test064);
@@ -547,7 +674,7 @@ async function main() {
       throw new Error('065 alterou algum helper protegido!');
     }
 
-    console.log('065 OK em PGlite: base real + 064 + stub + test_065 falhando antes + árvores idênticas + test_064/test_065 + idempotência + barreira 051 + cofre + 7 mutantes + asserção do item 8 + helpers protegidos.');
+    console.log('065 OK em PGlite: base real + 064 + stub + test_065 falhando antes + árvores idênticas + centro grande mais rápido que a 064 + test_064/test_065 + idempotência + barreira 051 + cofre + 8 mutantes + asserção do item 8 + search_path exato + helpers protegidos.');
   } catch (e) {
     console.error('ERRO:', e.message, e.detail || '', e.where || '');
     process.exitCode = 1;

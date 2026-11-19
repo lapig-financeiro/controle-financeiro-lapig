@@ -152,6 +152,9 @@ select set_config('test065.bal_y', (select id::text from public.balancetes
 select set_config('test065.bl_leg', (select id::text from public.balancete_lancamentos
                                       where balancete_id = current_setting('test065.bal_x')::uuid
                                         and conta_codigo = '7.1.3.05.01.00014'), true);
+select set_config('test065.bl_doc', (select id::text from public.balancete_lancamentos
+                                      where balancete_id = current_setting('test065.bal_x')::uuid
+                                        and conta_codigo = '7.1.3.04.01.09142'), true);
 
 -- ------------------------------------------------------------
 -- BLOCO 1 — itens 1 e 2: gramática única e máscara só com DV
@@ -339,7 +342,88 @@ begin
 end $$;
 reset role;
 
-do $$ begin raise notice 'BLOCO 2 ok: caminho legado com CPF (item 3)'; end $$;
+-- Item 2 da 2ª rodada: o caminho do ramo documento (fato conferido) também
+-- anula para não-admin/agente quando tem CPF, com a nota dentro de documento.
+update public.documento_versoes dv
+   set caminho = current_setting('test065.x') || '/doc_52998224725.pdf'
+  from public.documentos d
+ where d.id = dv.documento_id
+   and d.project_id = current_setting('test065.x')::uuid
+   and d.tipo = 'balancete';
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', false);
+set local role authenticated;
+do $$
+declare
+  x      uuid := current_setting('test065.x')::uuid;
+  bl_doc uuid := current_setting('test065.bl_doc')::uuid;
+  o      jsonb := public.get_origem_v2('balancete_lancamentos', bl_doc, 'saldo_atual');
+  ex     jsonb;
+  v_folha jsonb;
+begin
+  perform pg_temp.ok065(
+    o ->> 'tipo' = 'documento'
+    and o -> 'documento' -> 'caminho' = 'null'::jsonb
+    and o -> 'documento' ->> 'nota' = 'arquivo com nome que parece CPF: peça ao admin'
+    and o -> 'nota' = 'null'::jsonb,
+    'item 2b: b1 recebe caminho nulo e nota no ramo documento'
+  );
+
+  ex := public.explicar_livre_v2(x);
+  perform pg_temp.arvore065(ex, true);
+  select l into v_folha
+    from jsonb_array_elements(ex -> 'partes') g,
+         jsonb_array_elements(g -> 'partes') r,
+         jsonb_array_elements(r -> 'partes') l
+   where l ->> 'chave' = 'linha:' || bl_doc::text;
+  perform pg_temp.ok065(
+    v_folha ->> 'tipo' = 'documento' and v_folha -> 'nota' = 'null'::jsonb,
+    'item 2b: a nota do caminho no ramo documento não muda a folha da árvore'
+  );
+end $$;
+reset role;
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', false);
+set local role authenticated;
+do $$
+declare
+  bl_doc uuid := current_setting('test065.bl_doc')::uuid;
+  o      jsonb := public.get_origem_v2('balancete_lancamentos', bl_doc, 'saldo_atual');
+begin
+  perform pg_temp.ok065(
+    o ->> 'tipo' = 'documento'
+    and o -> 'documento' -> 'caminho' = 'null'::jsonb
+    and o -> 'documento' ->> 'nota' = 'arquivo com nome que parece CPF: peça ao admin',
+    'item 2b: agente recebe caminho nulo e nota no ramo documento'
+  );
+end $$;
+reset role;
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', false);
+set local role authenticated;
+do $$
+declare
+  x      uuid := current_setting('test065.x')::uuid;
+  bl_doc uuid := current_setting('test065.bl_doc')::uuid;
+  o      jsonb := public.get_origem_v2('balancete_lancamentos', bl_doc, 'saldo_atual');
+begin
+  perform pg_temp.ok065(
+    o ->> 'tipo' = 'documento'
+    and o -> 'documento' ->> 'caminho' = x::text || '/doc_52998224725.pdf'
+    and not (o -> 'documento' ? 'nota'),
+    'item 2b: admin continua vendo o caminho cru no ramo documento'
+  );
+end $$;
+reset role;
+
+update public.documento_versoes dv
+   set caminho = current_setting('test065.x') || '/balancete_atual.pdf'
+  from public.documentos d
+ where d.id = dv.documento_id
+   and d.project_id = current_setting('test065.x')::uuid
+   and d.tipo = 'balancete';
+
+do $$ begin raise notice 'BLOCO 2 ok: caminho legado e documento com CPF (itens 3 e 2b)'; end $$;
 
 -- ------------------------------------------------------------
 -- BLOCO 3 — item 4: pendência nova recusa CPF; existente deixa o gatilho decidir
@@ -542,10 +626,9 @@ begin
     and not has_function_privilege('authenticated', 'public._resolver_origens_v2(jsonb, boolean)', 'EXECUTE'),
     'item 5: _resolver_origens_v2 fechada para anon/authenticated');
   perform pg_temp.ok065(
-    (select prosecdef and proconfig is not null and exists (
-              select 1 from unnest(proconfig) c where c like 'search_path=%')
+    (select prosecdef and proconfig = array['search_path=public, pg_temp']::text[]
        from pg_proc where oid = 'public._resolver_origens_v2(jsonb, boolean)'::regprocedure),
-    'item 5: _resolver_origens_v2 é security definer com search_path');
+    'item 5: _resolver_origens_v2 é security definer com search_path exato');
 end $$;
 reset role;
 

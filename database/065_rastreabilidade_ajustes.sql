@@ -937,6 +937,15 @@ with pedido as (
            then coalesce(p_alvos, '[]'::jsonb) else '[]'::jsonb end
     ) as e(elem)
 ),
+amb as (
+  -- Chave estável da linha: mesma expressão da origem e do subselect antigo.
+  select pr2.plano_id,
+         pr2.rubrica_code,
+         coalesce(pr2.descricao_livre, '') as desc_key,
+         count(*) as n
+    from public.plano_rubricas pr2
+   group by pr2.plano_id, pr2.rubrica_code, coalesce(pr2.descricao_livre, '')
+),
 alvo as (
   select 'balancetes'::text as alvo_tabela, p.alvo_id, p.campo,
          b.project_id, b.id as pai, ''::text as chave,
@@ -1024,16 +1033,16 @@ alvo as (
              else coalesce(nullif(btrim(pr.descricao_livre, E' \t\n\r"'), ''), r.name) end,
            'valor', pr.valor_previsto
          )),
-         (select count(*) > 1
-            from public.plano_rubricas pr2
-           where pr2.plano_id = pr.plano_id
-             and (pr2.rubrica_code || '|' || coalesce(pr2.descricao_livre, '')) =
-                 (pr.rubrica_code || '|' || coalesce(pr.descricao_livre, ''))),
+         (coalesce(amb.n, 0) > 1),
          null::text
     from pedido p
     join public.plano_rubricas pr on pr.id = p.alvo_id
     join public.planos_trabalho pt on pt.id = pr.plano_id
     join public.rubricas r on r.code = pr.rubrica_code
+    left join amb
+      on amb.plano_id = pr.plano_id
+     and amb.rubrica_code = pr.rubrica_code
+     and amb.desc_key = coalesce(pr.descricao_livre, '')
    where p.alvo_tabela = 'plano_rubricas'
 
   union all
@@ -1124,9 +1133,14 @@ select p.alvo_tabela, p.alvo_id, p.campo,
       'id', fa.doc_id, 'tipo', fa.doc_tipo_fato,
       'titulo', case when p_mascarar then public._mascarar_cpf(fa.doc_titulo) else fa.doc_titulo end,
       'arquivo_nome', case when p_mascarar then public._mascarar_cpf(fa.doc_arquivo_nome) else fa.doc_arquivo_nome end,
-      'formato', fa.doc_formato, 'bucket', fa.doc_bucket, 'caminho', fa.doc_caminho,
+      'formato', fa.doc_formato, 'bucket', fa.doc_bucket,
+      'caminho', case when p_mascarar and public._tem_cpf(fa.doc_caminho) then null
+                      else fa.doc_caminho end,
       'versao', fa.doc_versao, 'registrado_em', fa.doc_registrado_em
-    ) as doc
+    )
+    || case when p_mascarar and public._tem_cpf(fa.doc_caminho)
+            then jsonb_build_object('nota', 'arquivo com nome que parece CPF: peça ao admin')
+            else '{}'::jsonb end as doc
   ) fd on fa.alvo_tabela is not null
   left join lateral (
     select case
@@ -1197,6 +1211,7 @@ declare
   v_balancete_id uuid; v_plano_id uuid; v_grupos jsonb; v_rubricas jsonb; v_bolsas jsonb;
   v_livre_total numeric; v_partes_grupos jsonb := '[]'::jsonb;
   v_alvos_prev jsonb; v_alvos_real jsonb; v_alvos_comp jsonb;
+  v_origens_prev jsonb := '{}'::jsonb; v_origens_real jsonb := '{}'::jsonb; v_origens_comp jsonb := '{}'::jsonb;
   v_g jsonb; v_g_code text; v_g_name text; v_g_saldo numeric; v_g_cob text; v_g_partes jsonb;
   v_r jsonb; v_r_code text; v_r_name text; v_r_prev numeric; v_r_real numeric; v_r_comp numeric;
   v_prev_folhas jsonb; v_real_folhas jsonb; v_comp_folhas jsonb;
@@ -1249,6 +1264,26 @@ begin
     from jsonb_array_elements(v_bolsas) as b(elem)
    where coalesce((b.elem ->> 'compromisso')::numeric, 0) <> 0;
 
+  -- 065 (2ª rodada): uma chamada por tabela, fora do laço das rubricas; o resultado
+  -- fica indexado por (alvo_tabela, alvo_id, campo) e é consultado a cada folha.
+  select coalesce(jsonb_object_agg(
+           o.alvo_tabela || '|' || coalesce(o.alvo_id::text, '') || '|' || o.campo, o.origem),
+         '{}'::jsonb)
+    into v_origens_prev
+    from public._resolver_origens_v2(v_alvos_prev, v_mascarar) o;
+
+  select coalesce(jsonb_object_agg(
+           o.alvo_tabela || '|' || coalesce(o.alvo_id::text, '') || '|' || o.campo, o.origem),
+         '{}'::jsonb)
+    into v_origens_real
+    from public._resolver_origens_v2(v_alvos_real, v_mascarar) o;
+
+  select coalesce(jsonb_object_agg(
+           o.alvo_tabela || '|' || coalesce(o.alvo_id::text, '') || '|' || o.campo, o.origem),
+         '{}'::jsonb)
+    into v_origens_comp
+    from public._resolver_origens_v2(v_alvos_comp, v_mascarar) o;
+
   for v_g in select value from jsonb_array_elements(v_grupos) loop
     v_g_code := v_g ->> 'grupo_code'; v_g_name := v_g ->> 'grupo_name';
     v_g_saldo := (v_g ->> 'saldo_livre')::numeric; v_g_cob := v_g ->> 'compromissos_cobertura'; v_g_partes := '[]'::jsonb;
@@ -1262,14 +1297,17 @@ begin
       select coalesce(jsonb_agg(jsonb_build_object(
         'rotulo', case when v_mascarar then public._mascarar_cpf(coalesce(nullif(btrim(pr.descricao_livre, E' \t\n\r"'), ''), v_r_name))
                   else coalesce(nullif(btrim(pr.descricao_livre, E' \t\n\r"'), ''), v_r_name) end,
-        'valor', pr.valor_previsto, 'tipo', coalesce(o.origem ->> 'tipo', 'legado'), 'chave', 'linha:' || pr.id::text,
+        'valor', pr.valor_previsto,
+        'tipo', coalesce(v_origens_prev -> ('plano_rubricas|' || pr.id::text || '|valor_previsto') ->> 'tipo', 'legado'),
+        'chave', 'linha:' || pr.id::text,
         'conta', null, 'sinal', 1, 'ref', jsonb_build_object('alvo_tabela', 'plano_rubricas', 'alvo_id', pr.id, 'campo', 'valor_previsto'),
-        'nota', case when v_mascarar then public._mascarar_cpf(o.origem ->> 'nota') else o.origem ->> 'nota' end, 'partes', '[]'::jsonb
+        'nota', case when v_mascarar
+                     then public._mascarar_cpf(v_origens_prev -> ('plano_rubricas|' || pr.id::text || '|valor_previsto') ->> 'nota')
+                     else v_origens_prev -> ('plano_rubricas|' || pr.id::text || '|valor_previsto') ->> 'nota' end,
+        'partes', '[]'::jsonb
       ) order by pr.valor_previsto desc, pr.descricao_livre nulls last, pr.id), '[]'::jsonb)
         into v_prev_folhas
         from public.plano_rubricas pr
-        left join public._resolver_origens_v2(v_alvos_prev, v_mascarar) o
-          on o.alvo_tabela = 'plano_rubricas' and o.alvo_id = pr.id and o.campo = 'valor_previsto'
        where pr.plano_id = v_plano_id and pr.rubrica_code = v_r_code and pr.valor_previsto <> 0;
 
       if v_r_prev <> 0 or jsonb_array_length(v_prev_folhas) > 0 then
@@ -1283,14 +1321,17 @@ begin
       select coalesce(jsonb_agg(jsonb_build_object(
         'rotulo', case when v_mascarar then public._mascarar_cpf(case when nullif(btrim(bl.conta_descricao, E' \t\n\r'), '') is not null then bl.conta_codigo || ' — ' || btrim(bl.conta_descricao, E' \t\n\r') else bl.conta_codigo end)
                   else case when nullif(btrim(bl.conta_descricao, E' \t\n\r'), '') is not null then bl.conta_codigo || ' — ' || btrim(bl.conta_descricao, E' \t\n\r') else bl.conta_codigo end end,
-        'valor', bl.saldo_atual, 'tipo', coalesce(o.origem ->> 'tipo', 'legado'), 'chave', 'linha:' || bl.id::text,
+        'valor', bl.saldo_atual,
+        'tipo', coalesce(v_origens_real -> ('balancete_lancamentos|' || bl.id::text || '|saldo_atual') ->> 'tipo', 'legado'),
+        'chave', 'linha:' || bl.id::text,
         'conta', null, 'sinal', 1, 'ref', jsonb_build_object('alvo_tabela', 'balancete_lancamentos', 'alvo_id', bl.id, 'campo', 'saldo_atual'),
-        'nota', case when v_mascarar then public._mascarar_cpf(o.origem ->> 'nota') else o.origem ->> 'nota' end, 'partes', '[]'::jsonb
+        'nota', case when v_mascarar
+                     then public._mascarar_cpf(v_origens_real -> ('balancete_lancamentos|' || bl.id::text || '|saldo_atual') ->> 'nota')
+                     else v_origens_real -> ('balancete_lancamentos|' || bl.id::text || '|saldo_atual') ->> 'nota' end,
+        'partes', '[]'::jsonb
       ) order by bl.saldo_atual desc, bl.conta_codigo, bl.id), '[]'::jsonb)
         into v_real_folhas
         from public.balancete_lancamentos bl
-        left join public._resolver_origens_v2(v_alvos_real, v_mascarar) o
-          on o.alvo_tabela = 'balancete_lancamentos' and o.alvo_id = bl.id and o.campo = 'saldo_atual'
        where bl.balancete_id = v_balancete_id and bl.rubrica_code = v_r_code and bl.saldo_atual <> 0;
 
       if v_r_real <> 0 or jsonb_array_length(v_real_folhas) > 0 then
@@ -1305,15 +1346,17 @@ begin
         select coalesce(jsonb_agg(jsonb_build_object(
           'rotulo', case when v_mascarar then public._mascarar_cpf((b.elem ->> 'bolsista') || ' — ' || (b.elem ->> 'meses') || case when (b.elem ->> 'meses')::integer = 1 then ' mês' else ' meses' end || ' × R$ ' || public._fmt_brl_num((b.elem ->> 'valor_mensal')::numeric))
                     else (b.elem ->> 'bolsista') || ' — ' || (b.elem ->> 'meses') || case when (b.elem ->> 'meses')::integer = 1 then ' mês' else ' meses' end || ' × R$ ' || public._fmt_brl_num((b.elem ->> 'valor_mensal')::numeric) end,
-          'valor', (b.elem ->> 'compromisso')::numeric, 'tipo', coalesce(o.origem ->> 'tipo', 'digitado'),
+          'valor', (b.elem ->> 'compromisso')::numeric,
+          'tipo', coalesce(v_origens_comp -> ('scholarships|' || (b.elem ->> 'scholarship_id') || '|amount') ->> 'tipo', 'digitado'),
           'chave', 'linha:' || (b.elem ->> 'scholarship_id'), 'conta', null, 'sinal', 1,
           'ref', jsonb_build_object('alvo_tabela', 'scholarships', 'alvo_id', (b.elem ->> 'scholarship_id')::uuid, 'campo', 'amount'),
-          'nota', case when v_mascarar then public._mascarar_cpf(o.origem ->> 'nota') else o.origem ->> 'nota' end, 'partes', '[]'::jsonb
+          'nota', case when v_mascarar
+                       then public._mascarar_cpf(v_origens_comp -> ('scholarships|' || (b.elem ->> 'scholarship_id') || '|amount') ->> 'nota')
+                       else v_origens_comp -> ('scholarships|' || (b.elem ->> 'scholarship_id') || '|amount') ->> 'nota' end,
+          'partes', '[]'::jsonb
         ) order by (b.elem ->> 'compromisso')::numeric desc, b.ord), '[]'::jsonb)
           into v_comp_folhas
           from jsonb_array_elements(v_bolsas) with ordinality as b(elem, ord)
-          left join public._resolver_origens_v2(v_alvos_comp, v_mascarar) o
-            on o.alvo_tabela = 'scholarships' and o.alvo_id = (b.elem ->> 'scholarship_id')::uuid and o.campo = 'amount'
          where coalesce((b.elem ->> 'compromisso')::numeric, 0) <> 0;
 
         if v_r_comp <> 0 or jsonb_array_length(v_comp_folhas) > 0 then
@@ -1612,7 +1655,7 @@ begin
        where p.oid = v_fn
          and p.prosecdef
          and p.proconfig is not null
-         and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')
+         and p.proconfig = array['search_path=public, pg_temp']::text[]
     ) then
       raise exception '065: função interna % sem security definer ou search_path', v_fn_sig;
     end if;
@@ -1641,7 +1684,7 @@ begin
        where p.oid = v_fn
          and p.prosecdef
          and p.proconfig is not null
-         and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%')
+         and p.proconfig = array['search_path=public, pg_temp']::text[]
     ) then
       raise exception '065: RPC % sem security definer ou search_path', v_fn_sig;
     end if;
