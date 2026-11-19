@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 18/11/2026, noite.
+Última atualização: 19/11/2026, manhã.
 
 ## Combinados com o Victor (não rediscutir)
 - Menu: Projetos → página do projeto; Análise (área de trabalho com IA, não chatbot); Admin mínimo.
@@ -37,6 +37,8 @@
 | Redirect URL `/v2/` no Supabase | feito pelo Victor (18/11) |
 | F1 | **Duas rodadas feitas e revisadas** (dois DeepSeek por frente, mutantes no teste da 063). Branch `redesenho/f1-a-banco` (worktree `C:/Users/amara/dev/cf-f1-a`, commits 7115e26 + 5c90495: migração 063, 41 KB, pglite verde) e `redesenho/f1-b-telas` (worktree `C:/Users/amara/dev/cf-f1-b`, 3eb05ca + 2f3ff1b: 54 testes, guarda de build sem dado de exemplo). Conferidas pelo Claude no navegador com dados de exemplo (`.claude/launch.json` → `f1b-exemplo`). **063 aplicada e telas publicadas no /v2/ em 18/11** (merge d2b8db8; CI e deploy ok; bundle no ar chama as RPCs novas e não tem dado de exemplo). **Falta:** o Victor abrir o /v2/ com o login dele e conferir com dados reais; teste com login de professor quando houver um. Pontos anotados para a F2: `get_saldo_livre` lê `balancetes` direto e tem `limit 1` sem ordem no plano ativo; nenhum centro tem `drive_folder_url` cadastrado (o botão do Drive não aparece). |
 
+| F2 | **1ª leva em curso (19/11)**: tarefas `F2-A-banco` (migração 064: `documentos`, `documento_versoes`, `fatos` com alvo estável, `registrar_documento_v2`, `get_origem_v2`, `explicar_livre_v2`, + achados da 063) e `F2-C-telas` ("De onde vem" em árvore e Documento com pdf.js no /v2/), revisadas por dois DeepSeek max e entregues a dois Neon (worktrees `C:/Users/amara/dev/cf-f2-a` e `cf-f2-c`). 2ª leva: F2-B (localizar cada número no documento e backfill do ano corrente e dos planos ativos, por script que chama `registrar_documento_v2`) e F2-D (projeção por rubrica, "bolsas cabem até"). Escopo ajustado: `aplicacoes` e `derivacoes` nascem na F3/F5, com quem escreva nelas; a árvore da F2 é montada na leitura. |
+
 ## Próximos passos
 1. (feito) 062 aplicada e manutenção desligada em 18/11.
 2. (feito) F0-B publicada em /v2/ (18/11).
@@ -62,6 +64,7 @@ de 18/11 (`rev-063-max.jsonl`); refazer a revisão se ele sumir.
 ## Registro
 | Data | O que aconteceu |
 |---|---|
+| 19/11 | Victor: seguir para a F2. Tarefas F2-A e F2-C escritas, revisadas (DeepSeek max) e entregues a dois Neon |
 | 18/11 | Três rodadas de análise (Claude, Hydrogen, DeepSeek); decisões acima |
 | 18/11 | Vigia pausado; plano e estética escritos e revisados; F0-A e F0-B executadas; oráculo guardado |
 | 18/11 | Victor autorizou publicar a 062 e configurou a Redirect URL do `/v2/` |

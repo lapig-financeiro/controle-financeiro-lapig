@@ -112,6 +112,10 @@ correção dos achados confirmados. Só então a fase seguinte.
 - Parsers emitem página/trecho; backfill só do ano corrente e dos planos ativos (o resto fica "legado").
 - `get_origem(fato_id)`: árvore + documento; para professor, planilha sai como **recorte com CPF mascarado**.
 - No site novo, todo número vem com origem declarada: documento, cálculo ou digitado.
+- *Ajuste de 19/11 (Claude, na escrita das tarefas):* `aplicacoes` e `derivacoes` só nascem quando houver quem
+  escreva nelas (F3 e F5); na F2 a árvore do "livre" é montada na leitura (`explicar_livre_v2`). O fato aponta
+  para uma chave estável da linha (as RPCs antigas apagam e recriam linhas), e o balancete versionado de
+  verdade vem com `aplicar_documento` na F3. Bolsas ficam "digitado" até a F3. Tarefas: `tarefas/F2-*.md`.
 
 ### F3 — Leitura automática
 - Repositório privado de ingestão (GitHub Actions, Node 22, parsers deste repo como dependência).
