@@ -608,23 +608,47 @@ async function main() {
 
     const antes = (await db.query(helpersQuery)).rows;
 
-    console.log('3. Conferindo regras estáticas do cofre e aplicando 064 (1ª vez)...');
+    console.log('3. Conferindo linha antiga E\'\\t\' em pendencias antes da 064 (Item 14)...');
     const sql064 = await readFile(new URL('../../database/064_rastreabilidade.sql', import.meta.url), 'utf8');
+    const tabRowId = (await db.query(`
+      insert into public.pendencias (chave, project_id, tipo, titulo)
+      values ('outro:geral:tab-pre064', null, 'outro', E'\t')
+      returning id
+    `)).rows[0].id;
+    let barrouTabPre064 = false;
+    try {
+      await arquivo('database/064_rastreabilidade.sql');
+    } catch (e) {
+      barrouTabPre064 = e.message.includes('pendencias possui chave ou titulo em branco') && e.message.includes(tabRowId);
+      console.log(`  [PRE-064 OK] CHECK bloqueou linha E'\\t' com lista de ids -> ${e.message}`);
+    } finally {
+      await sql('rollback;');
+    }
+    if (!barrouTabPre064) {
+      throw new Error('064 não listou o id da linha E\'\\t\' antes do ADD CONSTRAINT em pendencias!');
+    }
+    const tabAindaExiste = (await db.query(`select titulo = E'\t' as ok from public.pendencias where id = $1`, [tabRowId])).rows[0]?.ok;
+    if (!tabAindaExiste) {
+      throw new Error('Pré-checagem alterou ou apagou a linha antiga de pendencias!');
+    }
+    await db.query(`delete from public.pendencias where id = $1`, [tabRowId]);
+
+    console.log('4. Conferindo regras estáticas do cofre e aplicando 064 (1ª vez)...');
     const bytes = conferirRegrasCofre(sql064);
     console.log(`Cofre OK: ${bytes} bytes, begin;/commit; válidos, sem termos proibidos.`);
     await arquivo('database/064_rastreabilidade.sql');
 
-    console.log('4. Carregando stub-064.sql (apenas via registrar_documento_v2 como admin)...');
+    console.log('5. Carregando stub-064.sql (apenas via registrar_documento_v2 como admin)...');
     await arquivo('tools/replica-local/sintetico/stub-064.sql');
 
-    console.log('5. Executando roteiro test_064_rastreabilidade.sql...');
+    console.log('6. Executando roteiro test_064_rastreabilidade.sql...');
     await arquivo('tests/sql/test_064_rastreabilidade.sql');
 
-    console.log('6. Testando idempotência (reaplicando 064 e reexecutando test_064)...');
+    console.log('7. Testando idempotência (reaplicando 064 e reexecutando test_064)...');
     await arquivo('database/064_rastreabilidade.sql');
     await arquivo('tests/sql/test_064_rastreabilidade.sql');
 
-    console.log('7. Conferindo BLOCO 1 da 051 (trg_bloqueia_agente em todas as tabelas de public)...');
+    console.log('8. Conferindo BLOCO 1 da 051 (trg_bloqueia_agente em todas as tabelas de public)...');
     const semBarreira = (await db.query(`
       select string_agg(c.relname, ', ') as v
         from pg_class c
@@ -645,13 +669,13 @@ async function main() {
       throw new Error('Tabela sem trg_bloqueia_agente válido depois da 064: ' + semBarreira);
     }
 
-    console.log('8. Conferindo integridade dos 6 helpers protegidos...');
+    console.log('9. Conferindo integridade dos 6 helpers protegidos...');
     const depois = (await db.query(helpersQuery)).rows;
     if (JSON.stringify(antes) !== JSON.stringify(depois)) {
       throw new Error('064 alterou algum helper protegido!');
     }
 
-    console.log('9. Provando 5 mutantes da 064...');
+    console.log('10. Provando 8 mutantes da 064...');
     async function esperarFalhaTest064(rotulo, fnMutacao, fnRestaura) {
       await fnMutacao();
       let falhou = false;
@@ -671,6 +695,21 @@ async function main() {
       console.log(`  [MUTANTE OK] ${rotulo} -> ${msg}`);
     }
 
+    async function esperarFalhaAssercao064(mutSql, trechoEsperado, rotulo) {
+      let msg = '';
+      try {
+        await sql(mutSql);
+      } catch (e) {
+        msg = e.message;
+      } finally {
+        await sql('rollback;');
+      }
+      if (!msg.includes(trechoEsperado)) {
+        throw new Error(`Asserção da 064 não rejeitou mutante (${rotulo}): veio "${msg}"`);
+      }
+      return msg;
+    }
+
     // Mutante 1: registrar_documento_v2 sem conferência de valor
     const matchReg = sql064.match(/create or replace function public\.registrar_documento_v2[\s\S]*?\$\$;/);
     if (!matchReg) throw new Error('Não foi possível extrair registrar_documento_v2.');
@@ -686,22 +725,12 @@ async function main() {
       async () => arquivo('database/064_rastreabilidade.sql'),
     );
 
-    // Mutante 2: policy de fatos aberta a authenticated (using true) -> asserção da 064 + test_064 barram
+    // Mutante 2: policy permissiva extra em fatos aberta a authenticated -> asserção da 064 + test_064 barram
     await esperarFalhaTest064(
       '2) policy permissiva extra em fatos aberta a authenticated',
       async () => {
         await sql(`create policy mutante_fatos_aberto on public.fatos for select to authenticated using (true);`);
-        let barrouAssercao = false;
-        try {
-          await arquivo('database/064_rastreabilidade.sql');
-        } catch (e) {
-          barrouAssercao = e.message.includes('policy SELECT');
-        } finally {
-          await sql('rollback;');
-        }
-        if (!barrouAssercao) {
-          throw new Error('Asserção da 064 não recusou policy extra em fatos!');
-        }
+        await esperarFalhaAssercao064(sql064, 'exatamente 1 policy', 'policy extra em fatos');
       },
       async () => sql(`drop policy if exists mutante_fatos_aberto on public.fatos;`),
     );
@@ -721,7 +750,7 @@ async function main() {
       async () => arquivo('database/064_rastreabilidade.sql'),
     );
 
-    // Mutante 4 (correção #16): trg_bloqueia_agente em pendencias mantendo o nome mas trocando a função do gatilho
+    // Mutante 4: trg_bloqueia_agente em pendencias mantendo o nome mas trocando a função do gatilho
     await esperarFalhaTest064(
       '4) trg_bloqueia_agente em pendencias apontando para função dummy (mesmo nome)',
       async () => {
@@ -733,17 +762,7 @@ async function main() {
             before insert or update or delete on public.pendencias
             for each statement execute function public._mutante_noop_agente();
         `);
-        let barrouAssercao = false;
-        try {
-          await arquivo('database/064_rastreabilidade.sql');
-        } catch (e) {
-          barrouAssercao = e.message.includes('trg_bloqueia_agente');
-        } finally {
-          await sql('rollback;');
-        }
-        if (!barrouAssercao) {
-          throw new Error('Asserção da 064 não detectou troca de função em trg_bloqueia_agente!');
-        }
+        await esperarFalhaAssercao064(sql064, 'trg_bloqueia_agente', 'tgfoid alterado em pendencias');
       },
       async () => {
         await sql(`
@@ -756,7 +775,7 @@ async function main() {
       },
     );
 
-    // Mutante 5 (correção #2): _resolver_origem_alvo devolvendo 'documento' mesmo após valor mudar
+    // Mutante 5: _resolver_origem_alvo devolvendo 'documento' mesmo após valor mudar
     const resMut5 = resOrig.replace(
       'if v_valor is not null and round(v_valor, 2) = round(v_fato.valor, 2) then',
       'if true then',
@@ -768,14 +787,66 @@ async function main() {
       async () => arquivo('database/064_rastreabilidade.sql'),
     );
 
-    console.log('10. Conferência final após restauração dos mutantes...');
+    // Mutante 6 (rodada 2 #13): grant truncate on public.documentos to anon -> aclexplode da 064 + test_064 barram
+    const sqlMut6 = sql064.replace(
+      'grant select on public.documentos to authenticated;',
+      'grant select on public.documentos to authenticated;\ngrant truncate on public.documentos to anon;',
+    );
+    if (sqlMut6 === sql064) throw new Error('Falha ao montar mutante 6.');
+    await esperarFalhaAssercao064(sqlMut6, 'anon/PUBLIC possui privilégio em documentos', 'grant truncate to anon');
+    await esperarFalhaTest064(
+      '6) grant truncate on public.documentos to anon',
+      async () => sql(`grant truncate on public.documentos to anon;`),
+      async () => sql(`revoke truncate on public.documentos from anon;`),
+    );
+
+    // Mutante 7 (rodada 2 #13): fatos_select_admin com using (public.is_admin() or true) -> qual exata da 064 + test_064 barram
+    const sqlMut7 = sql064.replace(
+      'using (public.is_admin() and not public.is_agente());',
+      'using (public.is_admin() or true);',
+    );
+    if (sqlMut7 === sql064) throw new Error('Falha ao montar mutante 7.');
+    await esperarFalhaAssercao064(sqlMut7, 'policy fatos_select_admin de fatos com qual inesperada', 'fatos using (is_admin() or true)');
+    await esperarFalhaTest064(
+      '7) fatos_select_admin com using (public.is_admin() or true)',
+      async () => sql(`
+        drop policy fatos_select_admin on public.fatos;
+        create policy fatos_select_admin on public.fatos for select to authenticated using (public.is_admin() or true);
+      `),
+      async () => sql(`
+        drop policy fatos_select_admin on public.fatos;
+        create policy fatos_select_admin on public.fatos for select to authenticated using (public.is_admin() and not public.is_agente());
+      `),
+    );
+
+    // Mutante 8 (rodada 2 #13): documentos_select_escopo com using (true) -> qual exata da 064 + test_064 barram
+    const sqlMut8 = sql064.replace(
+      'using (public.is_admin() or project_id = any(public.allowed_project_ids()));',
+      'using (true);',
+    );
+    if (sqlMut8 === sql064) throw new Error('Falha ao montar mutante 8.');
+    await esperarFalhaAssercao064(sqlMut8, 'policy documentos_select_escopo de documentos com qual inesperada', 'documentos using (true)');
+    await esperarFalhaTest064(
+      '8) documentos_select_escopo com using (true)',
+      async () => sql(`
+        drop policy documentos_select_escopo on public.documentos;
+        create policy documentos_select_escopo on public.documentos for select to authenticated using (true);
+      `),
+      async () => sql(`
+        drop policy documentos_select_escopo on public.documentos;
+        create policy documentos_select_escopo on public.documentos for select to authenticated
+          using (public.is_admin() or project_id = any(public.allowed_project_ids()));
+      `),
+    );
+
+    console.log('11. Conferência final após restauração dos mutantes...');
     await arquivo('tests/sql/test_064_rastreabilidade.sql');
     const finalHelpers = (await db.query(helpersQuery)).rows;
     if (JSON.stringify(antes) !== JSON.stringify(finalHelpers)) {
       throw new Error('064 alterou algum helper protegido após restauração!');
     }
 
-    console.log('064 OK em PGlite: falha provada antes; base real (025/026/053/056) + test_064 (5 blocos) + idempotência + barreira 051 + cofre + 5 mutantes + helpers protegidos verdes.');
+    console.log('064 OK em PGlite: pré-checagem E\'\\t\' + base real (025/026/053/056) + test_064 (5 blocos) + idempotência + barreira 051 + cofre + 8 mutantes + helpers protegidos verdes.');
   } catch (e) {
     console.error('ERRO:', e.message, e.detail || '', e.where || '');
     process.exitCode = 1;
