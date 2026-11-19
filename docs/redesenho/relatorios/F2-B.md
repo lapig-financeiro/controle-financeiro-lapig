@@ -210,8 +210,68 @@ Onze correções pedidas em `docs/redesenho/tarefas/F2-B-rodada3.md`:
     (`arquivo`). 403 ao **assinar** continua sendo `login expirou`. Testes cobrem o
     sucesso na segunda tentativa, os dois 403 e o 403 na assinatura.
 
+## 4ª rodada (simulação na produção de 19/11, conferida pelo Claude)
+
+A simulação na produção (065 aplicada) leu 49 documentos: 385 números achados e 286
+não achados. Esta rodada corrige só as duas causas que explicam a maior parte deles;
+o resto continua `legado` de propósito.
+
+1. **Lançamento com código cortado no PDF.** O `acharAlvo` já entende
+   `"<prefixo>#<reduzido>"` (prefixo no começo da linha + reduzido inteiro), mas o
+   script só passava o código completo. Agora o `raw_extraction` — que já era lido
+   por balancete — alimenta um mapa `conta_codigo → conta_reduzido`
+   (`reduzidosPorConta`, nos dois formatos `{ lancamentos }` e
+   `{ data: { lancamentos } }`). A conta primeiro é procurada pelo código completo;
+   **só quando nenhuma linha serve** o script tenta `"<prefixo>#<reduzido>"`, com o
+   prefixo nos cinco primeiros segmentos (`7.1.3.02.01`). Conta com reduzido vazio
+   ou com dois reduzidos diferentes no raw fica sem alternativa; mais de uma linha
+   servindo continua ambígua e não vira fato. O `busca`/`ref` do legado no banco não
+   mudou. Entrou a contagem `por_reduzido` (fatos aceitos achados pela alternativa)
+   no detalhe, no resumo e no terminal. O `parser_versao` continua `1.0.0`: nada foi
+   aplicado em produção.
+2. **Sinônimos de rubrica no plano.** `alvo.mjs` ganhou um mapa fixo, só com os três
+   casos medidos: `cip_ufg` → `Custos indiretos para a UFG`, `cip_ua` →
+   `Custos indiretos para a UA/Órgão` e `dao` → `D.A.O da Fundação`. A rubrica é
+   procurada primeiro pelo nome do catálogo; só quando não tem `descricao_livre` e
+   nenhuma linha serve é que os sinônimos entram, na ordem, sempre com o valor na
+   linha. A comparação é a de `textoNaLinha` (sem acento e sem caixa). `cip_ufg` e
+   `cip_ua` com o mesmo valor são distinguidos pelo texto ("para a UFG" × "para a
+   UA/Órgão"); se um sinônimo casar nas duas linhas, é ambíguo e não vira fato.
+   Nenhuma outra rubrica ganhou sinônimo.
+
+Testes desta rodada:
+
+- `tests/rastreabilidade-alvo.test.js` — as três linhas medidas (lançamento cortado
+  + duas agregações com o mesmo prefixo e valor): o código completo dá
+  `nao_achado`, e só a linha do reduzido vira `achado`; o reduzido não é tentado
+  quando o código completo já acha; duas linhas iguais continuam ambíguas; conta
+  com menos de cinco segmentos não gera alternativa; o mapa de sinônimos tem só as
+  três rubricas e não vale para rubrica com `descricao_livre`; `cip_ufg` e `cip_ua`
+  com o mesmo valor acham cada um a sua linha; um sinônimo que casa nas duas é
+  ambíguo.
+- `tests/rastreabilidade-fluxo.test.js` — `reduzidosPorConta` lê os dois formatos,
+  aceita a conta repetida com o mesmo reduzido e descarta a conta com dois
+  reduzidos ou com reduzido vazio (sem alternativa).
+- `tests/rastreabilidade-backfill-064.test.js` (pglite, não pulado) — centro
+  `99.E2R`: PDF sintético no layout cortado (lançamento + duas agregações) e
+  `raw_extraction` com o reduzido; o fato é achado pela alternativa, conta
+  `por_reduzido`, é aceito por `registrar_documento_v2` e `get_origem_v2` devolve
+  `documento` com a página certa; rodar de novo não cria versão. Centro `99.E2S`:
+  DOCX sintético com as três linhas de sinônimo (os dois CIPs com o mesmo valor) e
+  as três rubricas sem `descricao_livre`; os 3 fatos são aceitos pela 064 e
+  `get_origem_v2` devolve `documento` com o trecho de cada linha certa.
+
+Verificação: `npx vitest run` — 44 arquivos, **694 testes passaram** e 5 pulos de
+outras suítes, com o ponta a ponta do pglite executado; `npm run lint` e
+`npx eslint tools/rastreabilidade/` verdes. Nenhum documento real foi baixado e
+nenhuma variável `CF_*` foi usada; os centros e valores dos testes são sintéticos.
+
 ## O que ficou em aberto
 
+- Os números que a simulação de 19/11 não achou por **outras** causas continuam
+  `legado` de propósito; esta rodada só tratou código cortado e os três sinônimos de
+  rubrica. Rodar a simulação de novo é o que mede quanto as duas correções
+  resolveram.
 - **Rodar na produção** (operador, primeiro em simulação e depois aplicando, em
   turnos separados) **depois** de a 065 ser aplicada. O script está pronto, mas não
   foi executado contra o Supabase.

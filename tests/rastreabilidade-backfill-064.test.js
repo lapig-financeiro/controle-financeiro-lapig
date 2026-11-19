@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { linhaContabil, montarPdfBytes } from './helpers/balancete-pdf.js';
 import { docxSintetico } from './helpers/plano-sintetico.js';
 import { lerDocx, lerPdf } from '../tools/rastreabilidade/documento.mjs';
 import { VERSAO, executarBackfill } from '../tools/rastreabilidade/executar.mjs';
@@ -10,104 +11,8 @@ const CODIGO_CENTRO = '99.E2E';
 const CODIGO_CENTRO_PLANO = '99.E2D';
 const CODIGO_CENTRO_TOTAL_AMBIGUO = '99.E2T';
 const CODIGO_CENTRO_TOTAL_VALOR = '99.E2V';
-
-// ── PDF sintético (mesma ideia de app/scripts/gerar-pdf-exemplo.mjs) ──
-
-function escaparTextoPdf(texto) {
-  return String(texto)
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)');
-}
-
-function construirStreamPagina(linhas) {
-  const comandos = ['BT'];
-  for (const item of linhas) {
-    const fonte = item.negrito ? '/F2' : '/F1';
-    const tamanho = item.tamanho || 10;
-    comandos.push(`${fonte} ${tamanho} Tf`);
-    if (Array.isArray(item.colunas)) {
-      for (const col of item.colunas) {
-        comandos.push(`1 0 0 1 ${col.x} ${item.y} Tm (${escaparTextoPdf(col.texto)}) Tj`);
-      }
-    } else {
-      comandos.push(`1 0 0 1 ${item.x ?? 42} ${item.y} Tm (${escaparTextoPdf(item.texto)}) Tj`);
-    }
-  }
-  comandos.push('ET');
-  return comandos.join('\n');
-}
-
-function montarPdfBytes(paginasLinhas) {
-  const objetos = [];
-  const adicionarObjeto = (corpo) => {
-    objetos.push(corpo);
-    return objetos.length;
-  };
-
-  adicionarObjeto('');
-  adicionarObjeto('');
-  const idFonteNormal = adicionarObjeto(
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
-  );
-  const idFonteNegrito = adicionarObjeto(
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
-  );
-
-  const idsPaginas = [];
-  for (const linhas of paginasLinhas) {
-    const stream = construirStreamPagina(linhas);
-    const bytesStream = Buffer.byteLength(stream, 'latin1');
-    const idConteudo = adicionarObjeto(`<< /Length ${bytesStream} >>\nstream\n${stream}\nendstream`);
-    const idPagina = adicionarObjeto(
-      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] '
-      + `/Resources << /Font << /F1 ${idFonteNormal} 0 R /F2 ${idFonteNegrito} 0 R >> >> `
-      + `/Contents ${idConteudo} 0 R >>`,
-    );
-    idsPaginas.push(idPagina);
-  }
-
-  objetos[0] = '<< /Type /Catalog /Pages 2 0 R >>';
-  objetos[1] = `<< /Type /Pages /Kids [${idsPaginas.map((id) => `${id} 0 R`).join(' ')}] /Count ${idsPaginas.length} >>`;
-
-  const partes = ['%PDF-1.4\n'];
-  const offsets = [0];
-  let cursor = Buffer.byteLength(partes[0], 'latin1');
-
-  for (let i = 0; i < objetos.length; i += 1) {
-    offsets.push(cursor);
-    const bloco = `${i + 1} 0 obj\n${objetos[i]}\nendobj\n`;
-    partes.push(bloco);
-    cursor += Buffer.byteLength(bloco, 'latin1');
-  }
-
-  const inicioXref = cursor;
-  const xrefLinhas = [`xref\n0 ${objetos.length + 1}\n0000000000 65535 f \n`];
-  for (let i = 1; i <= objetos.length; i += 1) {
-    xrefLinhas.push(`${String(offsets[i]).padStart(10, '0')} 00000 n \n`);
-  }
-  const trailer = `trailer\n<< /Size ${objetos.length + 1} /Root 1 0 R >>\n`
-    + `startxref\n${inicioXref}\n%%EOF\n`;
-
-  partes.push(xrefLinhas.join(''), trailer);
-  return Buffer.from(partes.join(''), 'latin1');
-}
-
-function linhaContabil(y, conta, reduzido, descricao, debitos, creditos, saldo, negrito = false) {
-  return {
-    y,
-    tamanho: 9,
-    negrito,
-    colunas: [
-      { x: 42, texto: conta },
-      { x: 145, texto: reduzido },
-      { x: 190, texto: descricao },
-      { x: 392, texto: debitos },
-      { x: 454, texto: creditos },
-      { x: 512, texto: saldo },
-    ],
-  };
-}
+const CODIGO_CENTRO_REDUZIDO = '99.E2R';
+const CODIGO_CENTRO_SINONIMO = '99.E2S';
 
 function paginaTotalAmbigua() {
   return [[
@@ -337,6 +242,14 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
   let projetoTotalSoValorId;
   let balanceteTotalSoValorId;
   let lancamentoTotalSoValorId;
+  let projetoReduzidoId;
+  let balanceteReduzidoId;
+  let lancamentoReduzidoId;
+  let projetoSinonimoId;
+  let planoSinonimoId;
+  let rubricaUfgId;
+  let rubricaUaId;
+  let rubricaDaoId;
   let ano;
   const arquivos = new Map();
 
@@ -481,6 +394,95 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
       `${projetoTotalSoValor.rows[0].id}/balancete.pdf`,
       montarPdfBytes(paginaTotalSoValor()),
     );
+
+    // Código cortado no PDF: só o reduzido do raw_extraction acha a
+    // linha. As duas agregações começam pelo mesmo prefixo e têm o
+    // mesmo valor; nenhuma pode virar fato.
+    const projetoReduzido = await db.query(`
+      insert into public.projects (name, code, start_date, end_date, active)
+      values ('Projeto E2E Reduzido', $1, '2025-01-01', '2027-12-31', true)
+      returning id
+    `, [CODIGO_CENTRO_REDUZIDO]);
+    projetoReduzidoId = projetoReduzido.rows[0].id;
+    const balanceteReduzido = await db.query(`
+      insert into public.balancetes (
+        project_id, data_referencia, arquivo_storage_path, arquivo_nome, raw_extraction
+      ) values ($1, $2::date, $3, 'balancete.pdf', $4::jsonb)
+      returning id
+    `, [
+      projetoReduzidoId,
+      `${ano}-07-15`,
+      `${projetoReduzidoId}/balancete.pdf`,
+      JSON.stringify({
+        lancamentos: [{
+          conta_codigo: '7.1.3.02.01.00002',
+          conta_reduzido: '2503002',
+          conta_incompleta: false,
+        }],
+      }),
+    ]);
+    balanceteReduzidoId = balanceteReduzido.rows[0].id;
+    const lancamentoReduzido = await db.query(`
+      insert into public.balancete_lancamentos (
+        balancete_id, conta_codigo, conta_descricao, saldo_atual, rubrica_code
+      ) values ($1, '7.1.3.02.01.00002', 'BOLSA PESQUISA', 21496.58, 'a.bolsas')
+      returning id
+    `, [balanceteReduzidoId]);
+    lancamentoReduzidoId = lancamentoReduzido.rows[0].id;
+    const paginaReduzido = [[
+      { x: 42, y: 790, tamanho: 12, negrito: true, texto: 'BALANCETE SINTETICO - CODIGO CORTADO' },
+      linhaContabil(760, '7.1.3.02.01.0', '2503002', 'BOLSA PESQUISA', '0,00', '21.496,58', '21.496,58'),
+      linhaContabil(736, '7.1.3.02', '2521323', 'TOTAL DA CONTA', '0,00', '21.496,58', '21.496,58'),
+      linhaContabil(712, '7.1.3.02.01', '25213231', 'TOTAL DA CONTA', '0,00', '21.496,58', '21.496,58'),
+    ]];
+    arquivos.set(`${projetoReduzidoId}/balancete.pdf`, montarPdfBytes(paginaReduzido));
+
+    // Rubricas cujo nome no documento difere do catálogo (4ª rodada).
+    const projetoSinonimo = await db.query(`
+      insert into public.projects (name, code, start_date, end_date, active)
+      values ('Projeto E2E Sinonimo', $1, '2025-01-01', '2027-12-31', true)
+      returning id
+    `, [CODIGO_CENTRO_SINONIMO]);
+    projetoSinonimoId = projetoSinonimo.rows[0].id;
+    const planoSinonimo = await db.query(`
+      insert into public.planos_trabalho (
+        project_id, versao, tipo, ativo, valor_total_plano, arquivo_storage_path, arquivo_nome
+      ) values ($1, 1, 'original', true, null, $2, 'plano.docx')
+      returning id
+    `, [projetoSinonimoId, `${projetoSinonimoId}/plano.docx`]);
+    planoSinonimoId = planoSinonimo.rows[0].id;
+
+    const rubricaUfg = await db.query(`
+      insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto, descricao_livre)
+      values ($1, 'cip_ufg', 1000.00, null)
+      returning id
+    `, [planoSinonimoId]);
+    rubricaUfgId = rubricaUfg.rows[0].id;
+
+    const rubricaUa = await db.query(`
+      insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto, descricao_livre)
+      values ($1, 'cip_ua', 1000.00, null)
+      returning id
+    `, [planoSinonimoId]);
+    rubricaUaId = rubricaUa.rows[0].id;
+
+    const rubricaDao = await db.query(`
+      insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto, descricao_livre)
+      values ($1, 'dao', 600.00, null)
+      returning id
+    `, [planoSinonimoId]);
+    rubricaDaoId = rubricaDao.rows[0].id;
+
+    const docxSinonimo = docxSintetico({
+      total: '2.600,00',
+      totalLabel: 'Total geral',
+      linhasExtras: [
+        ['Custos indiretos para a UFG', '1.000,00'],
+        ['Custos indiretos para a UA/Órgão', '1.000,00'],
+        ['D.A.O da Fundação', '600,00'],
+      ],
+    });
+    arquivos.set(`${projetoSinonimoId}/plano.docx`, docxSinonimo);
   }, 60000);
 
   afterAll(async () => {
@@ -658,6 +660,103 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
          where d.chave = $1
       `, [`balancete:${projetoTotalSoValorId}:${ano}-08-15`]);
       expect(versoes.rows[0].n).toBe(1);
+    }, 30000);
+  });
+
+  describe('código cortado no PDF (4ª rodada)', () => {
+    it('acha pelo reduzido, conta por_reduzido e a 064 aceita', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: true, centro: CODIGO_CENTRO_REDUZIDO, ano },
+      });
+
+      expect(detalhe.resumo.documentos).toBe(1);
+      expect(detalhe.resumo.achados).toBe(1);
+      expect(detalhe.resumo.por_reduzido).toBe(1);
+      expect(detalhe.resumo.nao_achados).toBe(0);
+      expect(detalhe.resumo.ambiguos).toBe(0);
+      expect(chamadas).toHaveLength(1);
+
+      const documento = detalhe.centros[0].documentos[0];
+      expect(documento.status).toBe('aplicado');
+      expect(documento.contagens.achados).toBe(1);
+      expect(documento.contagens.por_reduzido).toBe(1);
+      expect(documento.fatos).toHaveLength(1);
+      expect(documento.fatos[0].alvo_tabela).toBe('balancete_lancamentos');
+      expect(documento.fatos[0].alvo_id).toBe(String(lancamentoReduzidoId));
+      expect(documento.fatos[0].trecho).toContain('2503002');
+      expect(documento.fatos[0].trecho).not.toContain('2521323');
+      expect(documento.fatos[0].trecho).not.toContain('25213231');
+
+      const origem = await origemComoAdmin(
+        db,
+        'balancete_lancamentos',
+        lancamentoReduzidoId,
+        'saldo_atual',
+      );
+      expect(origem.tipo).toBe('documento');
+      expect(origem.fato.pagina).toBe(1);
+      expect(origem.fato.trecho).toContain('21.496,58');
+    }, 30000);
+
+    it('rodar de novo não cria versão nova', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: true, centro: CODIGO_CENTRO_REDUZIDO, ano },
+      });
+
+      expect(detalhe.resumo.aplicados).toBe(0);
+      expect(detalhe.resumo.ja_registrados).toBe(1);
+      expect(detalhe.centros[0].documentos[0].status).toBe('ja_registrado');
+      expect(chamadas).toHaveLength(1);
+
+      const versoes = await db.query(`
+        select count(*)::int as n
+          from public.documento_versoes dv
+          join public.documentos d on d.id = dv.documento_id
+         where d.chave = $1
+      `, [`balancete:${projetoReduzidoId}:${ano}-07-15`]);
+      expect(versoes.rows[0].n).toBe(1);
+    }, 30000);
+  });
+
+  describe('sinônimos de rubrica no plano (4ª rodada)', () => {
+    it('cip_ufg, cip_ua e dao acham cada um a sua linha; a 064 aceita', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: true, centro: CODIGO_CENTRO_SINONIMO, ano },
+      });
+
+      expect(detalhe.resumo.documentos).toBe(1);
+      expect(detalhe.resumo.achados).toBe(3);
+      expect(detalhe.resumo.por_reduzido).toBe(0);
+      expect(detalhe.resumo.ambiguos).toBe(0);
+      expect(chamadas).toHaveLength(1);
+
+      const documento = detalhe.centros[0].documentos[0];
+      expect(documento.status).toBe('aplicado');
+      expect(documento.fatos).toHaveLength(3);
+      expect(documento.fatos.every((fato) => fato.alvo_tabela === 'plano_rubricas')).toBe(true);
+
+      const ufg = await origemComoAdmin(db, 'plano_rubricas', rubricaUfgId, 'valor_previsto');
+      expect(ufg.tipo).toBe('documento');
+      expect(ufg.fato.trecho).toContain('para a UFG');
+      expect(ufg.fato.trecho).not.toContain('UA/');
+
+      const ua = await origemComoAdmin(db, 'plano_rubricas', rubricaUaId, 'valor_previsto');
+      expect(ua.tipo).toBe('documento');
+      expect(ua.fato.trecho).toContain('para a UA/Órgão');
+
+      const dao = await origemComoAdmin(db, 'plano_rubricas', rubricaDaoId, 'valor_previsto');
+      expect(dao.tipo).toBe('documento');
+      expect(dao.fato.trecho).toContain('D.A.O da Fundação');
+      expect(dao.fato.trecho).toContain('600,00');
     }, 30000);
   });
 

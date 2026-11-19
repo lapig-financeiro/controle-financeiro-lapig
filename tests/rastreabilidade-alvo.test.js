@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { linhasDaPagina } from '../frontend/js/origem-busca.js';
 import {
+  SINONIMOS_RUBRICA,
   alvoDaRubrica,
   alvoDoCabecalho,
   alvoDoDesembolso,
   alvoDoLancamento,
   alvoDoTotalPlano,
+  alvosAlternativosDaRubrica,
+  contaComReduzido,
   contaNaLinha,
   cortarTrecho,
   escolherLinha,
+  escolherLinhaComAlternativas,
   linhaServe,
   montarFato,
   valorLidoDoTrecho,
@@ -207,6 +211,140 @@ describe('alvo — escolha da linha', () => {
     expect(corte.endsWith('😀')).toBe(true);
     // O antigo slice(0, 500) cortava a metade do par (500 unidades UTF-16).
     expect(corte.length).toBe(501);
+  });
+});
+
+describe('alvo — código cortado e sinônimos de rubrica (4ª rodada)', () => {
+  const LINHAS_CORTADAS = [
+    '7.1.3.02.01.0 2503002 BOLSA PESQUISA 0,00 21.496,58 0,00 21.496,58 21.496,58',
+    '7.1.3.02 2521323 TOTAL DA CONTA 0,00 21.496,58 0,00 21.496,58 21.496,58',
+    '7.1.3.02.01 25213231 TOTAL DA CONTA 0,00 21.496,58 0,00 21.496,58 21.496,58',
+  ];
+  const CONTA_COMPLETA = '7.1.3.02.01.00002';
+  const VALOR = 21496.58;
+
+  it('só a linha do reduzido serve quando o código vem cortado', () => {
+    const paginas = paginasDe(LINHAS_CORTADAS);
+    const alvo = alvoDoLancamento({ conta_codigo: CONTA_COMPLETA, saldo_atual: VALOR });
+
+    expect(escolherLinha(paginas, alvo).status).toBe('nao_achado');
+    expect(contaComReduzido(CONTA_COMPLETA, '2503002')).toBe('7.1.3.02.01#2503002');
+
+    const { selecao, alternativa } = escolherLinhaComAlternativas(paginas, alvo, [{
+      conta_codigo: contaComReduzido(CONTA_COMPLETA, '2503002'),
+      valor: VALOR,
+    }]);
+
+    expect(alternativa).toBe(0);
+    expect(selecao.status).toBe('achado');
+    expect(selecao.linha).toBe(0);
+    expect(selecao.trecho).toContain('2503002');
+    expect(selecao.trecho).toContain('21.496,58');
+    // As duas linhas de agregação começam pelo prefixo e têm o mesmo
+    // valor; nenhuma delas vira a linha escolhida.
+    expect(selecao.trecho).not.toContain('2521323');
+    expect(selecao.trecho).not.toContain('25213231');
+  });
+
+  it('não tenta o reduzido quando o código completo já acha a linha', () => {
+    const paginas = paginasDe(BALANCETE);
+    const alvo = alvoDoLancamento({
+      conta_codigo: '7.1.3.05.01.00027',
+      saldo_atual: 15000,
+    });
+    const { selecao, alternativa } = escolherLinhaComAlternativas(paginas, alvo, [{
+      conta_codigo: '7.1.3.05.01#2506027',
+      valor: 15000,
+    }]);
+
+    expect(alternativa).toBeNull();
+    expect(selecao.status).toBe('achado');
+    expect(selecao.trecho).toContain('7.1.3.05.01.00027');
+  });
+
+  it('duas linhas com o mesmo prefixo, reduzido e valor continuam ambíguas', () => {
+    const paginas = paginasDe([LINHAS_CORTADAS[0], LINHAS_CORTADAS[0]]);
+    const { selecao, alternativa } = escolherLinhaComAlternativas(
+      paginas,
+      alvoDoLancamento({ conta_codigo: CONTA_COMPLETA, saldo_atual: VALOR }),
+      [{ conta_codigo: '7.1.3.02.01#2503002', valor: VALOR }],
+    );
+
+    expect(alternativa).toBe(0);
+    expect(selecao.status).toBe('ambiguo');
+  });
+
+  it('conta com menos de cinco segmentos não gera alternativa', () => {
+    expect(contaComReduzido('7.1.3', '2503002')).toBeNull();
+    expect(contaComReduzido('7.1.3.02.01.0#2503002', '2503002')).toBeNull();
+    expect(contaComReduzido('7.1.3.02.01.00002', '')).toBeNull();
+  });
+
+  it('o mapa de sinônimos tem só as três rubricas medidas', () => {
+    expect(Object.keys(SINONIMOS_RUBRICA).sort()).toEqual(['cip_ua', 'cip_ufg', 'dao']);
+    expect(alvosAlternativosDaRubrica({
+      rubrica_code: 'cip_ufg',
+      descricao_livre: null,
+      valor_previsto: 1000,
+    })).toEqual([{ texto: 'Custos indiretos para a UFG', valor: 1000 }]);
+    expect(alvosAlternativosDaRubrica({
+      rubrica_code: 'dao',
+      descricao_livre: '  ',
+      valor_previsto: 600,
+    })).toEqual([{ texto: 'D.A.O da Fundação', valor: 600 }]);
+    expect(alvosAlternativosDaRubrica({
+      rubrica_code: 'a.bolsas',
+      descricao_livre: null,
+      valor_previsto: 800,
+    })).toEqual([]);
+    expect(alvosAlternativosDaRubrica({
+      rubrica_code: 'cip_ufg',
+      descricao_livre: 'Texto livre do plano',
+      valor_previsto: 1000,
+    })).toEqual([]);
+  });
+
+  it('cip_ufg e cip_ua com o mesmo valor acham cada um a sua linha', () => {
+    const paginas = paginasDe([
+      'Custos indiretos para a UFG 1.000,00',
+      'Custos indiretos para a UA/Órgão 1.000,00',
+    ]);
+    const cipUfg = { rubrica_code: 'cip_ufg', descricao_livre: null, valor_previsto: 1000 };
+    const cipUa = { rubrica_code: 'cip_ua', descricao_livre: null, valor_previsto: 1000 };
+
+    const ufg = escolherLinhaComAlternativas(
+      paginas,
+      alvoDaRubrica(cipUfg, 'Custos Indiretos (CIP) — UFG'),
+      alvosAlternativosDaRubrica(cipUfg),
+    );
+    expect(ufg.alternativa).toBe(0);
+    expect(ufg.selecao.status).toBe('achado');
+    expect(ufg.selecao.trecho).toContain('para a UFG');
+
+    const ua = escolherLinhaComAlternativas(
+      paginas,
+      alvoDaRubrica(cipUa, 'Custos Indiretos (CIP) — UA/Órgão'),
+      alvosAlternativosDaRubrica(cipUa),
+    );
+    expect(ua.alternativa).toBe(0);
+    expect(ua.selecao.status).toBe('achado');
+    expect(ua.selecao.trecho).toContain('para a UA/Órgão');
+    expect(ua.selecao.linha).not.toBe(ufg.selecao.linha);
+  });
+
+  it('sinônimo que casa nas duas linhas é ambíguo e não vira fato', () => {
+    const paginas = paginasDe([
+      'Custos indiretos para a UFG 1.000,00',
+      'Custos indiretos para a UA/Órgão 1.000,00',
+    ]);
+    const { selecao } = escolherLinhaComAlternativas(
+      paginas,
+      { texto: 'nome que nao aparece no documento', valor: 1000 },
+      [{ texto: 'Custos indiretos', valor: 1000 }],
+    );
+
+    expect(selecao.status).toBe('ambiguo');
+    expect(selecao.candidatos).toHaveLength(2);
   });
 });
 

@@ -20,7 +20,9 @@ import {
   alvoDoDesembolso,
   alvoDoLancamento,
   alvoDoTotalPlano,
-  escolherLinha,
+  alvosAlternativosDaRubrica,
+  contaComReduzido,
+  escolherLinhaComAlternativas,
   montarFato,
   valorLidoDoTrecho,
 } from './alvo.mjs';
@@ -91,23 +93,57 @@ function caminhoValido(caminho, projectId) {
 }
 
 /**
- * Quantos lançamentos o `raw_extraction` diz que existem. O banco tem
- * os dois formatos: `{ lancamentos: [...] }` e `{ data: { lancamentos:
- * [...] } }`; o guarda de forma aceita os dois (e só os dois).
+ * A lista de lançamentos do `raw_extraction`. O banco tem os dois
+ * formatos: `{ lancamentos: [...] }` e `{ data: { lancamentos: [...] } }`;
+ * o guarda de forma aceita os dois (e só os dois).
  */
-export function lancamentosEsperados(raw) {
+function listaDeLancamentos(raw) {
   try {
     const objeto = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (!objeto || typeof objeto !== 'object') return 0;
-    const lista = Array.isArray(objeto.lancamentos)
-      ? objeto.lancamentos
-      : (objeto.data && typeof objeto.data === 'object' && Array.isArray(objeto.data.lancamentos)
-        ? objeto.data.lancamentos
-        : null);
-    return lista ? lista.length : 0;
+    if (!objeto || typeof objeto !== 'object') return null;
+    if (Array.isArray(objeto.lancamentos)) return objeto.lancamentos;
+    if (objeto.data && typeof objeto.data === 'object' && Array.isArray(objeto.data.lancamentos)) {
+      return objeto.data.lancamentos;
+    }
+    return null;
   } catch {
-    return 0;
+    return null;
   }
+}
+
+/** Quantos lançamentos o `raw_extraction` diz que existem. */
+export function lancamentosEsperados(raw) {
+  const lista = listaDeLancamentos(raw);
+  return lista ? lista.length : 0;
+}
+
+/**
+ * Mapa `conta_codigo → conta_reduzido` do `raw_extraction` (4ª rodada).
+ * É a matéria-prima do alvo alternativo para o código que o PDF corta.
+ * Conta com reduzido vazio, ou que apareça com dois reduzidos, fica
+ * fora do mapa: não há alternativa confiável para ela.
+ */
+export function reduzidosPorConta(raw) {
+  const mapa = new Map();
+  const suspeitas = new Set();
+
+  for (const item of listaDeLancamentos(raw) || []) {
+    if (!item || typeof item !== 'object') continue;
+    const conta = String(item.conta_codigo == null ? '' : item.conta_codigo).trim();
+    // Código já no formato `<prefixo>#<reduzido>` não tem como ter
+    // prefixo de cinco segmentos.
+    if (!conta || conta.includes('#')) continue;
+    const reduzido = String(item.conta_reduzido == null ? '' : item.conta_reduzido).trim();
+    if (!reduzido) {
+      suspeitas.add(conta);
+      continue;
+    }
+    if (mapa.has(conta) && mapa.get(conta) !== reduzido) suspeitas.add(conta);
+    else mapa.set(conta, reduzido);
+  }
+
+  for (const conta of suspeitas) mapa.delete(conta);
+  return mapa;
 }
 
 function concatenar({ camRel, titulo, arquivoNome, fatos }) {
@@ -174,7 +210,7 @@ function somarMotivo(detalhe, motivo) {
   detalhe.motivos[motivo] = (detalhe.motivos[motivo] || 0) + 1;
 }
 
-function candidatosDoBalancete(balancete, lancamentos) {
+function candidatosDoBalancete(balancete, lancamentos, reduzidos = new Map()) {
   const candidatos = [];
 
   for (const campo of CAMPOS_BALANCETE) {
@@ -197,12 +233,20 @@ function candidatosDoBalancete(balancete, lancamentos) {
   for (const lancamento of ordenados) {
     if (!String(lancamento.rubrica_code == null ? '' : lancamento.rubrica_code).trim()) continue;
     const valor = numero(lancamento.saldo_atual);
+    const conta = String(lancamento.conta_codigo == null ? '' : lancamento.conta_codigo).trim();
+    const reduzido = reduzidos.get(conta);
+    const contaAlternativa = reduzido ? contaComReduzido(conta, reduzido) : null;
     candidatos.push({
       alvoTabela: 'balancete_lancamentos',
       alvoId: String(lancamento.id),
       campo: 'saldo_atual',
       valor,
       alvo: alvoDoLancamento({ ...lancamento, saldo_atual: valor }),
+      // 4ª rodada: só entra quando o código completo não acha nenhuma
+      // linha. `contagemAlternativa` marca o fato como achado pelo
+      // reduzido para a contagem `por_reduzido`.
+      alternativas: contaAlternativa ? [{ conta_codigo: contaAlternativa, valor }] : [],
+      contagemAlternativa: 'por_reduzido',
       paiId: String(lancamento.balancete_id),
       chaveEstavel: String(lancamento.conta_codigo),
     });
@@ -213,6 +257,10 @@ function candidatosDoBalancete(balancete, lancamentos) {
 
 function chaveDaRubrica(rubrica) {
   return `${rubrica.rubrica_code}|${rubrica.descricao_livre == null ? '' : rubrica.descricao_livre}`;
+}
+
+function chaveUnicaDoFato(fato) {
+  return `${fato.alvo_tabela}|${fato.alvo_id}|${fato.campo}`;
 }
 
 function candidatosDoPlano(plano, rubricas, desembolsos, nomesRubricas) {
@@ -258,12 +306,17 @@ function candidatosDoPlano(plano, rubricas, desembolsos, nomesRubricas) {
       continue;
     }
     const nome = nomesRubricas.get(String(rubrica.rubrica_code)) || String(rubrica.rubrica_code);
+    // 4ª rodada: sinônimos fixos (cip_ufg, cip_ua, dao) só quando a
+    // rubrica não tem descrição livre; o nome do catálogo é tentado antes.
+    const alternativas = alvosAlternativosDaRubrica({ ...rubrica, valor_previsto: valor });
     candidatos.push({
       alvoTabela: 'plano_rubricas',
       alvoId: String(rubrica.id),
       campo: 'valor_previsto',
       valor,
       alvo: alvoDaRubrica({ ...rubrica, valor_previsto: valor }, nome),
+      alternativas,
+      contagemAlternativa: null,
       paiId: String(rubrica.plano_id),
       chaveEstavel: chaveDaRubrica(rubrica),
     });
@@ -339,6 +392,7 @@ function novoDetalhe(doc, projeto, titulo, arquivoNome, caminho) {
       divergencias: 0,
       duplicados: 0,
       recusados: 0,
+      por_reduzido: 0,
     },
     motivos: {},
     fatos: [],
@@ -379,6 +433,8 @@ async function processarDocumento({
   // tabela tem: recusa SÓ este documento e segue (a 064 também diria
   // que falta dado; gravar menos fatos passaria por leitura completa).
   // O raw_extraction é buscado agora, por balancete, não na listagem.
+  // Dele também sai o mapa conta → reduzido usado no código cortado.
+  let reduzidos = new Map();
   if (doc.tipo === 'balancete') {
     const raw = await cliente.lerRawExtraction(doc.balancete.id);
     const esperado = lancamentosEsperados(raw);
@@ -387,6 +443,7 @@ async function processarDocumento({
       detalhe.motivo = 'lancamentos_inconsistentes';
       return detalhe;
     }
+    reduzidos = reduzidosPorConta(raw);
   }
 
   // CPF no nome vem antes da validação de caminho: a recusa é por CPF,
@@ -440,11 +497,12 @@ async function processarDocumento({
   detalhe.sha256 = sha256(bytes);
 
   const candidatos = doc.tipo === 'balancete'
-    ? candidatosDoBalancete(doc.balancete, lancamentos)
+    ? candidatosDoBalancete(doc.balancete, lancamentos, reduzidos)
     : candidatosDoPlano(doc.plano, rubricas, desembolsos, nomesRubricas);
 
   const fatos = [];
   const vistos = new Set();
+  const chavesPorReduzido = new Set();
 
   for (const candidato of candidatos) {
     if (!alvoLocalValido(doc, candidato)) {
@@ -472,7 +530,13 @@ async function processarDocumento({
       continue;
     }
 
-    const selecao = escolherLinha(paginas, candidato.alvo);
+    // Código completo primeiro; só quando ele não acha nenhuma linha
+    // entram as alternativas (reduzido cortado ou sinônimo de rubrica).
+    const { selecao, alternativa } = escolherLinhaComAlternativas(
+      paginas,
+      candidato.alvo,
+      candidato.alternativas || [],
+    );
     if (selecao.status === 'zero') {
       detalhe.contagens.zeros += 1;
       continue;
@@ -541,6 +605,9 @@ async function processarDocumento({
     }
     vistos.add(chaveFato);
     fatos.push(fato);
+    if (alternativa != null && candidato.contagemAlternativa) {
+      chavesPorReduzido.add(chaveUnicaDoFato(fato));
+    }
   }
 
   const limpeza = removerFatosComCpf({ camRel, titulo, arquivoNome, fatos });
@@ -562,6 +629,8 @@ async function processarDocumento({
 
   const fatosFinal = limpeza.fatos;
   detalhe.contagens.achados = fatosFinal.length;
+  detalhe.contagens.por_reduzido = fatosFinal
+    .filter((fato) => chavesPorReduzido.has(chaveUnicaDoFato(fato))).length;
   detalhe.fatos = fatosFinal;
 
   // Nunca registrar documento com zero fatos: não chama a RPC nem em
@@ -660,6 +729,8 @@ async function processarDocumento({
     }
 
     detalhe.contagens.achados = nova.fatos.length;
+    detalhe.contagens.por_reduzido = nova.fatos
+      .filter((fato) => chavesPorReduzido.has(chaveUnicaDoFato(fato))).length;
     detalhe.fatos = nova.fatos;
 
     if (nova.fatos.length === 0) {
@@ -700,6 +771,7 @@ function resumir(detalhes) {
     divergencias: 0,
     duplicados: 0,
     recusados: 0,
+    por_reduzido: 0,
     documentos_recusados: 0,
     ja_registrados: 0,
     aplicados: 0,
@@ -710,7 +782,7 @@ function resumir(detalhes) {
   for (const detalhe of detalhes) {
     for (const chave of [
       'achados', 'nao_achados', 'ambiguos', 'com_cpf', 'zeros', 'sem_valor',
-      'divergencias', 'duplicados', 'recusados',
+      'divergencias', 'duplicados', 'recusados', 'por_reduzido',
     ]) {
       resumo[chave] += detalhe.contagens[chave] || 0;
     }
@@ -977,7 +1049,8 @@ export function formatarSaidaTerminal(detalhe) {
         + `nao_achados ${contagens.nao_achados}, ambiguos ${contagens.ambiguos}, `
         + `com_cpf ${contagens.com_cpf}, zeros ${contagens.zeros}, `
         + `sem_valor ${contagens.sem_valor}, divergencias ${contagens.divergencias}, `
-        + `duplicados ${contagens.duplicados}, recusados ${contagens.recusados}`;
+        + `duplicados ${contagens.duplicados}, recusados ${contagens.recusados}, `
+        + `por_reduzido ${contagens.por_reduzido || 0}`;
 
       if (documento.status === 'recusado') {
         linha += ` — RECUSADO (${documento.motivo || 'outro'})`;
@@ -1001,7 +1074,8 @@ export function formatarSaidaTerminal(detalhe) {
     + `nao_achados ${resumo.nao_achados || 0}, ambiguos ${resumo.ambiguos || 0}, `
     + `com_cpf ${resumo.com_cpf || 0}, zeros ${resumo.zeros || 0}, `
     + `sem_valor ${resumo.sem_valor || 0}, divergencias ${resumo.divergencias || 0}, `
-    + `duplicados ${resumo.duplicados || 0}, documentos_recusados ${resumo.documentos_recusados || 0}, `
+    + `duplicados ${resumo.duplicados || 0}, por_reduzido ${resumo.por_reduzido || 0}, `
+    + `documentos_recusados ${resumo.documentos_recusados || 0}, `
     + `sem_fatos ${resumo.sem_fatos || 0}, `
     + `ja_registrados ${resumo.ja_registrados || 0}`,
   );

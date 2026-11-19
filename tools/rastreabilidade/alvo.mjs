@@ -182,14 +182,59 @@ export function alvoDoTotalPlano(valor) {
   return { texto: 'valor total', valor };
 }
 
+/** A descrição livre, sem as aspas/espaços que o banco às vezes guarda. */
+export function descricaoLivreDaRubrica(rubrica) {
+  return String(rubrica && rubrica.descricao_livre != null ? rubrica.descricao_livre : '')
+    .replace(/^[ \t\n\r"]+|[ \t\n\r"]+$/g, '');
+}
+
 /** Espelha o `texto` de `_resolver_origem_alvo` para plano_rubricas. */
 export function alvoDaRubrica(rubrica, nomeRubrica) {
-  const descricao = String(rubrica && rubrica.descricao_livre != null ? rubrica.descricao_livre : '')
-    .replace(/^[ \t\n\r"]+|[ \t\n\r"]+$/g, '');
+  const descricao = descricaoLivreDaRubrica(rubrica);
   return {
     texto: descricao || normalizarEspacos(nomeRubrica) || normalizarEspacos(rubrica && rubrica.rubrica_code),
     valor: rubrica && rubrica.valor_previsto,
   };
+}
+
+/**
+ * Nomes que os planos usam para a mesma rubrica do catálogo (4ª rodada).
+ * Só as três medidas; qualquer outra continua sem sinônimo.
+ */
+export const SINONIMOS_RUBRICA = {
+  cip_ufg: ['Custos indiretos para a UFG'],
+  cip_ua: ['Custos indiretos para a UA/Órgão'],
+  dao: ['D.A.O da Fundação'],
+};
+
+/**
+ * Alvos alternativos da rubrica: só quando não há `descricao_livre` e o
+ * `rubrica_code` tem sinônimo fixo. A execução tenta o nome do catálogo
+ * primeiro; estes entram na ordem, só se ele não achar linha.
+ */
+export function alvosAlternativosDaRubrica(rubrica, sinonimos = SINONIMOS_RUBRICA) {
+  if (!rubrica || descricaoLivreDaRubrica(rubrica)) return [];
+  const code = normalizarEspacos(rubrica.rubrica_code);
+  if (!Array.isArray(sinonimos[code])) return [];
+  const valor = rubrica.valor_previsto;
+  return sinonimos[code]
+    .map((texto) => normalizarEspacos(texto))
+    .filter(Boolean)
+    .map((texto) => ({ texto, valor }));
+}
+
+/**
+ * Conta no formato cortado que o `acharAlvo` entende: `"<prefixo>#<reduzido>"`,
+ * com o prefixo nos cinco primeiros segmentos do código. Sem cinco
+ * segmentos (ou com `#` no código), não há alternativa.
+ */
+export function contaComReduzido(contaCodigo, reduzido) {
+  const conta = normalizarEspacos(contaCodigo);
+  const red = normalizarEspacos(reduzido);
+  if (!conta || !red || conta.includes('#')) return null;
+  const partes = conta.split('.').map((parte) => parte.trim()).filter(Boolean);
+  if (partes.length < 5) return null;
+  return `${partes.slice(0, 5).join('.')}#${red}`;
 }
 
 export function alvoDoDesembolso(desembolso) {
@@ -281,6 +326,29 @@ export function escolherLinha(paginas, alvo) {
     trecho,
     linhaObj: escolhido.linhaObj,
   };
+}
+
+/**
+ * Tenta o alvo principal e, SÓ quando ele não acha nenhuma linha
+ * (`nao_achado`), os alternativos na ordem. Ambiguidade do principal
+ * não é contornada pela alternativa: continua sem fato.
+ *
+ * Devolve { selecao, alternativa }, com `alternativa` = índice do alvo
+ * alternativo usado (null quando o principal decidiu).
+ */
+export function escolherLinhaComAlternativas(paginas, alvo, alternativas = []) {
+  const principal = escolherLinha(paginas, alvo);
+  const lista = Array.isArray(alternativas) ? alternativas : [];
+  if (principal.status !== 'nao_achado' || !lista.length) {
+    return { selecao: principal, alternativa: null };
+  }
+
+  for (let indice = 0; indice < lista.length; indice += 1) {
+    const selecao = escolherLinha(paginas, lista[indice]);
+    if (selecao.status !== 'nao_achado') return { selecao, alternativa: indice };
+  }
+
+  return { selecao: principal, alternativa: null };
 }
 
 /**
