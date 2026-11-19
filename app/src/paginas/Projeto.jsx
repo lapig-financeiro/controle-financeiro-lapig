@@ -321,7 +321,7 @@ function validarUrlDrive(url) {
 function validarUrlDocumentoContrato(url) {
   if (typeof url !== 'string') return null;
   const limpa = url.trim();
-  return /^https:\/\/(drive|docs)\.google\.com\//i.test(limpa) ? limpa : null;
+  return /^https:\/\/(drive|docs)\.google\.com\//.test(limpa) ? limpa : null;
 }
 
 /**
