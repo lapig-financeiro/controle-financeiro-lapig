@@ -570,7 +570,9 @@ export function Documento({
               // partido entre <td>s: o que interessa na linha é o valor conferido.
               const termosMarcar =
                 tipoAtual === 'documento'
-                  ? termosDocxPorMotivo('valor', { valor: valorAtual })
+                  ? paraNumeroBusca(valorAtual)
+                    ? termosDocxPorMotivo('valor', { valor: valorAtual })
+                    : []
                   : termosDocxPorMotivo(motivoDocx, alvoDocx);
               const elementosAchados = new Set(
                 achados.map((a) => linhasDocx[a.linha]?.el).filter(Boolean)
