@@ -118,6 +118,14 @@ describe('saída do terminal e detalhe', () => {
     }
   });
 
+  it('a frase de "já registrado" é exatamente a do README e do relatório', () => {
+    const detalhe = detalheExemplo();
+    detalhe.centros[0].documentos[0].status = 'ja_registrado';
+    detalhe.centros[0].documentos[0].fatos_ignorados = 7;
+    const terminal = formatarSaidaTerminal(detalhe);
+    expect(terminal).toContain('documento já registrado, 7 fatos novos ignorados');
+  });
+
   it('modo aplicação e recusa continuam sem conteúdo sensível', () => {
     const detalhe = detalheExemplo();
     detalhe.modo = 'aplicacao';

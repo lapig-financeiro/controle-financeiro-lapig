@@ -15,7 +15,18 @@
 import { ErroFatal, ErroRpc, ErroSeguro, ErroUso } from './erros.mjs';
 
 const TAMANHO_PAGINA = 500;
+// O PostgREST (e o proxy na frente dele) recusa URL longa; 50 ids por
+// `in.(...)` mantém cada requisição pequena. Os blocos são mesclados.
+const TAMANHO_BLOCO_IN = 50;
 const VARIAVEIS = ['CF_SUPABASE_URL', 'CF_SUPABASE_ANON_KEY', 'CF_EMAIL', 'CF_PASSWORD'];
+
+function emBlocos(valores) {
+  const lista = [];
+  for (let inicio = 0; inicio < valores.length; inicio += TAMANHO_BLOCO_IN) {
+    lista.push(valores.slice(inicio, inicio + TAMANHO_BLOCO_IN));
+  }
+  return lista;
+}
 
 function semBarraFinal(url) {
   return String(url || '').replace(/\/+$/, '');
@@ -105,8 +116,27 @@ export class ClienteSupabase {
     return resposta;
   }
 
-  /** Lê uma tabela paginando; a API REST já aplica o RLS com o JWT. */
-  async _tabela(tabela, parametros) {
+  /**
+   * Lê uma tabela paginando e, quando há filtro `in.(...)`, fatia os
+   * valores em blocos de no máximo `TAMANHO_BLOCO_IN`, mesclando os
+   * resultados. A API REST já aplica o RLS com o JWT.
+   */
+  async _tabela(tabela, parametros, filtro = null) {
+    if (filtro) {
+      const linhas = [];
+      for (const bloco of emBlocos(filtro.valores)) {
+        if (!bloco.length) continue;
+        linhas.push(...await this._tabela(tabela, {
+          ...parametros,
+          [filtro.coluna]: `in.(${bloco.join(',')})`,
+        }));
+      }
+      return linhas;
+    }
+    return this._paginas(tabela, parametros);
+  }
+
+  async _paginas(tabela, parametros) {
     const linhas = [];
     for (let pagina = 0; ; pagina += 1) {
       const busca = new URLSearchParams({
@@ -151,50 +181,56 @@ export class ClienteSupabase {
   async lerBalancetesDoAno(projectIds, ano) {
     if (!projectIds.length) return [];
     return this._tabela('balancetes', {
-      select: 'id,project_id,data_referencia,saldo_disponivel,rendimento_liquido,total_debitos,total_creditos,arquivo_storage_path,arquivo_nome,raw_extraction',
-      project_id: `in.(${projectIds.join(',')})`,
+      select: 'id,project_id,data_referencia,saldo_disponivel,rendimento_liquido,total_debitos,total_creditos,arquivo_storage_path,arquivo_nome',
       data_referencia: `gte.${ano}-01-01`,
       arquivo_storage_path: 'not.is.null',
       order: 'data_referencia.asc,id.asc',
+    }, { coluna: 'project_id', valores: projectIds });
+  }
+
+  /** `raw_extraction` só é buscado por balancete, na hora de processá-lo. */
+  async lerRawExtraction(balanceteId) {
+    if (!balanceteId) return null;
+    const linhas = await this._tabela('balancetes', {
+      select: 'raw_extraction',
+      id: `eq.${balanceteId}`,
+      limit: '1',
     });
+    return linhas.length ? linhas[0].raw_extraction : null;
   }
 
   async lerLancamentos(balanceteIds) {
     if (!balanceteIds.length) return [];
     return this._tabela('balancete_lancamentos', {
       select: 'id,balancete_id,conta_codigo,saldo_atual,rubrica_code',
-      balancete_id: `in.(${balanceteIds.join(',')})`,
       order: 'balancete_id.asc,conta_codigo.asc,id.asc',
-    });
+    }, { coluna: 'balancete_id', valores: balanceteIds });
   }
 
   async lerPlanosAtivos(projectIds) {
     if (!projectIds.length) return [];
     return this._tabela('planos_trabalho', {
       select: 'id,project_id,versao,ativo,valor_total_plano,arquivo_storage_path,arquivo_nome',
-      project_id: `in.(${projectIds.join(',')})`,
       ativo: 'eq.true',
       arquivo_storage_path: 'not.is.null',
       order: 'project_id.asc,versao.asc',
-    });
+    }, { coluna: 'project_id', valores: projectIds });
   }
 
   async lerRubricasDoPlano(planoIds) {
     if (!planoIds.length) return [];
     return this._tabela('plano_rubricas', {
       select: 'id,plano_id,rubrica_code,descricao_livre,valor_previsto',
-      plano_id: `in.(${planoIds.join(',')})`,
       order: 'plano_id.asc,rubrica_code.asc,id.asc',
-    });
+    }, { coluna: 'plano_id', valores: planoIds });
   }
 
   async lerDesembolsos(planoIds) {
     if (!planoIds.length) return [];
     return this._tabela('plano_desembolsos', {
       select: 'id,plano_id,parcela,valor',
-      plano_id: `in.(${planoIds.join(',')})`,
       order: 'plano_id.asc,parcela.asc,id.asc',
-    });
+    }, { coluna: 'plano_id', valores: planoIds });
   }
 
   async lerRubricas() {
@@ -208,22 +244,20 @@ export class ClienteSupabase {
     if (!chaves.length) return [];
     return this._tabela('documentos', {
       select: 'id,chave,titulo',
-      chave: `in.(${chaves.join(',')})`,
       order: 'chave.asc',
-    });
+    }, { coluna: 'chave', valores: chaves });
   }
 
   async lerVersoesExistentes(documentoIds) {
     if (!documentoIds.length) return [];
     return this._tabela('documento_versoes', {
       select: 'documento_id,sha256',
-      documento_id: `in.(${documentoIds.join(',')})`,
       order: 'documento_id.asc,versao.asc',
-    });
+    }, { coluna: 'documento_id', valores: documentoIds });
   }
 
-  async baixarArquivo(bucket, caminho) {
-    await this.entrar();
+  /** Assina a URL do arquivo; erro de sessão aqui ainda é login expirado. */
+  async _assinarArquivo(bucket, caminho) {
     const caminhoCodificado = String(caminho)
       .split('/')
       .map((parte) => encodeURIComponent(parte))
@@ -256,16 +290,37 @@ export class ClienteSupabase {
     }
     if (!assinada) throw new ErroSeguro('O Storage não devolveu a URL assinada.');
 
-    const url = assinada.startsWith('http')
+    return assinada.startsWith('http')
       ? assinada
       : `${this.url}/storage/v1${assinada.startsWith('/') ? '' : '/'}${assinada}`;
+  }
 
-    let arquivo;
-    try {
-      arquivo = await this.fetchImpl(url, { headers: { apikey: this.anonKey } });
-    } catch {
-      throw new ErroSeguro('Não consegui baixar o arquivo do Storage.');
+  /**
+   * Baixa pela URL assinada. 403 aqui é assinatura expirada/recusada,
+   * NÃO login expirado: refaz a assinatura uma vez. Se falhar de novo,
+   * o documento é recusado (motivo `arquivo`), sem derrubar a corrida.
+   */
+  async baixarArquivo(bucket, caminho) {
+    await this.entrar();
+    const buscar = async (url) => {
+      try {
+        return await this.fetchImpl(url, { headers: { apikey: this.anonKey } });
+      } catch {
+        throw new ErroSeguro('Não consegui baixar o arquivo do Storage.');
+      }
+    };
+
+    let url = await this._assinarArquivo(bucket, caminho);
+    let arquivo = await buscar(url);
+
+    if (arquivo.status === 403) {
+      url = await this._assinarArquivo(bucket, caminho);
+      arquivo = await buscar(url);
+      if (arquivo.status === 403) {
+        throw new ErroSeguro('Assinatura do arquivo expirou ou foi recusada.');
+      }
     }
+
     conferirSessao(arquivo);
     if (!arquivo.ok) {
       throw new ErroSeguro(`Falha ao baixar o arquivo do Storage (HTTP ${arquivo.status}).`);

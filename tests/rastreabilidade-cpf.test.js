@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   candidatosCpf,
@@ -12,28 +13,14 @@ import { removerFatosComCpf } from '../tools/rastreabilidade/executar.mjs';
 const NBSP = '\u00A0';
 const EN_DASH = '\u2013';
 
-// Mesmas strings que a suíte da 065 usa (Regra de CPF única).
-const VERDADEIROS = [
-  '529.982.247-25',
-  '52998224725',
-  '529 982 247 25',
-  '529/982/247/25',
-  '529,,,,,982,,,,,247,,,,,25',
-  `529${NBSP}982${NBSP}247${NBSP}25`,
-  `529${EN_DASH}982${EN_DASH}247${EN_DASH}25`,
-  '1.234,56 NOME 529.982.247-25',
-  '100 529.982.247-25',
-];
-
-const FALSOS = [
-  '123.456.789-00', // DV inválido
-  '111.111.111-11',
-  '529982247250', // 12 dígitos
-  '7.1.3.05.01.00042 2506042',
-  '7.1.3.04.01.09142 09142 BOLSA DOACAO PESQUISA 380.000,00 0,00 380.000,00',
-  'rubrica 529 e 982 com valor 247,25', // letras nos vãos
-  '{"saldo": 1107372.93, "conta": "7.1.3.05.01.00042", "red": "71199553"}',
-];
+// Mesmas strings que a suíte da 065 usa (Regra de CPF única); o
+// fixture é um só para as duas tarefas.
+const CASOS = JSON.parse(readFileSync(
+  new URL('./fixtures/cpf-casos.json', import.meta.url),
+  'utf8',
+));
+const VERDADEIROS = CASOS.verdadeiros;
+const FALSOS = CASOS.falsos;
 
 describe('temCpf — Regra de CPF única (065)', () => {
   it.each(VERDADEIROS)('reconhece %s', (texto) => {
@@ -112,6 +99,13 @@ describe('temCpf — Regra de CPF única (065)', () => {
     expect(temCpfLargo064(comVaoDeQuatroLetras)).toBe(true);
     expect(temCpfLargo064('529abc982def247ghi25')).toBe(true); // 3 letras
     expect(temCpfLargo064('529abcde982def247ghi25')).toBe(false); // 5 letras
+  });
+
+  it('a regra larga da 064 também aceita 5+ separadores (4ª checagem)', () => {
+    const comSetePontos = '529.......982.......247.......25';
+    expect(temCpf(comSetePontos)).toBe(false); // vão > 6 na regra da 065
+    expect(contemCpf(comSetePontos)).toBe(false);
+    expect(temCpfLargo064(comSetePontos)).toBe(true); // {5,} separadores na 064
   });
 });
 

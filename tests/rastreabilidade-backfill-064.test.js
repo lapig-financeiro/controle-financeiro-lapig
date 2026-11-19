@@ -8,6 +8,8 @@ import { VERSAO, executarBackfill } from '../tools/rastreabilidade/executar.mjs'
 const ADMIN_ID = '00000000-0000-0000-0000-0000000000a1';
 const CODIGO_CENTRO = '99.E2E';
 const CODIGO_CENTRO_PLANO = '99.E2D';
+const CODIGO_CENTRO_TOTAL_AMBIGUO = '99.E2T';
+const CODIGO_CENTRO_TOTAL_VALOR = '99.E2V';
 
 // ── PDF sintético (mesma ideia de app/scripts/gerar-pdf-exemplo.mjs) ──
 
@@ -107,6 +109,22 @@ function linhaContabil(y, conta, reduzido, descricao, debitos, creditos, saldo, 
   };
 }
 
+function paginaTotalAmbigua() {
+  return [[
+    { x: 42, y: 790, tamanho: 12, negrito: true, texto: 'BALANCETE SINTETICO - TOTAL REPETE CODIGO E VALOR' },
+    linhaContabil(760, '7.1.3.04.01.09142', '09142', 'BOLSA DOACAO', '380.000,00', '0,00', '380.000,00'),
+    { x: 42, y: 736, tamanho: 9, negrito: true, texto: 'TOTAL DA CONTA 7.1.3.04.01.09142 BOLSA DOACAO 380.000,00' },
+  ]];
+}
+
+function paginaTotalSoValor() {
+  return [[
+    { x: 42, y: 790, tamanho: 12, negrito: true, texto: 'BALANCETE SINTETICO - TOTAL REPETE SO O VALOR' },
+    linhaContabil(760, '7.1.3.04.01.09142', '09142', 'BOLSA DOACAO', '380.000,00', '0,00', '380.000,00'),
+    { x: 42, y: 736, tamanho: 9, negrito: true, texto: 'TOTAL DO PROJETO 380.000,00' },
+  ]];
+}
+
 function definicaoPaginas() {
   const cabecalho = (y) => linhaContabil(y, 'Conta', 'Reduz.', 'Descricao', 'Debitos', 'Creditos', 'Saldo Atual', true);
 
@@ -170,7 +188,7 @@ function criarClientePglite(db, { arquivos, chamadas }) {
       if (!projectIds.length) return [];
       const { rows } = await db.query(`
         select id, project_id, data_referencia, saldo_disponivel, rendimento_liquido,
-               total_debitos, total_creditos, arquivo_storage_path, arquivo_nome, raw_extraction
+               total_debitos, total_creditos, arquivo_storage_path, arquivo_nome
           from public.balancetes
          where project_id in (${listaSql(projectIds)})
            and data_referencia >= $1::date and data_referencia <= $2::date
@@ -184,6 +202,13 @@ function criarClientePglite(db, { arquivos, chamadas }) {
         total_debitos: numeroOuNulo(linha.total_debitos),
         total_creditos: numeroOuNulo(linha.total_creditos),
       }));
+    },
+    async lerRawExtraction(balanceteId) {
+      const { rows } = await db.query(
+        'select raw_extraction from public.balancetes where id = $1',
+        [balanceteId],
+      );
+      return rows.length ? rows[0].raw_extraction : null;
     },
     async lerLancamentos(balanceteIds) {
       if (!balanceteIds.length) return [];
@@ -306,6 +331,12 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
   let planoId;
   let rubricaBolsasId;
   let rubricaServicoId;
+  let projetoTotalAmbiguaId;
+  let balanceteTotalAmbiguaId;
+  let lancamentoTotalAmbiguaId;
+  let projetoTotalSoValorId;
+  let balanceteTotalSoValorId;
+  let lancamentoTotalSoValorId;
   let ano;
   const arquivos = new Map();
 
@@ -387,6 +418,69 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
     const lidoDocx = await lerDocx(docxBytes);
     expect(lidoDocx.totalPaginas).toBeNull();
     expect(lidoDocx.paginas[0].some((linha) => linha.texto.includes('Bolsas') && linha.texto.includes('800,00'))).toBe(true);
+
+    // Linha de total: mesmo código e valor (ambíguo) e só o valor (fato
+    // na linha certa). Centros próprios para não mexer nas contagens
+    // acima; o primeiro também prova o formato `{ data: { lancamentos } }`.
+    const projetoTotalAmbigua = await db.query(`
+      insert into public.projects (name, code, start_date, end_date, active)
+      values ('Projeto E2E Total Ambiguo', $1, '2025-01-01', '2027-12-31', true)
+      returning id
+    `, [CODIGO_CENTRO_TOTAL_AMBIGUO]);
+    projetoTotalAmbiguaId = projetoTotalAmbigua.rows[0].id;
+    const balanceteTotalAmbigua = await db.query(`
+      insert into public.balancetes (
+        project_id, data_referencia, arquivo_storage_path, arquivo_nome, raw_extraction
+      ) values ($1, $2::date, $3, 'balancete.pdf', $4::jsonb)
+      returning id
+    `, [
+      projetoTotalAmbigua.rows[0].id,
+      `${ano}-09-15`,
+      `${projetoTotalAmbigua.rows[0].id}/balancete.pdf`,
+      JSON.stringify({ data: { lancamentos: [{ conta_codigo: '7.1.3.04.01.09142' }] } }),
+    ]);
+    balanceteTotalAmbiguaId = balanceteTotalAmbigua.rows[0].id;
+    const lancamentoTotalAmbigua = await db.query(`
+      insert into public.balancete_lancamentos (
+        balancete_id, conta_codigo, conta_descricao, saldo_atual, rubrica_code
+      ) values ($1, '7.1.3.04.01.09142', 'BOLSA DOACAO', 380000.00, 'a.bolsas')
+      returning id
+    `, [balanceteTotalAmbiguaId]);
+    lancamentoTotalAmbiguaId = lancamentoTotalAmbigua.rows[0].id;
+    arquivos.set(
+      `${projetoTotalAmbigua.rows[0].id}/balancete.pdf`,
+      montarPdfBytes(paginaTotalAmbigua()),
+    );
+
+    const projetoTotalSoValor = await db.query(`
+      insert into public.projects (name, code, start_date, end_date, active)
+      values ('Projeto E2E Total So Valor', $1, '2025-01-01', '2027-12-31', true)
+      returning id
+    `, [CODIGO_CENTRO_TOTAL_VALOR]);
+    projetoTotalSoValorId = projetoTotalSoValor.rows[0].id;
+    const balanceteTotalSoValor = await db.query(`
+      insert into public.balancetes (
+        project_id, data_referencia, arquivo_storage_path, arquivo_nome, raw_extraction
+      ) values ($1, $2::date, $3, 'balancete.pdf', $4::jsonb)
+      returning id
+    `, [
+      projetoTotalSoValor.rows[0].id,
+      `${ano}-08-15`,
+      `${projetoTotalSoValor.rows[0].id}/balancete.pdf`,
+      JSON.stringify({ lancamentos: [{ conta_codigo: '7.1.3.04.01.09142' }] }),
+    ]);
+    balanceteTotalSoValorId = balanceteTotalSoValor.rows[0].id;
+    const lancamentoTotalSoValor = await db.query(`
+      insert into public.balancete_lancamentos (
+        balancete_id, conta_codigo, conta_descricao, saldo_atual, rubrica_code
+      ) values ($1, '7.1.3.04.01.09142', 'BOLSA DOACAO', 380000.00, 'a.bolsas')
+      returning id
+    `, [balanceteTotalSoValorId]);
+    lancamentoTotalSoValorId = lancamentoTotalSoValor.rows[0].id;
+    arquivos.set(
+      `${projetoTotalSoValor.rows[0].id}/balancete.pdf`,
+      montarPdfBytes(paginaTotalSoValor()),
+    );
   }, 60000);
 
   afterAll(async () => {
@@ -500,6 +594,72 @@ describe.runIf(temPglite)('backfill F2-B — ponta a ponta com a 064 no pglite',
       opcoes: { centro: '99.NAO.EXISTE', ano },
     })).rejects.toThrow(/--centro/);
   }, 30000);
+
+  describe('linha de total', () => {
+    it('total que repete código e valor não vira fato (ambíguo)', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: true, centro: CODIGO_CENTRO_TOTAL_AMBIGUO, ano },
+      });
+
+      expect(detalhe.resumo.documentos).toBe(1);
+      expect(detalhe.resumo.achados).toBe(0);
+      expect(detalhe.resumo.ambiguos).toBe(1);
+      expect(detalhe.resumo.sem_fatos).toBe(1);
+      expect(detalhe.centros[0].documentos[0].status).toBe('sem_fatos');
+      expect(chamadas).toHaveLength(0);
+
+      const versoes = await db.query(`
+        select count(*)::int as n
+          from public.documento_versoes dv
+          join public.documentos d on d.id = dv.documento_id
+         where d.chave = $1
+      `, [`balancete:${projetoTotalAmbiguaId}:${ano}-09-15`]);
+      expect(versoes.rows[0].n).toBe(0);
+    }, 30000);
+
+    it('total que repete só o valor deixa o fato na linha do lançamento', async () => {
+      const chamadas = [];
+      const cliente = criarClientePglite(db, { arquivos, chamadas });
+      const detalhe = await executarBackfill({
+        cliente,
+        opcoes: { aplicar: true, centro: CODIGO_CENTRO_TOTAL_VALOR, ano },
+      });
+
+      expect(detalhe.resumo.documentos).toBe(1);
+      expect(detalhe.resumo.achados).toBe(1);
+      expect(detalhe.resumo.ambiguos).toBe(0);
+      expect(chamadas).toHaveLength(1);
+
+      const documento = detalhe.centros[0].documentos[0];
+      expect(documento.status).toBe('aplicado');
+      expect(documento.fatos).toHaveLength(1);
+      expect(documento.fatos[0].alvo_tabela).toBe('balancete_lancamentos');
+      expect(documento.fatos[0].alvo_id).toBe(String(lancamentoTotalSoValorId));
+      expect(documento.fatos[0].trecho).toContain('7.1.3.04.01.09142');
+      expect(documento.fatos[0].trecho).not.toContain('TOTAL DO PROJETO');
+
+      const origem = await origemComoAdmin(
+        db,
+        'balancete_lancamentos',
+        lancamentoTotalSoValorId,
+        'saldo_atual',
+      );
+      expect(origem.tipo).toBe('documento');
+      expect(origem.fato.trecho).toContain('7.1.3.04.01.09142');
+      expect(origem.fato.pagina).toBe(1);
+
+      const versoes = await db.query(`
+        select count(*)::int as n
+          from public.documento_versoes dv
+          join public.documentos d on d.id = dv.documento_id
+         where d.chave = $1
+      `, [`balancete:${projetoTotalSoValorId}:${ano}-08-15`]);
+      expect(versoes.rows[0].n).toBe(1);
+    }, 30000);
+  });
 
   describe('plano em DOCX', () => {
     it('simulação passa pela saída real do lerDocx e acha 3 fatos sem RPC', async () => {

@@ -68,6 +68,12 @@ Entram:
 
 O resto fica como está (`legado`). Bolsas continuam `digitado` nesta fase.
 
+## Requisições
+
+Os filtros `in.(...)` do PostgREST são fatiados em blocos de no máximo **50**
+ids/chaves por requisição, e os resultados são mesclados. `raw_extraction` não vem
+na listagem de balancetes: é lido por documento, com `select` só dele.
+
 ## O que vira fato
 
 - **Balancete (PDF):** `saldo_disponivel`, `rendimento_liquido`, `total_debitos` e
@@ -77,6 +83,9 @@ O resto fica como está (`legado`). Bolsas continuam `digitado` nesta fase.
   `valor` das parcelas de desembolso, quando não nulos.
 - **Zero não é procurado**: o `acharAlvo` não acha zero; esses números ficam de fora
   e só aparecem na contagem `zeros` do detalhe/relatório.
+- **Valor nulo não é procurado**: candidatos com valor nulo no banco (campos do
+  balancete, rubrica, desembolso ou total do plano) entram na contagem `sem_valor`
+  do detalhe e do resumo.
 - A linha só vira fato se contiver o **valor formatado** (com separador de milhar e
   duas casas, via `formatarValor` de `frontend/js/origem-busca.js`) **e** o código
   da conta (lançamento) ou o texto (rubrica/parcela/cabeçalho). Se mais de uma linha
@@ -88,8 +97,10 @@ O resto fica como está (`legado`). Bolsas continuam `digitado` nesta fase.
   e confere se ele é o valor do fato. Não é uma comparação do valor com ele mesmo.
   A divergência entre o documento e o banco que o texto não revela continua sendo
   pega só pela RPC (a linha é escolhida pelo valor formatado que está no banco).
-- O `trecho` é a linha inteira, truncada em 500 caracteres. Se o valor ficar fora do
-  corte, não é fato.
+  Divergência achada aqui não entra no payload e sobe a contagem `divergencias`.
+- O `trecho` é a linha inteira, truncada em **500 caracteres reais** (code points,
+  como o `char_length` da RPC conta, sem partir par substituto). Se o valor ficar
+  fora do corte, não é fato.
 - `bbox` tem só as quatro chaves de `linhasDaPagina` (`x0`, `x1`, `yMin`, `yMax`).
   Em DOCX, `pagina` e `bbox` são nulos.
 - Rubrica ambígua no plano (mesmo `rubrica_code` e `descricao_livre` nula/vazia
@@ -100,7 +111,9 @@ O resto fica como está (`legado`). Bolsas continuam `digitado` nesta fase.
 - **Balancete inconsistente** (`raw_extraction` indica mais lançamentos do que a
   tabela tem) é recusado sozinho, com o motivo `lancamentos_inconsistentes`, e a
   corrida continua nos outros documentos. Nunca grava menos fatos do que deveria
-  por causa de tabela incompleta.
+  por causa de tabela incompleta. O `raw_extraction` aceita os dois formatos do
+  banco (`{ lancamentos: [...] }` e `{ data: { lancamentos: [...] } }`) e é
+  buscado **por balancete**, na hora de processá-lo — não vem na listagem.
 
 ## Formato
 
@@ -131,17 +144,22 @@ script tira os fatos que a regra larga da 064 aponta como suspeitos e tenta **um
 vez** de novo. Se não houver suspeito, ou se a segunda chamada recusar de novo, o
 documento é pulado com o motivo `cpf` e o script segue. Nada disso imprime CPF.
 
-## Sessão expirada
+## Sessão expirada e assinatura do arquivo
 
-HTTP 401 ou 403 durante a corrida (leitura, Storage ou RPC) **não** é recusa de
-documento: o script aborta com código de saída ≠ 0 e a mensagem
+HTTP 401 ou 403 durante a corrida (leitura, **assinatura** no Storage ou RPC) **não**
+é recusa de documento: o script aborta com código de saída ≠ 0 e a mensagem
 `login expirou: rode de novo`. É só autenticar de novo e repetir; o que já foi
 aplicado é idempotente pelo `sha256`.
+
+Um **403 no download pela URL assinada** é outra coisa: a assinatura expirou ou foi
+recusada. O script refaz a assinatura **uma vez**; se falhar de novo, aquele
+documento é recusado com o motivo `arquivo` e a corrida continua — sem derrubar a
+sessão.
 
 ## Já registrado
 
 Quando o mesmo `sha256` já existe, a RPC devolve `criada: false` e **ignora todos os
-fatos novos** (o registro é imutável). O script avisa
+fatos novos** (o registro é imutável). O terminal avisa, exatamente:
 `documento já registrado, N fatos novos ignorados`. Corrigir uma leitura errada depois
 disso exige a F3 (nova versão/desfazer) ou intervenção manual; **não** apague fatos à
 mão.
@@ -149,10 +167,12 @@ mão.
 ## Saída
 
 **Terminal:** só o modo, o papel, o ano, e — por centro e por documento — as
-contagens de achados, não achados, ambíguos, com CPF, zeros, duplicados, recusados,
-o status (`sem fatos`, já registrado, aplicado, recusado com motivo), além do código
-do centro, do id do documento, da data/versão e do motivo de recusa. Nunca imprime
-trecho, título, nome de pessoa, CPF, nome de arquivo, caminho ou valor.
+contagens de achados, não achados, ambíguos, com CPF, zeros, sem valor, divergências,
+duplicados e recusados, o status (`sem fatos`, já registrado, aplicado, recusado com
+motivo), além do código do centro, do id do documento, da data/versão e do motivo de
+recusa. Nunca imprime trecho, título, nome de pessoa, CPF, nome de arquivo, caminho
+ou valor. O aviso de já registrado é exatamente
+`documento já registrado, N fatos novos ignorados`.
 
 **JSON de detalhe:** vai para a pasta `--saida`, **fora do repositório**, e é o único
 lugar com trechos e valores. O arquivo é `backfill-<AAAAMMDD-HHMMSS>.json`.
@@ -164,14 +184,20 @@ npx vitest run tests/rastreabilidade
 npx eslint tools/rastreabilidade/
 ```
 
-- Unitários (sem rede): regra de CPF (inclusive a regra larga da 064 com vãos de até
-  4 letras), montagem do alvo por tipo, escolha sem ambiguidade, valor lido do
-  trecho, formatação do valor no trecho, corte de 500, bbox, saída do terminal.
+- Unitários (sem rede): regra de CPF em `tests/fixtures/cpf-casos.json` (o mesmo
+  fixture serve à 065; inclusive a regra larga da 064 com vãos de até 4 letras e
+  5+ separadores), montagem do alvo por tipo, escolha sem ambiguidade, valor lido
+  do trecho, formatação do valor no trecho, corte de 500 caracteres reais (sem
+  partir par substituto), bbox, divergência descartada, `sem_valor`, saída do
+  terminal e filtros `in.(...)` em blocos de 50 (200 ids viram 4 requisições).
+- O cliente falso também cobre o download: 403 na URL assinada refaz a assinatura
+  uma vez; dois 403 recusam o arquivo sem virar "login expirou".
 - Ponta a ponta (pglite): um PDF de balancete **e** um DOCX de plano, ambos
   sintéticos e gerados no teste. O DOCX passa pela saída real do `lerDocx` até
   `registrar_documento_v2`; `get_origem_v2` devolve `documento` (para o DOCX, com
   `pagina` nula), rodar duas vezes não cria versão nova e a simulação não chama a
-  RPC.
+  RPC. A linha de total tem dois casos: repetir código e valor fica ambíguo (sem
+  fato); repetir só o valor deixa o fato na linha do lançamento.
 
 ## Versão
 

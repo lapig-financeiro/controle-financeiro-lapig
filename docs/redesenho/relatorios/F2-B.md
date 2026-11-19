@@ -95,25 +95,30 @@
   como `login expirou`.
 - `tests/rastreabilidade-saida.test.js` — o terminal não contém trecho, título,
   arquivo ou valor; o detalhe contém o trecho; relatório e README não contêm o trecho
-  sintético; `--saida` dentro do repo é recusada (inclusive variação de maiúsculas no
-  Windows) antes de ler o ambiente; `--centro`/`--saida` recusam valor que comece por
-  `--`.
+  sintético; a frase de já registrado é exata; `--saida` dentro do repo é recusada
+  (inclusive variação de maiúsculas no Windows) antes de ler o ambiente;
+  `--centro`/`--saida` recusam valor que comece por `--`.
+- `tests/rastreabilidade-cliente.test.js` — 200 ids em cada filtro `in.(...)` viram 4
+  requisições de no máximo 50; a listagem não pede `raw_extraction` e a leitura por
+  balancete pede só ele; 403 na URL assinada refaz a assinatura uma vez e dois 403
+  recusam o arquivo sem virar "login expirou".
 - `tests/rastreabilidade-backfill-064.test.js` — ponta a ponta no pglite com um PDF
   sintético de 2 páginas (9 fatos, 1 zero, simulação sem RPC; aplicação aceita por
   `registrar_documento_v2`; `get_origem_v2` devolve `documento` com a página certa,
-  inclusive bbox; segunda aplicação não cria versão nova) e com um DOCX sintético
+  inclusive bbox; segunda aplicação não cria versão nova), com um DOCX sintético
   gerado no teste (3 fatos; `get_origem_v2` devolve `documento` com `pagina` nula;
-  segunda aplicação não cria versão nova).
+  segunda aplicação não cria versão nova) e com os dois casos de linha de total
+  (código e valor repetidos = ambíguo; só o valor repetido = fato na linha certa).
 
 ## Resultados
 
 - `npx eslint tools/rastreabilidade/` — verde.
 - `npm run lint` — verde.
 - `npm test` — verde, com o ponta a ponta do pglite executado (não pulado):
-  662 testes passaram e 5 pulos de outras suítes, não desta.
+  683 testes passaram e 5 pulos de outras suítes, não desta.
 - Nenhum documento real foi baixado e nenhuma variável `CF_*` real foi usada nesta
-  execução. As contagens acima são de fixtures sintéticas (centros `99.E2E` e
-  `99.E2D`).
+  execução. As contagens acima são de fixtures sintéticas (centros `99.E2E`,
+  `99.E2D`, `99.E2T` e `99.E2V`).
 
 ## 2ª rodada (revisão GLM 5.3 do commit 237ce44)
 
@@ -132,9 +137,9 @@ Nove correções pedidas em `docs/redesenho/tarefas/F2-B-rodada2.md`:
    064 não aponta nenhum trecho suspeito, o documento é pulado com `recusado`/`cpf`
    sem segunda chamada.
 4. **`temCpfLargo064` com as quatro checagens da 064.** Inclui o padrão 3-3-3-2 com
-   vãos de até 4 caracteres quaisquer (letras inclusive) e 5+ separadores. Teste com
-   um CPF sintético quebrado por quatro letras em cada vão: a regra da 065 não vê
-   CPF, a larga da 064 vê.
+   vãos de até 4 caracteres quaisquer (letras inclusive) e 5+ separadores. Testes com
+   um CPF sintético quebrado por quatro letras em cada vão e com 5+ separadores (este
+   acrescentado na 3ª rodada): a regra da 065 não vê CPF, a larga da 064 vê.
 5. **`--saida` antes de tudo.** A pasta é validada e criada antes de ler o ambiente,
    autenticar, baixar ou gravar. Teste prova que uma pasta dentro do repositório falha
    antes de a falta de `CF_*` ser reclamada.
@@ -160,6 +165,51 @@ Testes da rodada: `tests/rastreabilidade-cpf.test.js`,
 `parser_versao` continua `1.0.0` porque nada foi aplicado em produção antes desta
 revisão.
 
+## 3ª rodada (revisão MiniMax max dos commits 237ce44 + 0b175b3)
+
+Onze correções pedidas em `docs/redesenho/tarefas/F2-B-rodada3.md`:
+
+1. **`raw_extraction` nos dois formatos.** `lancamentosEsperados` lê
+   `objeto.lancamentos` **ou** `objeto.data.lancamentos`; o guarda de forma aceita
+   exatamente esses dois. Há teste unitário dos dois (objeto e string) e, no ponta a
+   ponta, o balancete do centro `99.E2T` usa `{ data: { lancamentos } }`.
+2. **`in.(...)` em blocos.** O cliente REST fatia ids/chaves em blocos de no máximo
+   50 e mescla os resultados. Teste com 200 ids em cada método filtrado (7 métodos):
+   4 requisições, nenhuma com mais de 50 valores, total 200.
+3. **`raw_extraction` sob demanda.** Saiu do `select` da listagem de balancetes e
+   passou a ser lido por documento (`lerRawExtraction`), antes do download. O teste
+   do cliente confere que o `select` da listagem não o pede e que a leitura por
+   balancete usa `select=raw_extraction`.
+4. **Frase de já registrado.** O terminal agora imprime exatamente
+   `documento já registrado, N fatos novos ignorados`, a mesma frase do README e
+   deste relatório; teste próprio no arquivo de saída.
+5. **Divergência de sinal.** Teste de fluxo: banco com `1234.56` e documento com
+   `(1.234,56)` → o fato não entra no payload, `divergencias` sobe (contagem nova no
+   detalhe e no resumo) e motivo `divergencia`. A pré-validação trata o parêntese
+   como negativo legítimo: o positivo do banco não casa (`valorLidoDoTrecho` também
+   testado nos dois sinais).
+6. **Linha de total, no ponta a ponta.** Centro `99.E2T`: total que repete código e
+   valor deixa duas linhas válidas → ambíguo, sem fato, status `sem_fatos`. Centro
+   `99.E2V`: total que repete só o valor → fato único na linha do lançamento, aceito
+   pela 064 e devolvido por `get_origem_v2` com a página certa.
+7. **CPF num fixture único.** `tests/fixtures/cpf-casos.json` guarda os verdadeiros e
+   falsos da Regra de CPF única; o teste lê o arquivo (mesmas strings da 065). A
+   regra larga da 064 e a bissecção continuam testadas no mesmo arquivo.
+8. **Quatro checagens da 064.** O teste ganhou o caso de 5+ separadores
+   (`529.......982.......247.......25`): a 065 recusa, a regra larga da 064 aceita.
+   A frase da 2ª rodada sobre a cobertura agora corresponde ao teste.
+9. **`sem_valor`.** Candidatos com valor nulo (cabeçalho, lançamento, rubrica,
+   desembolso ou total do plano) entram na contagem `sem_valor` do detalhe e do
+   resumo em vez de sumirem sem explicação.
+10. **Corte de 500 caracteres reais.** `cortarTrecho` usa
+    `Array.from(texto).slice(0, 500).join('')`; teste com 499 caracteres + emoji
+    prova que o par substituto não é partido e que o comprimento em code points é
+    500 (o `slice` antigo dava 500 unidades UTF-16).
+11. **403 na URL assinada.** O download trata 403 como assinatura expirada/recusada
+    e refaz a assinatura uma vez; se falhar de novo, recusa aquele documento
+    (`arquivo`). 403 ao **assinar** continua sendo `login expirou`. Testes cobrem o
+    sucesso na segunda tentativa, os dois 403 e o 403 na assinatura.
+
 ## O que ficou em aberto
 
 - **Rodar na produção** (operador, primeiro em simulação e depois aplicando, em
@@ -178,6 +228,8 @@ revisão.
   indica, o documento é recusado sozinho (`lancamentos_inconsistentes`). Uma base com
   `raw_extraction` histórico inconsistente precisa de revisão manual antes de contar
   com esses documentos no backfill.
-- O cliente REST não renova o JWT sozinho. Se a sessão expirar no meio (HTTP 401/403),
-  o script aborta com `login expirou: rode de novo` e código de saída ≠ 0; é só
-  rodar de novo, e o que já foi aplicado não duplica.
+- O cliente REST não renova o JWT sozinho. Se a sessão expirar no meio (HTTP 401/403
+  nas leituras, na assinatura ou na RPC), o script aborta com `login expirou: rode de
+  novo` e código de saída ≠ 0; é só rodar de novo, e o que já foi aplicado não
+  duplica. 403 no **download** da URL assinada não é sessão: refaz a assinatura uma
+  vez e, se falhar de novo, recusa só aquele documento.

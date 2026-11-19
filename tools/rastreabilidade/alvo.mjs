@@ -205,6 +205,15 @@ function arredondar(valor) {
   return Math.round(Number(valor) * 100) / 100;
 }
 
+/**
+ * Corta em 500 caracteres reais (code points), como o `char_length` da
+ * RPC conta; `slice` cortaria unidades UTF-16 e poderia partir um par
+ * substituto ao meio.
+ */
+export function cortarTrecho(texto) {
+  return Array.from(String(texto == null ? '' : texto)).slice(0, 500).join('');
+}
+
 /** Só as quatro chaves de `linhasDaPagina`, em ordem válida. */
 export function bboxDaLinha(linha) {
   if (!linha) return null;
@@ -259,7 +268,7 @@ export function escolherLinha(paginas, alvo) {
   }
 
   const escolhido = validos[0];
-  const trecho = escolhido.linhaObj.texto.slice(0, 500);
+  const trecho = cortarTrecho(escolhido.linhaObj.texto);
   if (!linhaServe(trecho, alvoNormalizado)) {
     return { status: 'corte', pagina: escolhido.pagina, linha: escolhido.linha };
   }

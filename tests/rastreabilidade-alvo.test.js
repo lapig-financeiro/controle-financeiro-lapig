@@ -7,6 +7,7 @@ import {
   alvoDoLancamento,
   alvoDoTotalPlano,
   contaNaLinha,
+  cortarTrecho,
   escolherLinha,
   linhaServe,
   montarFato,
@@ -173,6 +174,8 @@ describe('alvo — escolha da linha', () => {
   it('a pré-validação lê o número do trecho, não o valor do banco', () => {
     expect(valorLidoDoTrecho('BOLSA 380.000,00 0,00 380.000,00', 380000)).toBe(380000);
     expect(valorLidoDoTrecho('APARELHOS (1.234,56)', -1234.56)).toBe(-1234.56);
+    // Só o sinal certo passa: o positivo não casa com o parêntese.
+    expect(valorLidoDoTrecho('APARELHOS (1.234,56)', 1234.56)).toBeNull();
     expect(valorLidoDoTrecho('linha 1.345,00', 345)).toBeNull();
     expect(valorLidoDoTrecho('TOTAL DE DEBITOS: 786.300,00 TOTAL DE CREDITOS: 0,00', 786300)).toBe(786300);
     expect(valorLidoDoTrecho('sem número nenhum', 100)).toBeNull();
@@ -195,6 +198,15 @@ describe('alvo — escolha da linha', () => {
     const selecao = escolherLinha(paginasLongas, alvoDoCabecalho('saldo_disponivel', 195000));
     expect(selecao.status).toBe('corte');
     expect(linhaServe(linhaLonga, alvoDoCabecalho('saldo_disponivel', 195000))).toBe(true);
+  });
+
+  it('o corte de 500 conta caracteres reais e não parte par substituto', () => {
+    const texto = `${'X'.repeat(499)}😀${'Y'.repeat(20)}`;
+    const corte = cortarTrecho(texto);
+    expect(Array.from(corte)).toHaveLength(500);
+    expect(corte.endsWith('😀')).toBe(true);
+    // O antigo slice(0, 500) cortava a metade do par (500 unidades UTF-16).
+    expect(corte.length).toBe(501);
   });
 });
 

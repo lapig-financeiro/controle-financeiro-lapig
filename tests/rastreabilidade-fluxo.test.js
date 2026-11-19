@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { docxSintetico } from './helpers/plano-sintetico.js';
 import { ClienteSupabase } from '../tools/rastreabilidade/cliente.mjs';
 import { ErroFatal, ErroRpc } from '../tools/rastreabilidade/erros.mjs';
-import { executarBackfill } from '../tools/rastreabilidade/executar.mjs';
+import { executarBackfill, lancamentosEsperados } from '../tools/rastreabilidade/executar.mjs';
 
 const PROJETO = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -19,6 +19,7 @@ function clienteMinimo(extra = {}) {
     lerBalancetesDoAno: vi.fn(async () => []),
     lerPlanosAtivos: vi.fn(async () => []),
     lerLancamentos: vi.fn(async () => []),
+    lerRawExtraction: vi.fn(async () => null),
     lerRubricasDoPlano: vi.fn(async () => []),
     lerDesembolsos: vi.fn(async () => []),
     lerRubricas: vi.fn(async () => []),
@@ -89,14 +90,23 @@ describe('executarBackfill — credencial e escopo', () => {
       total_creditos: null,
       arquivo_storage_path: `${PROJETO.id}/balancete.pdf`,
       arquivo_nome: 'balancete.pdf',
-      raw_extraction: raw,
     };
     const cliente = clienteMinimo({
       lerBalancetesDoAno: vi.fn(async () => [balancete]),
       lerLancamentos: vi.fn(async () => lancamentos),
+      // O raw_extraction é buscado por balancete, fora da listagem.
+      lerRawExtraction: vi.fn(async (id) => (id === balancete.id ? raw : null)),
     });
     return { cliente, balancete };
   }
+
+  it('lê raw_extraction nos dois formatos: { lancamentos } e { data: { lancamentos } }', () => {
+    expect(lancamentosEsperados({ lancamentos: [{}, {}] })).toBe(2);
+    expect(lancamentosEsperados({ data: { lancamentos: [{}, {}, {}] } })).toBe(3);
+    expect(lancamentosEsperados('{"data":{"lancamentos":[{}]}}')).toBe(1);
+    expect(lancamentosEsperados({ data: { lancamentos: 'nao-e-lista' } })).toBe(0);
+    expect(lancamentosEsperados(null)).toBe(0);
+  });
 
   function conferirRecusaPorInconsistencia(resultado, cliente) {
     expect(resultado.resumo.documentos).toBe(1);
@@ -127,6 +137,16 @@ describe('executarBackfill — credencial e escopo', () => {
     const resultado = await executarBackfill({ cliente, opcoes: { ano: 2026 } });
     conferirRecusaPorInconsistencia(resultado, cliente);
     expect(resultado.centros[0].documentos[0].id).toBe(balancete.id);
+  });
+
+  it('o formato { data: { lancamentos } } também é conferido', async () => {
+    const { cliente } = clienteComBalanceteInconsistente({
+      raw: { data: { lancamentos: [{}, {}] } },
+      lancamentos: [lancamento('00000000-0000-0000-0000-000000000010', '00000000-0000-0000-0000-000000000002', '7.1.3.01')],
+    });
+
+    const resultado = await executarBackfill({ cliente, opcoes: { ano: 2026 } });
+    conferirRecusaPorInconsistencia(resultado, cliente);
   });
 });
 
@@ -209,6 +229,77 @@ describe('executarBackfill — zero fatos, retentativa e sessão', () => {
     expect(documento.fatos).toEqual([]);
     expect(documento.contagens.com_cpf).toBe(1);
     expect(registrarDocumento).toHaveBeenCalledTimes(1);
+  }, 20000);
+
+  it('candidatos com valor nulo entram na contagem sem_valor do resumo', async () => {
+    const cliente = clienteComPlano({
+      rubricas: [
+        {
+          id: '00000000-0000-0000-0000-000000000015',
+          plano_id: PLANO_ID,
+          rubrica_code: 'a.sem',
+          descricao_livre: 'Rubrica sem valor',
+          valor_previsto: null,
+        },
+        {
+          id: '00000000-0000-0000-0000-000000000016',
+          plano_id: PLANO_ID,
+          rubrica_code: 'a.bolsas',
+          descricao_livre: 'Bolsas',
+          valor_previsto: 800,
+        },
+      ],
+    });
+
+    const resultado = await executarBackfill({ cliente, opcoes: { ano: 2026 } });
+    // Total do plano (nulo no fixture) + rubrica sem valor.
+    expect(resultado.resumo.sem_valor).toBe(2);
+    expect(resultado.centros[0].documentos[0].contagens.sem_valor).toBe(2);
+    expect(resultado.centros[0].documentos[0].contagens.achados).toBe(1);
+  }, 20000);
+
+  it('valor positivo no banco e negativo entre parênteses no documento não entra no payload', async () => {
+    const registrarDocumento = vi.fn(async () => ({ criada: true, versao: 1 }));
+    const cliente = clienteComPlano({
+      rubricas: [
+        {
+          id: '00000000-0000-0000-0000-000000000017',
+          plano_id: PLANO_ID,
+          rubrica_code: 'a.divergente',
+          descricao_livre: 'Rubrica divergente',
+          valor_previsto: 1234.56,
+        },
+        {
+          id: '00000000-0000-0000-0000-000000000018',
+          plano_id: PLANO_ID,
+          rubrica_code: 'a.bolsas',
+          descricao_livre: 'Bolsas',
+          valor_previsto: 800,
+        },
+      ],
+      arquivo: docxSintetico({
+        linhasExtras: [['Rubrica divergente', '(1.234,56)']],
+      }),
+      registrarDocumento,
+    });
+
+    const resultado = await executarBackfill({
+      cliente,
+      opcoes: { aplicar: true, ano: 2026 },
+    });
+
+    const documento = resultado.centros[0].documentos[0];
+    expect(documento.contagens.divergencias).toBe(1);
+    expect(documento.motivos.divergencia).toBe(1);
+    expect(documento.contagens.achados).toBe(1);
+    expect(resultado.resumo.divergencias).toBe(1);
+    expect(registrarDocumento).toHaveBeenCalledTimes(1);
+
+    const payload = registrarDocumento.mock.calls[0][0];
+    expect(payload.fatos).toHaveLength(1);
+    expect(payload.fatos[0].campo).toBe('valor_previsto');
+    expect(payload.fatos[0].valor).toBe(800);
+    expect(payload.fatos.some((fato) => fato.valor === 1234.56)).toBe(false);
   }, 20000);
 
   it('401/403 no meio da corrida aborta com "login expirou"', async () => {

@@ -90,31 +90,24 @@ function caminhoValido(caminho, projectId) {
   return Boolean(partes.slice(1).join('/'));
 }
 
-function lancamentosEsperados(raw) {
+/**
+ * Quantos lançamentos o `raw_extraction` diz que existem. O banco tem
+ * os dois formatos: `{ lancamentos: [...] }` e `{ data: { lancamentos:
+ * [...] } }`; o guarda de forma aceita os dois (e só os dois).
+ */
+export function lancamentosEsperados(raw) {
   try {
     const objeto = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return objeto && Array.isArray(objeto.lancamentos) ? objeto.lancamentos.length : 0;
+    if (!objeto || typeof objeto !== 'object') return 0;
+    const lista = Array.isArray(objeto.lancamentos)
+      ? objeto.lancamentos
+      : (objeto.data && typeof objeto.data === 'object' && Array.isArray(objeto.data.lancamentos)
+        ? objeto.data.lancamentos
+        : null);
+    return lista ? lista.length : 0;
   } catch {
     return 0;
   }
-}
-
-function balancetesInconsistentes(balancetes, lancamentos) {
-  const porBalancete = new Map();
-  for (const lancamento of lancamentos) {
-    const id = String(lancamento.balancete_id);
-    if (!porBalancete.has(id)) porBalancete.set(id, 0);
-    porBalancete.set(id, porBalancete.get(id) + 1);
-  }
-
-  const inconsistentes = new Set();
-  for (const balancete of balancetes) {
-    const esperado = lancamentosEsperados(balancete.raw_extraction);
-    if (esperado === 0) continue;
-    const obtido = porBalancete.get(String(balancete.id)) || 0;
-    if (obtido < esperado) inconsistentes.add(String(balancete.id));
-  }
-  return inconsistentes;
 }
 
 function concatenar({ camRel, titulo, arquivoNome, fatos }) {
@@ -186,7 +179,6 @@ function candidatosDoBalancete(balancete, lancamentos) {
 
   for (const campo of CAMPOS_BALANCETE) {
     const valor = numero(balancete[campo]);
-    if (valor == null) continue;
     candidatos.push({
       alvoTabela: 'balancetes',
       alvoId: String(balancete.id),
@@ -205,7 +197,6 @@ function candidatosDoBalancete(balancete, lancamentos) {
   for (const lancamento of ordenados) {
     if (!String(lancamento.rubrica_code == null ? '' : lancamento.rubrica_code).trim()) continue;
     const valor = numero(lancamento.saldo_atual);
-    if (valor == null) continue;
     candidatos.push({
       alvoTabela: 'balancete_lancamentos',
       alvoId: String(lancamento.id),
@@ -228,17 +219,15 @@ function candidatosDoPlano(plano, rubricas, desembolsos, nomesRubricas) {
   const candidatos = [];
 
   const total = numero(plano.valor_total_plano);
-  if (total != null) {
-    candidatos.push({
-      alvoTabela: 'planos_trabalho',
-      alvoId: String(plano.id),
-      campo: 'valor_total_plano',
-      valor: total,
-      alvo: alvoDoTotalPlano(total),
-      paiId: String(plano.id),
-      chaveEstavel: '',
-    });
-  }
+  candidatos.push({
+    alvoTabela: 'planos_trabalho',
+    alvoId: String(plano.id),
+    campo: 'valor_total_plano',
+    valor: total,
+    alvo: alvoDoTotalPlano(total),
+    paiId: String(plano.id),
+    chaveEstavel: '',
+  });
 
   const grupos = new Map();
   for (const rubrica of rubricas) {
@@ -254,7 +243,6 @@ function candidatosDoPlano(plano, rubricas, desembolsos, nomesRubricas) {
   ));
   for (const rubrica of ordenadas) {
     const valor = numero(rubrica.valor_previsto);
-    if (valor == null) continue;
     if ((grupos.get(chaveDaRubrica(rubrica)) || 0) > 1) {
       candidatos.push({
         alvoTabela: 'plano_rubricas',
@@ -286,7 +274,6 @@ function candidatosDoPlano(plano, rubricas, desembolsos, nomesRubricas) {
   ));
   for (const desembolso of desembolsosOrdenados) {
     const valor = numero(desembolso.valor);
-    if (valor == null) continue;
     candidatos.push({
       alvoTabela: 'plano_desembolsos',
       alvoId: String(desembolso.id),
@@ -348,6 +335,8 @@ function novoDetalhe(doc, projeto, titulo, arquivoNome, caminho) {
       ambiguos: 0,
       com_cpf: 0,
       zeros: 0,
+      sem_valor: 0,
+      divergencias: 0,
       duplicados: 0,
       recusados: 0,
     },
@@ -368,7 +357,6 @@ async function processarDocumento({
   rubricasPorPlano,
   desembolsosPorPlano,
   nomesRubricas,
-  balancetesInconsistentesSet,
 }) {
   const projeto = doc.projeto;
   const caminho = String(doc.caminho);
@@ -377,13 +365,28 @@ async function processarDocumento({
   const titulo = (existente && existente.titulo) || doc.tituloPadrao;
   const detalhe = novoDetalhe(doc, projeto, titulo, arquivoNome, caminho);
 
+  const lancamentos = doc.tipo === 'balancete'
+    ? (lancamentosPorBalancete.get(String(doc.balancete.id)) || [])
+    : [];
+  const rubricas = doc.tipo === 'plano'
+    ? (rubricasPorPlano.get(String(doc.plano.id)) || [])
+    : [];
+  const desembolsos = doc.tipo === 'plano'
+    ? (desembolsosPorPlano.get(String(doc.plano.id)) || [])
+    : [];
+
   // Balancete cujo raw_extraction indica mais lançamentos do que a
   // tabela tem: recusa SÓ este documento e segue (a 064 também diria
   // que falta dado; gravar menos fatos passaria por leitura completa).
-  if (doc.tipo === 'balancete' && balancetesInconsistentesSet.has(String(doc.balancete.id))) {
-    detalhe.status = 'recusado';
-    detalhe.motivo = 'lancamentos_inconsistentes';
-    return detalhe;
+  // O raw_extraction é buscado agora, por balancete, não na listagem.
+  if (doc.tipo === 'balancete') {
+    const raw = await cliente.lerRawExtraction(doc.balancete.id);
+    const esperado = lancamentosEsperados(raw);
+    if (esperado > 0 && lancamentos.length < esperado) {
+      detalhe.status = 'recusado';
+      detalhe.motivo = 'lancamentos_inconsistentes';
+      return detalhe;
+    }
   }
 
   // CPF no nome vem antes da validação de caminho: a recusa é por CPF,
@@ -436,16 +439,6 @@ async function processarDocumento({
   detalhe.paginas = totalPaginas;
   detalhe.sha256 = sha256(bytes);
 
-  const lancamentos = doc.tipo === 'balancete'
-    ? (lancamentosPorBalancete.get(String(doc.balancete.id)) || [])
-    : [];
-  const rubricas = doc.tipo === 'plano'
-    ? (rubricasPorPlano.get(String(doc.plano.id)) || [])
-    : [];
-  const desembolsos = doc.tipo === 'plano'
-    ? (desembolsosPorPlano.get(String(doc.plano.id)) || [])
-    : [];
-
   const candidatos = doc.tipo === 'balancete'
     ? candidatosDoBalancete(doc.balancete, lancamentos)
     : candidatosDoPlano(doc.plano, rubricas, desembolsos, nomesRubricas);
@@ -457,6 +450,14 @@ async function processarDocumento({
     if (!alvoLocalValido(doc, candidato)) {
       detalhe.contagens.recusados += 1;
       somarMotivo(detalhe, 'alvo');
+      continue;
+    }
+
+    // Número nulo no banco não vira fato; só entra na contagem própria
+    // para o resumo dizer quanto ficou de fora sem valor.
+    if (candidato.valor == null) {
+      detalhe.contagens.sem_valor += 1;
+      somarMotivo(detalhe, 'sem_valor');
       continue;
     }
 
@@ -474,6 +475,11 @@ async function processarDocumento({
     const selecao = escolherLinha(paginas, candidato.alvo);
     if (selecao.status === 'zero') {
       detalhe.contagens.zeros += 1;
+      continue;
+    }
+    if (selecao.status === 'sem_valor') {
+      detalhe.contagens.sem_valor += 1;
+      somarMotivo(detalhe, 'sem_valor');
       continue;
     }
     if (selecao.status === 'nao_achado') {
@@ -516,6 +522,7 @@ async function processarDocumento({
     const valorLido = valorLidoDoTrecho(fato.trecho, fato.valor);
     if (valorLido == null || !valoresIguais(fato.valor, valorLido)) {
       detalhe.contagens.recusados += 1;
+      detalhe.contagens.divergencias += 1;
       somarMotivo(detalhe, 'divergencia');
       continue;
     }
@@ -689,6 +696,8 @@ function resumir(detalhes) {
     ambiguos: 0,
     com_cpf: 0,
     zeros: 0,
+    sem_valor: 0,
+    divergencias: 0,
     duplicados: 0,
     recusados: 0,
     documentos_recusados: 0,
@@ -699,7 +708,10 @@ function resumir(detalhes) {
   };
 
   for (const detalhe of detalhes) {
-    for (const chave of ['achados', 'nao_achados', 'ambiguos', 'com_cpf', 'zeros', 'duplicados', 'recusados']) {
+    for (const chave of [
+      'achados', 'nao_achados', 'ambiguos', 'com_cpf', 'zeros', 'sem_valor',
+      'divergencias', 'duplicados', 'recusados',
+    ]) {
       resumo[chave] += detalhe.contagens[chave] || 0;
     }
     if (detalhe.status === 'recusado') resumo.documentos_recusados += 1;
@@ -810,14 +822,14 @@ export async function executarBackfill({ cliente, opcoes = {}, geradoEm = new Da
 
   // 4. Lançamentos do balancete (todos, para conferir a tabela vazia).
   // Balancete com menos lançamentos que o raw_extraction indica é
-  // recusado sozinho mais adiante (motivo `lancamentos_inconsistentes`).
+  // recusado sozinho mais adiante (motivo `lancamentos_inconsistentes`);
+  // o raw_extraction é buscado por documento, não na listagem.
   const balanceteIds = balancetes.map((balancete) => balancete.id);
   const lancamentos = ((await cliente.lerLancamentos(balanceteIds)) || []).map((lancamento) => ({
     ...lancamento,
     id: String(lancamento.id),
     balancete_id: String(lancamento.balancete_id),
   }));
-  const inconsistentes = balancetesInconsistentes(balancetes, lancamentos);
 
   const lancamentosPorBalancete = new Map();
   for (const lancamento of lancamentos) {
@@ -925,7 +937,6 @@ export async function executarBackfill({ cliente, opcoes = {}, geradoEm = new Da
       rubricasPorPlano,
       desembolsosPorPlano,
       nomesRubricas,
-      balancetesInconsistentesSet: inconsistentes,
     });
     detalhes.push(detalhe);
   }
@@ -964,15 +975,16 @@ export function formatarSaidaTerminal(detalhe) {
       const contagens = documento.contagens;
       let linha = `  ${identidade} [${documento.id}]: achados ${contagens.achados}, `
         + `nao_achados ${contagens.nao_achados}, ambiguos ${contagens.ambiguos}, `
-        + `com_cpf ${contagens.com_cpf}, zeros ${contagens.zeros}, duplicados ${contagens.duplicados}, `
-        + `recusados ${contagens.recusados}`;
+        + `com_cpf ${contagens.com_cpf}, zeros ${contagens.zeros}, `
+        + `sem_valor ${contagens.sem_valor}, divergencias ${contagens.divergencias}, `
+        + `duplicados ${contagens.duplicados}, recusados ${contagens.recusados}`;
 
       if (documento.status === 'recusado') {
         linha += ` — RECUSADO (${documento.motivo || 'outro'})`;
       } else if (documento.status === 'sem_fatos') {
         linha += ' — sem fatos';
       } else if (documento.status === 'ja_registrado') {
-        linha += ` — já registrado (${documento.fatos_ignorados || 0} fato(s) ignorado(s))`;
+        linha += ` — documento já registrado, ${documento.fatos_ignorados || 0} fatos novos ignorados`;
       } else if (documento.status === 'aplicado') {
         linha += ` — aplicado (v${documento.versao == null ? '?' : documento.versao})`;
       } else {
@@ -988,6 +1000,7 @@ export function formatarSaidaTerminal(detalhe) {
     `Resumo: documentos ${resumo.documentos || 0}, achados ${resumo.achados || 0}, `
     + `nao_achados ${resumo.nao_achados || 0}, ambiguos ${resumo.ambiguos || 0}, `
     + `com_cpf ${resumo.com_cpf || 0}, zeros ${resumo.zeros || 0}, `
+    + `sem_valor ${resumo.sem_valor || 0}, divergencias ${resumo.divergencias || 0}, `
     + `duplicados ${resumo.duplicados || 0}, documentos_recusados ${resumo.documentos_recusados || 0}, `
     + `sem_fatos ${resumo.sem_fatos || 0}, `
     + `ja_registrados ${resumo.ja_registrados || 0}`,
