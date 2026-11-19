@@ -58,40 +58,45 @@ const ROTULOS_TIPO_PENDENCIA = {
 const DATA_ISO_RE = /^\d{4}-\d{2}-\d{2}/;
 
 const AJUDA_DINHEIRO_CONTA =
-  'Tudo o que está na conta do projeto hoje. O livre desconta o que já está comprometido (bolsas, taxas).';
-const AJUDA_RENDIMENTO = 'Rendimento tem regras próprias de uso.';
+  'Tudo o que está na conta do projeto, pelo último balancete. O livre é outra conta: o previsto no plano menos o que já foi gasto e o que já está comprometido (bolsas, taxas).';
+const AJUDA_RENDIMENTO =
+  'Já está dentro do dinheiro em conta. Rendimento tem regras próprias de uso.';
+const AJUDA_DINHEIRO_CONTA_ID = 'destaque-dinheiro-em-conta-ajuda';
+const AJUDA_RENDIMENTO_ID = 'destaque-dinheiro-em-conta-rendimento-ajuda';
 
 /**
  * Balancete mais recente por `data_referencia` (a mesma regra de
- * `v_balancete_vigente`); no empate, vale o `created_at` mais novo.
- * Balancete sem data de referência não concorre.
+ * `v_balancete_vigente`). `balancetes` tem `unique (project_id,
+ * data_referencia)` e `data_referencia not null` na 026, então não há
+ * empate; a checagem de data é só defesa contra entrada incompleta.
  */
 function balanceteMaisRecente(lista) {
   if (!Array.isArray(lista)) return null;
   let maisRecente = null;
+  let maiorData = '';
 
   for (const balancete of lista) {
     const data = String(balancete?.data_referencia || '').slice(0, 10);
     if (!DATA_ISO_RE.test(data)) continue;
-    if (!maisRecente) {
+    if (!maisRecente || data > maiorData) {
       maisRecente = balancete;
-      continue;
-    }
-
-    const dataAtual = String(maisRecente.data_referencia || '').slice(0, 10);
-    if (data > dataAtual) {
-      maisRecente = balancete;
-    } else if (data === dataAtual) {
-      const criado = Date.parse(balancete.created_at || '');
-      const criadoAtual = Date.parse(maisRecente.created_at || '');
-      const maisNovo = Number.isFinite(criado) && Number.isFinite(criadoAtual)
-        ? criado > criadoAtual
-        : String(balancete.created_at || '') > String(maisRecente.created_at || '');
-      if (maisNovo) maisRecente = balancete;
+      maiorData = data;
     }
   }
 
   return maisRecente;
+}
+
+function docsVazios(projectId) {
+  return {
+    projectId,
+    carregandoBalancetes: true,
+    carregandoPlanos: true,
+    balancetes: [],
+    planos: [],
+    erroBalancetes: null,
+    erroPlanos: null,
+  };
 }
 
 function numeroFinito(valor) {
@@ -268,13 +273,7 @@ export function Projeto({
   const [abaAtiva, setAbaAtiva] = useState(abaInicial || 'dinheiro');
   const [saldoSt, setSaldoSt] = useState({ carregando: true, dados: null, erro: null });
   const [repassesSt, setRepassesSt] = useState({ carregando: true, dados: null, erro: null });
-  const [docsSt, setDocsSt] = useState({
-    carregando: true,
-    balancetes: [],
-    planos: [],
-    erroBalancetes: null,
-    erroPlanos: null,
-  });
+  const [docsSt, setDocsSt] = useState(() => docsVazios(null));
   const [pendenciasSt, setPendenciasSt] = useState({ carregando: true, dados: [], erro: null });
 
   const [painelOrigem, setPainelOrigem] = useState(null);
@@ -300,6 +299,10 @@ export function Projeto({
   const montadoRef = useRef(true);
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
+  const abaAtivaRef = useRef(abaAtiva);
+  abaAtivaRef.current = abaAtiva;
+  const docsBlocoRef = useRef(null);
+  const rolarParaDocumentosRef = useRef(false);
 
   const genSaldoRef = useRef(0);
   const genRepassesRef = useRef(0);
@@ -324,11 +327,19 @@ export function Projeto({
     setPainelOrigem(null);
     setExplicarSt({ carregando: false, dados: null, erro: null, consultado: false });
     setDocAbaSt({ carregandoId: null, erro: null, nota: null, refPendente: null, doc: null });
+    setDocsSt(docsVazios(projectId));
+    rolarParaDocumentosRef.current = false;
     setConfirmacao(null);
     setErroResolucao(null);
     setErroMostrarCentro(null);
     setSalvandoPendenciaId(null);
   }, [projectId]);
+
+  useEffect(() => {
+    if (abaAtiva !== 'documentos' || !rolarParaDocumentosRef.current) return;
+    rolarParaDocumentosRef.current = false;
+    docsBlocoRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [abaAtiva]);
 
   const carregarExplicar = useCallback(async () => {
     const id = projectId;
@@ -380,24 +391,53 @@ export function Projeto({
   const carregarDocumentos = useCallback(async () => {
     const id = projectId;
     const gen = ++genDocsRef.current;
-    setDocsSt({
-      carregando: true,
-      balancetes: [],
-      planos: [],
-      erroBalancetes: null,
-      erroPlanos: null,
-    });
-    const [resBal, resPl] = await Promise.all([balancetes(id), planos(id)]);
-    if (!montadoRef.current || projectIdRef.current !== id || gen !== genDocsRef.current) {
-      return;
-    }
-    setDocsSt({
-      carregando: false,
-      balancetes: Array.isArray(resBal.dados) ? resBal.dados : [],
-      planos: Array.isArray(resPl.dados) ? resPl.dados : [],
-      erroBalancetes: resBal.erro,
-      erroPlanos: resPl.erro,
-    });
+    setDocsSt(docsVazios(id));
+
+    const carregarBalancetesDoCentro = (async () => {
+      let res;
+      try {
+        res = await balancetes(id);
+      } catch {
+        res = { dados: null, erro: 'Não foi possível carregar os balancetes deste centro.' };
+      }
+      if (!montadoRef.current || projectIdRef.current !== id || gen !== genDocsRef.current) {
+        return;
+      }
+      setDocsSt((prev) =>
+        prev.projectId === id
+          ? {
+              ...prev,
+              carregandoBalancetes: false,
+              balancetes: Array.isArray(res.dados) ? res.dados : [],
+              erroBalancetes: res.erro,
+            }
+          : prev
+      );
+    })();
+
+    const carregarPlanosDoCentro = (async () => {
+      let res;
+      try {
+        res = await planos(id);
+      } catch {
+        res = { dados: null, erro: 'Não foi possível carregar os planos deste centro.' };
+      }
+      if (!montadoRef.current || projectIdRef.current !== id || gen !== genDocsRef.current) {
+        return;
+      }
+      setDocsSt((prev) =>
+        prev.projectId === id
+          ? {
+              ...prev,
+              carregandoPlanos: false,
+              planos: Array.isArray(res.dados) ? res.dados : [],
+              erroPlanos: res.erro,
+            }
+          : prev
+      );
+    })();
+
+    await Promise.all([carregarBalancetesDoCentro, carregarPlanosDoCentro]);
   }, [projectId]);
 
   const carregarPendencias = useCallback(async () => {
@@ -503,6 +543,8 @@ export function Projeto({
       </div>
     );
   }
+
+  const docsDoCentro = docsSt.projectId === projectId ? docsSt : docsVazios(projectId);
 
   const nomeProjeto = resumoCentro?.name || saldoSt.dados?.project_name || 'Centro de custo';
   const codigoProjeto = resumoCentro?.code || '';
@@ -770,6 +812,15 @@ export function Projeto({
     }
   };
 
+  const irParaDocumentos = () => {
+    if (abaAtivaRef.current === 'documentos') {
+      docsBlocoRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+      return;
+    }
+    rolarParaDocumentosRef.current = true;
+    selecionarAba('documentos');
+  };
+
   const confirmarResolucao = async (item, situacao) => {
     const idProjeto = projectId;
     const gen = ++genResolucaoRef.current;
@@ -806,9 +857,11 @@ export function Projeto({
     (somaGruposInvalida ||
       (livreResumoCentavos !== null && somaGruposCentavos !== livreResumoCentavos));
 
-  const temErroDocs = Boolean(docsSt.erroBalancetes || docsSt.erroPlanos);
+  const carregandoDocumentos =
+    docsDoCentro.carregandoBalancetes || docsDoCentro.carregandoPlanos;
+  const temErroDocs = Boolean(docsDoCentro.erroBalancetes || docsDoCentro.erroPlanos);
   const documentosUnificados = [
-    ...docsSt.balancetes.map((b, idx) => ({
+    ...docsDoCentro.balancetes.map((b, idx) => ({
       id: `bal-${b.id ?? idx}`,
       registroId: b.id ?? null,
       tipo: 'Balancete',
@@ -819,7 +872,7 @@ export function Projeto({
         ? { alvo_tabela: 'balancetes', alvo_id: b.id, campo: 'saldo_disponivel' }
         : null,
     })),
-    ...docsSt.planos.map((p, idx) => ({
+    ...docsDoCentro.planos.map((p, idx) => ({
       id: `pl-${p.id ?? idx}`,
       registroId: p.id ?? null,
       tipo: p.ativo ? 'Plano de trabalho (ativo)' : 'Plano de trabalho',
@@ -841,6 +894,7 @@ export function Projeto({
         refPendente: null,
         doc: null,
       });
+      irParaDocumentos();
       return;
     }
     const idProjeto = projectId;
@@ -871,6 +925,7 @@ export function Projeto({
         refPendente: docItem,
         doc: null,
       });
+      irParaDocumentos();
       return;
     }
 
@@ -882,6 +937,7 @@ export function Projeto({
         refPendente: null,
         doc: null,
       });
+      irParaDocumentos();
       return;
     }
 
@@ -906,21 +962,26 @@ export function Projeto({
   // Destaque "Dinheiro em conta" (F2-H): o saldo_disponivel do balancete mais
   // recente, sem recálculo. O rendimento_liquido é só contexto: ele já está
   // dentro do saldo (rodapé da FUNAPE), então nunca é somado de novo.
-  const balanceteDinheiro = balanceteMaisRecente(docsSt.balancetes);
+  // O topo mostra reais inteiros (como o destaque principal); o rendimento
+  // no contexto mantém os centavos.
+  const balanceteDinheiro = balanceteMaisRecente(docsDoCentro.balancetes);
   const saldoDinheiro = numeroFinito(balanceteDinheiro?.saldo_disponivel);
   const rendimentoDinheiro = numeroFinito(balanceteDinheiro?.rendimento_liquido);
+  const abrindoDocumentoDinheiro = Boolean(
+    balanceteDinheiro?.id && docAbaSt.carregandoId === `bal-${balanceteDinheiro.id}`
+  );
 
   let valorDinheiro = (
     <Valor valor={null} motivoSemDado="consultando" semOrigem="Consultando balancetes" />
   );
   let contextoDinheiro = 'consultando';
 
-  if (!docsSt.carregando) {
-    if (docsSt.erroBalancetes) {
+  if (!docsDoCentro.carregandoBalancetes) {
+    if (docsDoCentro.erroBalancetes) {
       valorDinheiro = (
         <Valor
           valor={null}
-          motivoSemDado={docsSt.erroBalancetes}
+          motivoSemDado={docsDoCentro.erroBalancetes}
           semOrigem="Falha ao consultar os balancetes"
         />
       );
@@ -938,7 +999,9 @@ export function Projeto({
       const dataBalancete = dataCompleta(balanceteDinheiro.data_referencia);
       const podeAbrirOrigemDoBalancete = Boolean(balanceteDinheiro.id);
       const itemOrigemDoBalancete = (campo, valor) => ({
-        id: `destaque-${campo}-${balanceteDinheiro.id}`,
+        // Mesmo id da linha da tabela de Documentos (bal-<id>), para o
+        // carregamento aparecer também na linha.
+        id: `bal-${balanceteDinheiro.id}`,
         nome:
           balanceteDinheiro.arquivo_nome ||
           `Balancete de ${dataCompleta(balanceteDinheiro.data_referencia)}`,
@@ -964,16 +1027,20 @@ export function Projeto({
             valor={saldoDinheiro}
             centavos={false}
             problema={saldoDinheiro < 0}
-            origem={{ resumo: 'Ver origem do saldo em conta' }}
+            origem={{}}
             onOrigem={
               podeAbrirOrigemDoBalancete
-                ? () => abrirDocumentoDaAba(itemOrigemDoBalancete('saldo_disponivel', saldoDinheiro))
+                ? () =>
+                    abrirDocumentoDaAba(
+                      itemOrigemDoBalancete('saldo_disponivel', saldoDinheiro)
+                    )
                 : null
             }
             rotuloOrigem={`Ver origem do saldo em conta de ${dinheiro(saldoDinheiro, {
               centavos: false,
             })} no balancete de ${dataBalancete}`}
-            dica={AJUDA_DINHEIRO_CONTA}
+            ariaDescritoPor={AJUDA_DINHEIRO_CONTA_ID}
+            ariaBusy={abrindoDocumentoDinheiro}
             semOrigem="Saldo em conta sem origem disponível"
           />
         );
@@ -991,7 +1058,7 @@ export function Projeto({
             <Valor
               valor={rendimentoDinheiro}
               centavos
-              origem={{ resumo: 'Ver origem do rendimento' }}
+              origem={{}}
               onOrigem={
                 podeAbrirOrigemDoBalancete
                   ? () =>
@@ -1000,10 +1067,9 @@ export function Projeto({
                       )
                   : null
               }
-              rotuloOrigem={`Ver origem do rendimento de ${dinheiro(rendimentoDinheiro, {
-                centavos: true,
-              })} no balancete de ${dataBalancete}`}
-              dica={AJUDA_RENDIMENTO}
+              rotuloOrigem="Ver origem do rendimento"
+              ariaDescritoPor={AJUDA_RENDIMENTO_ID}
+              ariaBusy={abrindoDocumentoDinheiro}
               semOrigem="Rendimento sem origem disponível"
             />{' '}
             de rendimento
@@ -1011,6 +1077,10 @@ export function Projeto({
         );
       }
     }
+  }
+
+  if (abrindoDocumentoDinheiro) {
+    contextoDinheiro = 'abrindo documento…';
   }
 
   const colunasGrupos = [
@@ -1218,30 +1288,28 @@ export function Projeto({
     {
       id: 'documentos',
       rotulo: 'Documentos',
-      contagem: docsSt.carregando
+      contagem: carregandoDocumentos
         ? null
         : temErroDocs
           ? '—'
           : documentosUnificados.length,
-      conteudo: docsSt.carregando ? (
+      conteudo: carregandoDocumentos ? (
         <Esqueleto variante="tabela" linhas={4} rotulo="Carregando documentos" />
-      ) : docsSt.erroBalancetes && docsSt.erroPlanos ? (
+      ) : docsDoCentro.erroBalancetes && docsDoCentro.erroPlanos ? (
         <AvisoFalha
           mensagem="Não foi possível carregar os documentos deste centro."
           aoTentarNovamente={carregarDocumentos}
         />
       ) : (
-        <div class="projeto__docs-bloco">
-          {docsSt.erroBalancetes && (
-            <AvisoFalha mensagem={docsSt.erroBalancetes} aoTentarNovamente={carregarDocumentos} />
+        <div class="projeto__docs-bloco" ref={docsBlocoRef}>
+          {docsDoCentro.erroBalancetes && (
+            <AvisoFalha
+              mensagem={docsDoCentro.erroBalancetes}
+              aoTentarNovamente={carregarDocumentos}
+            />
           )}
-          {docsSt.erroPlanos && (
-            <AvisoFalha mensagem={docsSt.erroPlanos} aoTentarNovamente={carregarDocumentos} />
-          )}
-          {docAbaSt.carregandoId && (
-            <p class="projeto__nota-discreta" role="status">
-              Consultando documento…
-            </p>
+          {docsDoCentro.erroPlanos && (
+            <AvisoFalha mensagem={docsDoCentro.erroPlanos} aoTentarNovamente={carregarDocumentos} />
           )}
           {docAbaSt.erro && (
             <AvisoFalha
@@ -1261,7 +1329,19 @@ export function Projeto({
               legenda="Planos e balancetes do centro"
               colunas={[
                 { chave: 'tipo', titulo: 'Tipo' },
-                { chave: 'nome', titulo: 'Documento' },
+                {
+                  chave: 'nome',
+                  titulo: 'Documento',
+                  render: (d) =>
+                    docAbaSt.carregandoId === d.id ? (
+                      <span role="status">
+                        {d.nome}{' '}
+                        <span class="projeto__nota-discreta">· consultando…</span>
+                      </span>
+                    ) : (
+                      d.nome
+                    ),
+                },
                 {
                   chave: 'data',
                   titulo: 'Data',
@@ -1269,6 +1349,7 @@ export function Projeto({
                 },
               ]}
               dados={documentosUnificados}
+              chaveCarregando={docAbaSt.carregandoId}
               onClicarLinha={abrirDocumentoDaAba}
               rotuloLinha={(d) => `Abrir ${d.tipo}: ${d.nome}`}
             />
@@ -1632,6 +1713,14 @@ export function Projeto({
         <AvisoFalha mensagem={erroResumo} aoTentarNovamente={onRecarregarResumo} />
       )}
 
+      {docsDoCentro.erroBalancetes &&
+        (abaAtiva !== 'documentos' || carregandoDocumentos) && (
+          <AvisoFalha
+            mensagem={docsDoCentro.erroBalancetes}
+            aoTentarNovamente={carregarDocumentos}
+          />
+        )}
+
       <GradeDestaques className="grade-destaques--cinco">
         <Destaque
           principal
@@ -1645,6 +1734,10 @@ export function Projeto({
           valor={valorDinheiro}
           contexto={contextoDinheiro}
           ajuda={AJUDA_DINHEIRO_CONTA}
+          ajudasOcultas={[
+            { id: AJUDA_DINHEIRO_CONTA_ID, texto: AJUDA_DINHEIRO_CONTA },
+            { id: AJUDA_RENDIMENTO_ID, texto: AJUDA_RENDIMENTO },
+          ]}
         />
         <Destaque
           rotulo="Bolsas por mês"

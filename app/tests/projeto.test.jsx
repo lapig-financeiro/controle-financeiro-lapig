@@ -1236,6 +1236,14 @@ describe('destaque Dinheiro em conta', () => {
 
   const dinheiroEmConta = () => document.querySelectorAll('.destaque')[1];
 
+  const balancetePadrao = {
+    id: 'bal-novo',
+    data_referencia: '2026-10-15',
+    saldo_disponivel: 184250.4,
+    rendimento_liquido: 11240.15,
+    created_at: '2026-10-16T14:00:00Z',
+  };
+
   it('usa o balancete mais recente por data_referencia, mesmo fora de ordem, sem somar o rendimento', async () => {
     configurarPadrao();
     balancetesMock.mockResolvedValue({
@@ -1263,7 +1271,11 @@ describe('destaque Dinheiro em conta', () => {
     expect(document.querySelectorAll('.destaque')).toHaveLength(5);
     const dinheiro = dinheiroEmConta();
     expect(dinheiro.querySelector('.destaque__rotulo').textContent).toBe('Dinheiro em conta');
-    expect(dinheiro.textContent).toContain('184.250');
+    expect(
+      dinheiro
+        .querySelector('.destaque__valor button.valor--origem')
+        .textContent.replace(/\u00a0/g, ' ')
+    ).toBe('R$ 184.250');
     expect(dinheiro.textContent).toContain('balancete de 15/10/2026');
     expect(dinheiro.textContent).toContain('inclui');
     expect(dinheiro.textContent).toContain('11.240,15');
@@ -1273,29 +1285,38 @@ describe('destaque Dinheiro em conta', () => {
     ).toBe('balancete de 15/10/2026 · inclui R$ 11.240,15 de rendimento');
 
     // O rendimento já está dentro do saldo: nunca aparece a soma dos dois.
+    // 184.250,40 + 11.240,15 = 195.490,55 (arredondado para cima: 195.491).
     expect(dinheiro.textContent).not.toContain('195.490');
+    expect(dinheiro.textContent).not.toContain('195.491');
     // Nunca cai para o balancete anterior.
     expect(dinheiro.textContent).not.toContain('210.400');
     expect(dinheiro.textContent).not.toContain('9.800');
   });
 
-  it('no empate de data_referencia, escolhe o created_at mais novo e trata rendimento zero', async () => {
+  it('escolhe pela data_referencia, não pela posição da lista, e trata rendimento zero', async () => {
     configurarPadrao();
     balancetesMock.mockResolvedValue({
       dados: [
         {
-          id: 'bal-empate-antigo',
+          id: 'bal-out',
           data_referencia: '2026-10-15',
-          saldo_disponivel: 111,
+          saldo_disponivel: 333,
           rendimento_liquido: 0,
           created_at: '2026-10-16T10:00:00Z',
         },
         {
-          id: 'bal-empate-novo',
-          data_referencia: '2026-10-15',
+          id: 'bal-set',
+          data_referencia: '2026-09-15',
           saldo_disponivel: 222,
-          rendimento_liquido: 0,
-          created_at: '2026-10-17T10:00:00Z',
+          rendimento_liquido: 99,
+          created_at: '2026-09-16T10:00:00Z',
+        },
+        {
+          id: 'bal-ago',
+          data_referencia: '2026-08-15',
+          saldo_disponivel: 111,
+          rendimento_liquido: 88,
+          created_at: '2026-08-16T10:00:00Z',
         },
       ],
       erro: null,
@@ -1304,7 +1325,8 @@ describe('destaque Dinheiro em conta', () => {
     await renderizarCentro();
 
     const dinheiro = dinheiroEmConta();
-    expect(dinheiro.textContent).toContain('222');
+    expect(dinheiro.textContent).toContain('333');
+    expect(dinheiro.textContent).not.toContain('222');
     expect(dinheiro.textContent).not.toContain('111');
     expect(dinheiro.textContent).toContain('sem rendimento');
   });
@@ -1351,6 +1373,7 @@ describe('destaque Dinheiro em conta', () => {
     expect(dinheiro.textContent).toContain('—');
     expect(dinheiro.textContent).toContain('indisponível');
     expect(dinheiro.textContent).not.toContain('0,00');
+    expect(dinheiro.textContent).not.toContain('R$ 0');
     expect(dinheiro.querySelector('.valor').getAttribute('title')).toBe(
       'Falha ao carregar balancetes.'
     );
@@ -1378,42 +1401,63 @@ describe('destaque Dinheiro em conta', () => {
     expect(dinheiro.querySelector('.valor[title="consultando"]')).not.toBeNull();
   });
 
-  it('clicar no valor e no rendimento chama a origem com o campo certo', async () => {
+  it('clicar no valor abre o documento; sem documento ou com erro, leva à aba Documentos', async () => {
     configurarPadrao();
-    balancetesMock.mockResolvedValue({
-      dados: [
-        {
-          id: 'bal-novo',
-          data_referencia: '2026-10-15',
-          saldo_disponivel: 184250.4,
-          rendimento_liquido: 11240.15,
-          created_at: '2026-10-16T14:00:00Z',
+    balancetesMock.mockResolvedValue({ dados: [balancetePadrao], erro: null });
+    origemMock
+      .mockResolvedValueOnce({
+        dados: {
+          tipo: 'documento',
+          valor: 184250.4,
+          documento: {
+            id: 'doc-bal',
+            tipo: 'balancete',
+            titulo: 'Balancete out',
+            arquivo_nome: 'balancete-out.pdf',
+            formato: 'pdf',
+            bucket: 'balancete-pdfs',
+            caminho: 'p-1/balancete-out.pdf',
+          },
+          fato: {
+            pagina: 1,
+            trecho: 'SALDO DISPONIVEL: 184.250,40',
+            bbox: null,
+            parser: 'balancete-parser',
+            parser_versao: '1.0',
+          },
+          busca: null,
+          nota: null,
         },
-      ],
-      erro: null,
-    });
-    origemMock.mockResolvedValue({
-      dados: {
-        tipo: 'legado',
-        valor: 184250.4,
-        documento: null,
-        fato: null,
-        busca: { texto: 'saldo disponivel', valor: 184250.4 },
-        nota: 'Sem arquivo no modo teste.',
-      },
-      erro: null,
-    });
+        erro: null,
+      })
+      .mockResolvedValueOnce({
+        dados: {
+          tipo: 'legado',
+          valor: 11240.15,
+          documento: null,
+          fato: null,
+          busca: { texto: 'rendimento liquido', valor: 11240.15 },
+          nota: 'Sem arquivo do rendimento no modo teste.',
+        },
+        erro: null,
+      })
+      .mockResolvedValueOnce({
+        dados: null,
+        erro: 'Falha na origem do teste.',
+      });
 
     await renderizarCentro();
 
     const dinheiro = dinheiroEmConta();
     expect(dinheiro.querySelector('.destaque__rotulo').getAttribute('title')).toContain(
-      'O livre desconta'
+      'O livre é outra conta'
     );
-    expect(dinheiro.getAttribute('title')).toContain('O livre desconta');
+    expect(dinheiro.getAttribute('title')).toBeNull();
 
     const botaoSaldo = dinheiro.querySelector('.destaque__valor button.valor--origem');
-    expect(botaoSaldo.getAttribute('aria-label')).toContain('saldo em conta');
+    const idAjuda = botaoSaldo.getAttribute('aria-describedby');
+    expect(idAjuda).toBeTruthy();
+    expect(document.getElementById(idAjuda).textContent).toContain('O livre é outra conta');
     botaoSaldo.click();
     await tick();
     expect(origemMock).toHaveBeenNthCalledWith(1, {
@@ -1421,10 +1465,18 @@ describe('destaque Dinheiro em conta', () => {
       alvo_id: 'bal-novo',
       campo: 'saldo_disponivel',
     });
+    expect(document.querySelector('.documento')).not.toBeNull();
+    expect(document.querySelector('.documento__titulo').textContent).toContain('Balancete out');
+    document.querySelector('.documento__fechar').click();
+    await tick();
+    expect(document.querySelector('.documento')).toBeNull();
 
     const botaoRendimento = dinheiro.querySelector('.destaque__contexto button.valor--origem');
-    expect(botaoRendimento.getAttribute('aria-label')).toContain('rendimento');
-    expect(botaoRendimento.getAttribute('title')).toBe('Rendimento tem regras próprias de uso.');
+    expect(botaoRendimento.getAttribute('aria-label')).toBe('Ver origem do rendimento');
+    const idAjudaRendimento = botaoRendimento.getAttribute('aria-describedby');
+    expect(document.getElementById(idAjudaRendimento).textContent).toContain(
+      'Já está dentro do dinheiro em conta.'
+    );
     botaoRendimento.click();
     await tick();
     expect(origemMock).toHaveBeenNthCalledWith(2, {
@@ -1432,5 +1484,166 @@ describe('destaque Dinheiro em conta', () => {
       alvo_id: 'bal-novo',
       campo: 'rendimento_liquido',
     });
+    const abaDocs = Array.from(document.querySelectorAll('[role="tab"]')).find((t) =>
+      t.textContent.includes('Documentos')
+    );
+    expect(abaDocs.getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('.abas__painel').textContent).toContain(
+      'Sem arquivo do rendimento no modo teste.'
+    );
+
+    dinheiro.querySelector('.destaque__valor button.valor--origem').click();
+    await tick();
+    expect(origemMock).toHaveBeenNthCalledWith(3, {
+      alvo_tabela: 'balancetes',
+      alvo_id: 'bal-novo',
+      campo: 'saldo_disponivel',
+    });
+    expect(document.querySelector('.abas__painel .aviso-falha').textContent).toContain(
+      'Falha na origem do teste.'
+    );
+  });
+
+  it('enquanto a origem carrega, o destaque mostra abrindo documento… e fica aria-busy', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValue({ dados: [balancetePadrao], erro: null });
+    let resolverOrigem;
+    origemMock.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolverOrigem = r;
+        })
+    );
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    const botaoSaldo = dinheiro.querySelector('.destaque__valor button.valor--origem');
+    botaoSaldo.click();
+    await tick();
+
+    expect(dinheiro.querySelector('.destaque__contexto').textContent).toBe('abrindo documento…');
+    expect(botaoSaldo.getAttribute('aria-busy')).toBe('true');
+
+    resolverOrigem({
+      dados: {
+        tipo: 'legado',
+        valor: 184250.4,
+        documento: null,
+        fato: null,
+        busca: null,
+        nota: 'Sem arquivo neste teste.',
+      },
+      erro: null,
+    });
+    await tick();
+
+    const abaDocs = Array.from(document.querySelectorAll('[role="tab"]')).find((t) =>
+      t.textContent.includes('Documentos')
+    );
+    expect(abaDocs.getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('.abas__painel').textContent).toContain('Sem arquivo neste teste.');
+  });
+
+  it('mostra o dinheiro quando os balancetes chegam, mesmo com planos pendentes', async () => {
+    configurarPadrao();
+    planosMock.mockImplementation(() => new Promise(() => {}));
+    balancetesMock.mockResolvedValue({ dados: [balancetePadrao], erro: null });
+
+    await renderizarCentro();
+
+    const dinheiro = dinheiroEmConta();
+    expect(dinheiro.textContent).toContain('184.250');
+    expect(dinheiro.textContent).not.toContain('consultando');
+
+    const abaDocs = Array.from(document.querySelectorAll('[role="tab"]')).find((t) =>
+      t.textContent.includes('Documentos')
+    );
+    expect(abaDocs.querySelector('.abas__contagem')).toBeNull();
+  });
+
+  it('mostra o erro dos balancetes no topo, sem duplicar na aba, e tenta de novo', async () => {
+    configurarPadrao();
+    balancetesMock
+      .mockResolvedValueOnce({ dados: null, erro: 'Falha ao carregar balancetes.' })
+      .mockResolvedValue({ dados: [balancetePadrao], erro: null });
+
+    await renderizarCentro();
+
+    const avisosTopo = () => Array.from(document.querySelectorAll('.conteudo > .aviso-falha'));
+    expect(avisosTopo().some((a) => a.textContent.includes('Falha ao carregar balancetes.'))).toBe(
+      true
+    );
+
+    const abaDocs = Array.from(document.querySelectorAll('[role="tab"]')).find((t) =>
+      t.textContent.includes('Documentos')
+    );
+    abaDocs.click();
+    await tick();
+    expect(avisosTopo().some((a) => a.textContent.includes('Falha ao carregar balancetes.'))).toBe(
+      false
+    );
+    expect(document.querySelector('.abas__painel .aviso-falha').textContent).toContain(
+      'Falha ao carregar balancetes.'
+    );
+
+    const abaDinheiro = Array.from(document.querySelectorAll('[role="tab"]')).find((t) =>
+      t.textContent.includes('Dinheiro')
+    );
+    abaDinheiro.click();
+    await tick();
+    const avisoTopo = avisosTopo().find((a) =>
+      a.textContent.includes('Falha ao carregar balancetes.')
+    );
+    expect(avisoTopo).toBeTruthy();
+    avisoTopo.querySelector('button').click();
+    await tick();
+
+    expect(balancetesMock).toHaveBeenCalledTimes(2);
+    expect(avisosTopo().some((a) => a.textContent.includes('Falha ao carregar balancetes.'))).toBe(
+      false
+    );
+    expect(dinheiroEmConta().textContent).toContain('184.250');
+  });
+
+  it('ao trocar de centro, não mostra o dinheiro do centro anterior', async () => {
+    configurarPadrao();
+    balancetesMock.mockResolvedValueOnce({
+      dados: [
+        {
+          ...balancetePadrao,
+          id: 'bal-centro-a',
+          saldo_disponivel: 111111.11,
+          rendimento_liquido: 0,
+        },
+      ],
+      erro: null,
+    });
+
+    render(
+      <Projeto
+        projectId="p-A"
+        hoje="2026-11-18"
+        resumoCentro={{ ...resumoCentro, id: 'p-A', name: 'Projeto A', livre: 111111 }}
+      />,
+      document.body
+    );
+    await tick();
+    expect(document.querySelectorAll('.destaque')[1].textContent).toContain('111.111');
+
+    balancetesMock.mockImplementationOnce(() => new Promise(() => {}));
+    render(
+      <Projeto
+        projectId="p-B"
+        hoje="2026-11-18"
+        resumoCentro={{ ...resumoCentro, id: 'p-B', name: 'Projeto B', livre: 222222 }}
+      />,
+      document.body
+    );
+
+    // Sem esperar efeito/ticks: o centro novo não pode pintar o dinheiro do anterior.
+    const dinheiro = document.querySelectorAll('.destaque')[1];
+    expect(dinheiro.textContent).not.toContain('111.111');
+    expect(dinheiro.textContent).toContain('consultando');
   });
 });

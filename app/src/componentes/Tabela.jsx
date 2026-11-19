@@ -15,6 +15,7 @@ export function Tabela({
     const primeira = colunas[0]?.chave;
     return primeira && linha?.[primeira] ? `Abrir detalhe de ${linha[primeira]}` : 'Abrir detalhe';
   },
+  chaveCarregando = null,
   vazio = null,
   legenda = 'Tabela de dados',
   className = '',
@@ -43,36 +44,41 @@ export function Tabela({
           </tr>
         </thead>
         <tbody class="tabela__corpo">
-          {dados.map((linha, indice) => (
-            <tr
-              key={chaveLinha(linha, indice)}
-              class={`tabela__linha${clicavel ? ' tabela__linha--clicavel' : ''}`}
-            >
-              {colunas.map((col, colIdx) => {
-                const conteudo = col.render ? col.render(linha) : linha?.[col.chave];
-                return (
-                  <td
-                    key={col.chave}
-                    data-rotulo={col.titulo}
-                    class={`tabela__td${col.alinhamento === 'direita' ? ' tabela__td--direita' : ''}`}
-                  >
-                    {clicavel && colIdx === 0 ? (
-                      <button
-                        type="button"
-                        class="tabela__gatilho"
-                        aria-label={rotuloLinha(linha)}
-                        onClick={() => onClicarLinha(linha)}
-                      >
-                        {conteudo}
-                      </button>
-                    ) : (
-                      conteudo
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {dados.map((linha, indice) => {
+            const chave = chaveLinha(linha, indice);
+            const carregando = chaveCarregando !== null && chaveCarregando === chave;
+            return (
+              <tr
+                key={chave}
+                class={`tabela__linha${clicavel ? ' tabela__linha--clicavel' : ''}`}
+                aria-busy={carregando ? 'true' : undefined}
+              >
+                {colunas.map((col, colIdx) => {
+                  const conteudo = col.render ? col.render(linha) : linha?.[col.chave];
+                  return (
+                    <td
+                      key={col.chave}
+                      data-rotulo={col.titulo}
+                      class={`tabela__td${col.alinhamento === 'direita' ? ' tabela__td--direita' : ''}`}
+                    >
+                      {clicavel && colIdx === 0 ? (
+                        <button
+                          type="button"
+                          class="tabela__gatilho"
+                          aria-label={rotuloLinha(linha)}
+                          onClick={() => onClicarLinha(linha)}
+                        >
+                          {conteudo}
+                        </button>
+                      ) : (
+                        conteudo
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

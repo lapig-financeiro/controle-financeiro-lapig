@@ -5,6 +5,7 @@ import './Valor.css';
  * Exibe valor monetário ou data com semântica explícita.
  * Números nunca são verdes: positivo usa `--cor-texto`; negativo com `problema` usa `--cor-problema`.
  * Só vira `<button>` quando `origem` e `onOrigem` são fornecidos (Destaque, PainelLateral, Documento).
+ * `rotuloOrigem` substitui o aria-label padrão; `ariaDescritoPor` liga a ajuda e `ariaBusy` marca o carregamento.
  */
 export function Valor({
   valor,
@@ -18,7 +19,8 @@ export function Valor({
   onOrigem = null,
   semOrigem = '',
   rotuloOrigem = '',
-  dica = '',
+  ariaDescritoPor = '',
+  ariaBusy = false,
   className = '',
 }) {
   const ehTipoMoeda = tipo === 'moeda' || tipo === 'moeda-compacta';
@@ -67,7 +69,8 @@ export function Valor({
         class={`${classes} valor--origem`}
         onClick={(e) => onOrigem(origem, e)}
         aria-label={rotuloAcessivel}
-        title={dica || undefined}
+        aria-describedby={ariaDescritoPor || undefined}
+        aria-busy={ariaBusy ? 'true' : undefined}
       >
         {texto}
       </button>
