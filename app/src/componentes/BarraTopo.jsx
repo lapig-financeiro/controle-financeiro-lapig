@@ -9,17 +9,19 @@ import './BarraTopo.css';
 
 const ITENS_MENU = [
   { id: 'projetos', rotulo: 'Projetos', hash: '#/projetos', apenasAdmin: false },
+  { id: 'bolsistas', rotulo: 'Bolsistas', hash: '#/bolsistas', apenasAdmin: false },
   { id: 'analise', rotulo: 'Análise', hash: '#/analise', apenasAdmin: false },
   { id: 'admin', rotulo: 'Admin', hash: '#/admin', apenasAdmin: true },
 ];
 
 /**
- * Barra do topo única (`--altura-topo`): logo, até 3 itens de navegação,
+ * Barra do topo única (`--altura-topo`): logo, até 4 itens de navegação,
  * chip do filtro de visão (só admin), sino de pendências e menu do usuário.
  */
 export function BarraTopo({
   rotaAtiva = 'projetos',
   isAdmin = false,
+  podeBolsistas = false,
   usuario = null,
   todosCentros = null,
   filtroSalvando = false,
@@ -40,7 +42,11 @@ export function BarraTopo({
   const filtroGatilhoRef = useRef(null);
   const filtroPainelId = useId();
 
-  const itensVisiveis = ITENS_MENU.filter((item) => !item.apenasAdmin || isAdmin);
+  const itensVisiveis = ITENS_MENU.filter((item) => {
+    if (item.apenasAdmin) return isAdmin;
+    if (item.id === 'bolsistas') return isAdmin || Boolean(podeBolsistas);
+    return true;
+  });
 
   const temFiltroAtivo = Boolean(
     centrosVisiveis &&

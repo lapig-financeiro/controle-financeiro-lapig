@@ -358,6 +358,224 @@ export async function usarVigenciaDoContrato(projectId) {
   );
 }
 
+const EQUIPES_BOLSISTA = ['pastagem', 'alertas', 'solos'];
+
+function validarEquipe(valor) {
+  return valor === null || valor === undefined || EQUIPES_BOLSISTA.includes(valor);
+}
+
+export async function pedidoBolsas() {
+  const opcoes = { validar: validarPedidoBolsas };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.pedidoBolsas(),
+          'Não foi possível carregar o pedido de bolsas.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'get_pedido_bolsas_v2',
+    undefined,
+    'Não foi possível carregar o pedido de bolsas.',
+    opcoes
+  );
+}
+
+export async function salvarEquipeBolsista(holderId, equipe) {
+  if (typeof holderId !== 'string' || !holderId.trim()) {
+    return { dados: null, erro: 'Pessoa não informada.' };
+  }
+  const equipeNormalizada = equipe === null || equipe === undefined || equipe === '' ? null : equipe;
+  if (!validarEquipe(equipeNormalizada)) {
+    return { dados: null, erro: 'Equipe inválida.' };
+  }
+  const opcoes = {
+    validar: (d) =>
+      Boolean(
+        d &&
+          typeof d === 'object' &&
+          d.holder_id === holderId &&
+          validarEquipe(d.equipe)
+      ),
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.salvarEquipeBolsista(holderId, equipeNormalizada),
+          'Não foi possível salvar a equipe.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'salvar_equipe_bolsista_v2',
+    { p_holder_id: holderId, p_equipe: equipeNormalizada },
+    'Não foi possível salvar a equipe.',
+    opcoes
+  );
+}
+
+export async function salvarCaixaPedido(payload) {
+  const bruto = payload && typeof payload === 'object' ? payload : {};
+  const nome = typeof bruto.nome === 'string' ? bruto.nome.trim() : '';
+  const meses = bruto.meses === undefined || bruto.meses === null ? 12 : bruto.meses;
+  if (!nome || nome.length > 80) {
+    return { dados: null, erro: 'O nome da caixa deve ter de 1 a 80 caracteres.' };
+  }
+  if (!Number.isInteger(meses) || meses < 1 || meses > 60) {
+    return { dados: null, erro: 'Os meses da caixa devem ser um inteiro entre 1 e 60.' };
+  }
+  if (bruto.id !== undefined && bruto.id !== null && (typeof bruto.id !== 'string' || !bruto.id.trim())) {
+    return { dados: null, erro: 'Caixa não informada corretamente.' };
+  }
+  const corpo = { nome, meses };
+  if (bruto.id !== undefined && bruto.id !== null) corpo.id = bruto.id;
+  const opcoes = {
+    validar: (d) =>
+      Boolean(
+        d &&
+          typeof d === 'object' &&
+          typeof d.id === 'string' &&
+          d.id.trim() &&
+          typeof d.nome === 'string' &&
+          d.nome.trim() &&
+          Number.isInteger(d.meses) &&
+          d.meses >= 1 &&
+          d.meses <= 60
+      ),
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.salvarCaixaPedido(corpo),
+          'Não foi possível salvar a caixa.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'salvar_caixa_pedido_v2',
+    { p: corpo },
+    'Não foi possível salvar a caixa.',
+    opcoes
+  );
+}
+
+export async function apagarCaixaPedido(id) {
+  if (typeof id !== 'string' || !id.trim()) {
+    return { dados: null, erro: 'Caixa não informada.' };
+  }
+  const opcoes = {
+    validar: (d) =>
+      Boolean(d && typeof d === 'object' && d.id === id && d.apagada === true),
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.apagarCaixaPedido(id),
+          'Não foi possível apagar a caixa.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'apagar_caixa_pedido_v2',
+    { p_id: id },
+    'Não foi possível apagar a caixa.',
+    opcoes
+  );
+}
+
+export async function colocarNaCaixa(caixaId, holderId, valorMensal = null, nota = null) {
+  if (typeof caixaId !== 'string' || !caixaId.trim() || typeof holderId !== 'string' || !holderId.trim()) {
+    return { dados: null, erro: 'Caixa e pessoa são obrigatórias.' };
+  }
+  const valor =
+    valorMensal === null || valorMensal === undefined || valorMensal === ''
+      ? null
+      : Number(valorMensal);
+  if (valor !== null && (!Number.isFinite(valor) || valor <= 0)) {
+    return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+  }
+  const notaTexto =
+    nota === null || nota === undefined || String(nota).trim() === '' ? null : String(nota).trim();
+  if (notaTexto !== null && notaTexto.length > 300) {
+    return { dados: null, erro: 'A nota deve ter até 300 caracteres.' };
+  }
+  const opcoes = {
+    validar: (d) =>
+      Boolean(
+        d &&
+          typeof d === 'object' &&
+          d.caixa_id === caixaId &&
+          d.holder_id === holderId &&
+          numeroValidoOuNulo(d.valor_mensal) &&
+          numeroFinitoEstrito(d.valor_usado) &&
+          (d.nota === null || d.nota === undefined || typeof d.nota === 'string') &&
+          Array.isArray(d.saiu_de)
+      ),
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.colocarNaCaixa(caixaId, holderId, valor, notaTexto),
+          'Não foi possível colocar a pessoa na caixa.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'colocar_na_caixa_v2',
+    {
+      p_caixa_id: caixaId,
+      p_holder_id: holderId,
+      p_valor_mensal: valor,
+      p_nota: notaTexto,
+    },
+    'Não foi possível colocar a pessoa na caixa.',
+    opcoes
+  );
+}
+
+export async function tirarDaCaixa(caixaId, holderId) {
+  if (typeof caixaId !== 'string' || !caixaId.trim() || typeof holderId !== 'string' || !holderId.trim()) {
+    return { dados: null, erro: 'Caixa e pessoa são obrigatórias.' };
+  }
+  const opcoes = {
+    validar: (d) =>
+      Boolean(
+        d &&
+          typeof d === 'object' &&
+          d.caixa_id === caixaId &&
+          d.holder_id === holderId &&
+          d.removido === true
+      ),
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.tirarDaCaixa(caixaId, holderId),
+          'Não foi possível tirar a pessoa da caixa.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'tirar_da_caixa_v2',
+    { p_caixa_id: caixaId, p_holder_id: holderId },
+    'Não foi possível tirar a pessoa da caixa.',
+    opcoes
+  );
+}
+
 const TIPOS_NO_ARVORE = ['calculo', 'documento', 'legado', 'digitado'];
 
 function ehObjetoSimples(valor) {
@@ -515,6 +733,101 @@ export function validarTermosContrato(d) {
   }
   if (d.vigencia_confere !== null && typeof d.vigencia_confere !== 'boolean') return false;
   return Object.values(d.termos).every(validarTermoContrato);
+}
+
+function validarDataIso(d) {
+  return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+}
+
+function validarCentroPedido(c) {
+  return (
+    ehObjetoSimples(c) &&
+    typeof c.id === 'string' &&
+    c.id.trim().length > 0 &&
+    typeof c.code === 'string' &&
+    c.code.trim().length > 0 &&
+    typeof c.name === 'string' &&
+    c.name.trim().length > 0
+  );
+}
+
+function validarBolsaPedido(b) {
+  return (
+    ehObjetoSimples(b) &&
+    typeof b.scholarship_id === 'string' &&
+    b.scholarship_id.trim().length > 0 &&
+    typeof b.project_id === 'string' &&
+    b.project_id.trim().length > 0 &&
+    typeof b.code === 'string' &&
+    b.code.trim().length > 0 &&
+    numeroFinitoEstrito(b.valor) &&
+    validarDataIso(b.inicio) &&
+    validarDataIso(b.fim) &&
+    ['active', 'ended', 'cancelled'].includes(b.status) &&
+    typeof b.vigente_hoje === 'boolean'
+  );
+}
+
+function validarBolsistaPedido(p) {
+  return (
+    ehObjetoSimples(p) &&
+    typeof p.holder_id === 'string' &&
+    p.holder_id.trim().length > 0 &&
+    typeof p.nome === 'string' &&
+    p.nome.trim().length > 0 &&
+    validarEquipe(p.equipe) &&
+    numeroFinitoEstrito(p.valor_vigente) &&
+    Array.isArray(p.bolsas) &&
+    p.bolsas.every(validarBolsaPedido)
+  );
+}
+
+function validarItemDaCaixa(i) {
+  return (
+    ehObjetoSimples(i) &&
+    typeof i.holder_id === 'string' &&
+    i.holder_id.trim().length > 0 &&
+    (i.valor_mensal === null ||
+      i.valor_mensal === undefined ||
+      (numeroFinitoEstrito(i.valor_mensal) && Number(i.valor_mensal) > 0)) &&
+    numeroFinitoEstrito(i.valor_usado) &&
+    (i.nota === null || i.nota === undefined || typeof i.nota === 'string')
+  );
+}
+
+export function validarCaixaPedido(c) {
+  return (
+    ehObjetoSimples(c) &&
+    typeof c.id === 'string' &&
+    c.id.trim().length > 0 &&
+    typeof c.nome === 'string' &&
+    c.nome.trim().length > 0 &&
+    c.nome.trim().length <= 80 &&
+    Number.isInteger(c.meses) &&
+    c.meses >= 1 &&
+    c.meses <= 60 &&
+    typeof c.criado_em === 'string' &&
+    Number.isInteger(c.pessoas) &&
+    c.pessoas >= 0 &&
+    numeroFinitoEstrito(c.total_mensal) &&
+    numeroFinitoEstrito(c.total_periodo) &&
+    Number.isInteger(c.itens_ocultos) &&
+    c.itens_ocultos >= 0 &&
+    Array.isArray(c.itens) &&
+    c.itens.every(validarItemDaCaixa)
+  );
+}
+
+export function validarPedidoBolsas(d) {
+  return (
+    ehObjetoSimples(d) &&
+    Array.isArray(d.centros) &&
+    d.centros.every(validarCentroPedido) &&
+    Array.isArray(d.bolsistas) &&
+    d.bolsistas.every(validarBolsistaPedido) &&
+    Array.isArray(d.caixas) &&
+    d.caixas.every(validarCaixaPedido)
+  );
 }
 
 export async function explicarLivre(projectId) {

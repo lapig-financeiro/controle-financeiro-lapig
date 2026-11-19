@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { AvisoFalha, BarraTopo, Esqueleto, Manutencao } from './componentes/index.js';
+import { Bolsistas } from './paginas/Bolsistas.jsx';
 import { Componentes } from './paginas/Componentes.jsx';
 import { EmConstrucao } from './paginas/EmConstrucao.jsx';
 import { Login } from './paginas/Login.jsx';
@@ -156,6 +157,7 @@ export function App() {
 
   const papelConhecido = !carregandoSessao && !carregandoPerfil && perfil.erro === null && perfil.role !== null;
   const isAdmin = papelConhecido && perfil.role === 'admin';
+  const podeBolsistas = papelConhecido && (isAdmin || perfil.role === 'professor');
 
   const carregarResumo = useCallback(async () => {
     const gen = ++genResumoRef.current;
@@ -197,10 +199,13 @@ export function App() {
     if (rota.pagina === 'admin' && !isAdmin) {
       navegarPara('#/projetos');
     }
+    if (rota.pagina === 'bolsistas' && !podeBolsistas) {
+      navegarPara('#/projetos');
+    }
     if (rota.pagina === 'componentes' && !import.meta.env.DEV && !isAdmin) {
       navegarPara('#/projetos');
     }
-  }, [papelConhecido, usuario, rota.pagina, isAdmin]);
+  }, [papelConhecido, usuario, rota.pagina, isAdmin, podeBolsistas]);
 
   const salvarFiltro = useCallback(
     async (centrosOcultos) => {
@@ -257,6 +262,7 @@ export function App() {
         <BarraTopo
           rotaAtiva="projetos"
           isAdmin={adminCatalogo}
+          podeBolsistas={adminCatalogo}
           usuario={usuarioCatalogo}
           centrosVisiveis={filtroDemoAtivo ? { visiveis: 15, total: 17 } : { visiveis: 17, total: 17 }}
           pendencias={PENDENCIAS_CATALOGO}
@@ -328,6 +334,11 @@ export function App() {
       );
     }
 
+    if (rota.pagina === 'bolsistas') {
+      if (!podeBolsistas) return null;
+      return <Bolsistas usuarioId={usuario?.id || null} />;
+    }
+
     if (rota.pagina === 'admin') {
       if (!papelConhecido || !isAdmin) return null;
       return <EmConstrucao titulo="Admin" contexto="Acessos por centro de custo e saúde da leitura" />;
@@ -381,6 +392,7 @@ export function App() {
       <BarraTopo
         rotaAtiva={rota.menu}
         isAdmin={isAdmin}
+        podeBolsistas={podeBolsistas}
         usuario={{ nome: perfil.nome, email: perfil.email }}
         todosCentros={isAdmin && Array.isArray(resumoSt.dados?.todos) ? resumoSt.dados.todos : null}
         filtroSalvando={filtroSalvando}

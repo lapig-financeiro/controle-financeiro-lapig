@@ -1303,6 +1303,408 @@ export async function usarVigenciaDoContrato(projectId) {
   };
 }
 
+function dataRelativaExemplo(dias) {
+  const data = new Date();
+  data.setDate(data.getDate() + dias);
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+function hojeExemplo() {
+  return dataRelativaExemplo(0);
+}
+
+function centroDoExemplo(projectId) {
+  return CENTROS_BASE.find((c) => c.id === projectId) || null;
+}
+
+// 25 pessoas sintéticas em 4 centros fictícios. Nada aqui é nome real.
+const BOLSISTAS_PEDIDO_EXEMPLO = [
+  {
+    holder_id: 'exemplo-bolsista-01',
+    nome: 'Bolsista Ana',
+    equipe: 'pastagem',
+    bolsas: [{ id: 'exemplo-bolsa-01', projeto: IDS.cerrado, valor: 4200, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-02',
+    nome: 'Bolsista Bento',
+    equipe: 'pastagem',
+    bolsas: [
+      { id: 'exemplo-bolsa-02a', projeto: IDS.cerrado, valor: 3000, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' },
+      { id: 'exemplo-bolsa-02b', projeto: IDS.atlas, valor: 1800, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' },
+    ],
+  },
+  {
+    holder_id: 'exemplo-bolsista-03',
+    nome: 'Bolsista Carla',
+    equipe: 'pastagem',
+    bolsas: [{ id: 'exemplo-bolsa-03', projeto: IDS.atlas, valor: 3500, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(200), status: 'ended' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-04',
+    nome: 'Bolsista Caio',
+    equipe: 'pastagem',
+    bolsas: [
+      { id: 'exemplo-bolsa-04a', projeto: IDS.cerrado, valor: 2500, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' },
+      { id: 'exemplo-bolsa-04b', projeto: IDS.atlas, valor: 900, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(120), status: 'cancelled' },
+    ],
+  },
+  {
+    holder_id: 'exemplo-bolsista-05',
+    nome: 'Bolsista Clara',
+    equipe: 'pastagem',
+    bolsas: [{ id: 'exemplo-bolsa-05', projeto: IDS.nascentes, valor: 2800, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-06',
+    nome: 'Bolsista César',
+    equipe: 'pastagem',
+    bolsas: [{ id: 'exemplo-bolsa-06', projeto: IDS.solos, valor: 3100, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-07',
+    nome: 'Bolsista Célia',
+    equipe: 'pastagem',
+    bolsas: [{ id: 'exemplo-bolsa-07', projeto: IDS.cerrado, valor: 4000, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-08',
+    nome: 'Bolsista Ciro',
+    equipe: 'pastagem',
+    bolsas: [{ id: 'exemplo-bolsa-08', projeto: IDS.atlas, valor: 2600, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-09',
+    nome: 'Bolsista Dora',
+    equipe: 'alertas',
+    bolsas: [{ id: 'exemplo-bolsa-09', projeto: IDS.nascentes, valor: 2200, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-10',
+    nome: 'Bolsista Diego',
+    equipe: 'alertas',
+    bolsas: [{ id: 'exemplo-bolsa-10', projeto: IDS.cerrado, valor: 3900, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-11',
+    nome: 'Bolsista Daniela',
+    equipe: 'alertas',
+    bolsas: [{ id: 'exemplo-bolsa-11', projeto: IDS.solos, valor: 3300, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-12',
+    nome: 'Bolsista Davi',
+    equipe: 'alertas',
+    bolsas: [{ id: 'exemplo-bolsa-12', projeto: IDS.atlas, valor: 2400, inicio: dataRelativaExemplo(-200), fim: dataRelativaExemplo(-40), status: 'ended' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-13',
+    nome: 'Bolsista Diana',
+    equipe: 'alertas',
+    bolsas: [{ id: 'exemplo-bolsa-13', projeto: IDS.nascentes, valor: 2100, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(45), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-14',
+    nome: 'Bolsista Elisa',
+    equipe: 'solos',
+    bolsas: [{ id: 'exemplo-bolsa-14', projeto: IDS.solos, valor: 3600, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-15',
+    nome: 'Bolsista Enzo',
+    equipe: 'solos',
+    bolsas: [{ id: 'exemplo-bolsa-15', projeto: IDS.cerrado, valor: 2700, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-16',
+    nome: 'Bolsista Esther',
+    equipe: 'solos',
+    bolsas: [{ id: 'exemplo-bolsa-16', projeto: IDS.atlas, valor: 2900, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-17',
+    nome: 'Bolsista Eva',
+    equipe: 'solos',
+    bolsas: [{ id: 'exemplo-bolsa-17', projeto: IDS.nascentes, valor: 2000, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(30), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-18',
+    nome: 'Bolsista Fábio',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-18', projeto: IDS.cerrado, valor: 3200, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-19',
+    nome: 'Bolsista Flávia',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-19', projeto: IDS.atlas, valor: 2300, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-20',
+    nome: 'Bolsista Felipe',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-20', projeto: IDS.nascentes, valor: 4100, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-21',
+    nome: 'Bolsista Flora',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-21', projeto: IDS.solos, valor: 3400, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(90), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-22',
+    nome: 'Bolsista Gabriel',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-22', projeto: IDS.cerrado, valor: 2500, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-23',
+    nome: 'Bolsista Giovana',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-23', projeto: IDS.atlas, valor: 2800, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-24',
+    nome: 'Bolsista Guilherme',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-24', projeto: IDS.nascentes, valor: 3000, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+  {
+    holder_id: 'exemplo-bolsista-25',
+    nome: 'Bolsista Helena',
+    equipe: null,
+    bolsas: [{ id: 'exemplo-bolsa-25', projeto: IDS.solos, valor: 3800, inicio: dataRelativaExemplo(-60), fim: dataRelativaExemplo(300), status: 'active' }],
+  },
+];
+
+let caixasPedidoExemplo = [
+  {
+    id: 'caixa-exemplo-1',
+    nome: 'Time Pastagem',
+    meses: 12,
+    criado_em: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    itens: [
+      { holder_id: 'exemplo-bolsista-01', valor_mensal: null, nota: null },
+      { holder_id: 'exemplo-bolsista-02', valor_mensal: 4500, nota: 'Valor combinado com a coordenação' },
+    ],
+  },
+  {
+    id: 'caixa-exemplo-2',
+    nome: 'Reserva',
+    meses: 6,
+    criado_em: new Date(Date.now() - 86_400_000).toISOString(),
+    itens: [
+      { holder_id: 'exemplo-bolsista-10', valor_mensal: null, nota: null },
+      { holder_id: 'exemplo-bolsista-13', valor_mensal: 3300, nota: 'Termina em 45 dias' },
+    ],
+  },
+];
+
+function bolsaVigenteExemplo(bolsa, hoje = hojeExemplo()) {
+  return (
+    bolsa.status !== 'cancelled' &&
+    bolsa.inicio <= hoje &&
+    hoje <= bolsa.fim &&
+    (bolsa.status === 'active' || bolsa.status === 'ended')
+  );
+}
+
+function valorVigenteExemplo(pessoa, hoje = hojeExemplo()) {
+  return pessoa.bolsas
+    .filter((b) => bolsaVigenteExemplo(b, hoje))
+    .reduce((soma, b) => soma + Number(b.valor), 0);
+}
+
+function bolsistaPorIdExemplo(holderId) {
+  return BOLSISTAS_PEDIDO_EXEMPLO.find((p) => p.holder_id === holderId) || null;
+}
+
+function caixaPorIdExemplo(caixaId) {
+  return caixasPedidoExemplo.find((c) => c.id === caixaId) || null;
+}
+
+function caixaResumoExemplo(caixa) {
+  const itens = caixa.itens
+    .map((item) => {
+      const pessoa = bolsistaPorIdExemplo(item.holder_id);
+      if (!pessoa) return null;
+      const valorUsado = item.valor_mensal ?? valorVigenteExemplo(pessoa);
+      return {
+        holder_id: item.holder_id,
+        valor_mensal: item.valor_mensal ?? null,
+        valor_usado: valorUsado,
+        nota: item.nota ?? null,
+        nome: pessoa.nome,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR', { sensitivity: 'base' }));
+
+  const totalMensal = itens.reduce((soma, item) => soma + Number(item.valor_usado), 0);
+  return {
+    id: caixa.id,
+    nome: caixa.nome,
+    meses: caixa.meses,
+    criado_em: caixa.criado_em,
+    pessoas: itens.length,
+    total_mensal: totalMensal,
+    total_periodo: totalMensal * caixa.meses,
+    itens_ocultos: 0,
+    itens: itens.map(({ nome, ...item }) => item),
+  };
+}
+
+export async function pedidoBolsas() {
+  const hoje = hojeExemplo();
+  const centros = [...new Set(
+    BOLSISTAS_PEDIDO_EXEMPLO.flatMap((p) => p.bolsas.map((b) => b.projeto))
+  )]
+    .map((id) => centroDoExemplo(id))
+    .filter(Boolean)
+    .sort((a, b) => String(a.code).localeCompare(String(b.code), 'pt-BR'));
+
+  const bolsistas = BOLSISTAS_PEDIDO_EXEMPLO
+    .map((p) => ({
+      holder_id: p.holder_id,
+      nome: p.nome,
+      equipe: p.equipe ?? null,
+      valor_vigente: valorVigenteExemplo(p, hoje),
+      bolsas: p.bolsas.map((b) => ({
+        scholarship_id: b.id,
+        project_id: b.projeto,
+        code: centroDoExemplo(b.projeto)?.code || '—',
+        valor: b.valor,
+        inicio: b.inicio,
+        fim: b.fim,
+        status: b.status,
+        vigente_hoje: bolsaVigenteExemplo(b, hoje),
+      })),
+    }))
+    .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR', { sensitivity: 'base' }));
+
+  return {
+    dados: structuredClone({
+      centros: centros.map((c) => ({ id: c.id, code: c.code, name: c.name })),
+      bolsistas,
+      caixas: caixasPedidoExemplo.map(caixaResumoExemplo),
+    }),
+    erro: null,
+  };
+}
+
+export async function salvarEquipeBolsista(holderId, equipe) {
+  const pessoa = bolsistaPorIdExemplo(holderId);
+  if (!pessoa) return { dados: null, erro: 'Pessoa não encontrada.' };
+  if (!(equipe === null || equipe === undefined || equipe === '' || ['pastagem', 'alertas', 'solos'].includes(equipe))) {
+    return { dados: null, erro: 'Equipe inválida.' };
+  }
+  pessoa.equipe = equipe === '' ? null : equipe;
+  return { dados: { holder_id: holderId, equipe: pessoa.equipe ?? null }, erro: null };
+}
+
+export async function salvarCaixaPedido(payload) {
+  const bruto = payload && typeof payload === 'object' ? payload : {};
+  const nome = typeof bruto.nome === 'string' ? bruto.nome.trim() : '';
+  const meses = bruto.meses === undefined || bruto.meses === null ? 12 : bruto.meses;
+  if (!nome || nome.length > 80) {
+    return { dados: null, erro: 'O nome da caixa deve ter de 1 a 80 caracteres.' };
+  }
+  if (!Number.isInteger(meses) || meses < 1 || meses > 60) {
+    return { dados: null, erro: 'Os meses da caixa devem ser um inteiro entre 1 e 60.' };
+  }
+
+  if (bruto.id !== undefined && bruto.id !== null) {
+    const caixa = caixaPorIdExemplo(bruto.id);
+    if (!caixa) return { dados: null, erro: 'Caixa não encontrada.' };
+    caixa.nome = nome;
+    caixa.meses = meses;
+    return { dados: { ...caixaResumoExemplo(caixa) }, erro: null };
+  }
+
+  if (caixasPedidoExemplo.length >= 10) {
+    return { dados: null, erro: 'Limite de 10 caixas por usuário.' };
+  }
+
+  const caixa = {
+    id: `caixa-exemplo-${Date.now()}`,
+    nome,
+    meses,
+    criado_em: new Date().toISOString(),
+    itens: [],
+  };
+  caixasPedidoExemplo.push(caixa);
+  return { dados: { ...caixaResumoExemplo(caixa) }, erro: null };
+}
+
+export async function apagarCaixaPedido(id) {
+  const indice = caixasPedidoExemplo.findIndex((c) => c.id === id);
+  if (indice < 0) return { dados: null, erro: 'Caixa não encontrada.' };
+  caixasPedidoExemplo.splice(indice, 1);
+  return { dados: { id, apagada: true }, erro: null };
+}
+
+export async function colocarNaCaixa(caixaId, holderId, valorMensal = null, nota = null) {
+  const caixa = caixaPorIdExemplo(caixaId);
+  if (!caixa) return { dados: null, erro: 'Caixa não encontrada.' };
+  const pessoa = bolsistaPorIdExemplo(holderId);
+  if (!pessoa) return { dados: null, erro: 'Pessoa não encontrada.' };
+
+  const valor = valorMensal === null || valorMensal === undefined || valorMensal === ''
+    ? null
+    : Number(valorMensal);
+  if (valor !== null && (!Number.isFinite(valor) || valor <= 0)) {
+    return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+  }
+  const notaTexto = nota === null || nota === undefined || String(nota).trim() === ''
+    ? null
+    : String(nota).trim();
+  if (notaTexto !== null && notaTexto.length > 300) {
+    return { dados: null, erro: 'A nota deve ter até 300 caracteres.' };
+  }
+
+  const saiuDe = [];
+  for (const outra of caixasPedidoExemplo) {
+    if (outra.id === caixaId) continue;
+    const indice = outra.itens.findIndex((i) => i.holder_id === holderId);
+    if (indice >= 0) {
+      outra.itens.splice(indice, 1);
+      saiuDe.push({ caixa_id: outra.id, nome: outra.nome });
+    }
+  }
+
+  const existente = caixa.itens.find((i) => i.holder_id === holderId);
+  if (existente) {
+    existente.valor_mensal = valor;
+    existente.nota = notaTexto;
+  } else {
+    caixa.itens.push({ holder_id: holderId, valor_mensal: valor, nota: notaTexto });
+  }
+
+  return {
+    dados: {
+      caixa_id: caixaId,
+      holder_id: holderId,
+      valor_mensal: valor,
+      valor_usado: valor ?? valorVigenteExemplo(pessoa),
+      nota: notaTexto,
+      saiu_de: saiuDe,
+    },
+    erro: null,
+  };
+}
+
+export async function tirarDaCaixa(caixaId, holderId) {
+  const caixa = caixaPorIdExemplo(caixaId);
+  if (!caixa) return { dados: null, erro: 'Caixa não encontrada.' };
+  const indice = caixa.itens.findIndex((i) => i.holder_id === holderId);
+  if (indice < 0) return { dados: null, erro: 'Pessoa não está nesta caixa.' };
+  caixa.itens.splice(indice, 1);
+  return { dados: { caixa_id: caixaId, holder_id: holderId, removido: true }, erro: null };
+}
+
 const DOC_BALANCETE_30901 = {
   id: '00000000-0000-4000-8000-000000090102',
   tipo: 'balancete',

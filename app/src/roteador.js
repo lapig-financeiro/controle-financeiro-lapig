@@ -35,6 +35,10 @@ export function parsearRota(hash = typeof window !== 'undefined' ? window.locati
     return { pagina: 'analise', menu: 'analise', id: null, aba: null };
   }
 
+  if (partes[0] === 'bolsistas') {
+    return { pagina: 'bolsistas', menu: 'bolsistas', id: null, aba: null };
+  }
+
   if (partes[0] === 'admin') {
     return { pagina: 'admin', menu: 'admin', id: null, aba: null };
   }

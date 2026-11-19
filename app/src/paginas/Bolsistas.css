@@ -1,0 +1,374 @@
+.bolsistas__contexto {
+  margin-top: calc(var(--esp-4) * -1);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__carregando {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--esp-5);
+  align-items: start;
+}
+
+.bolsistas__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: var(--esp-5);
+  align-items: start;
+}
+
+.bolsistas__lista,
+.bolsistas__caixas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+  min-width: 0;
+}
+
+.bolsistas__filtros {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--esp-4);
+  padding: var(--esp-4);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+}
+
+.bolsistas__filtro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.bolsistas__filtro-titulo {
+  margin-bottom: var(--esp-1);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-1);
+  font-weight: var(--fw-medio);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bolsistas__filtro-centros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.bolsistas__centro {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+  color: var(--cor-texto);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__filtro-centro {
+  width: 1em;
+  height: 1em;
+  accent-color: var(--cor-acento);
+}
+
+.bolsistas__filtro-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.bolsistas__filtro-situacao {
+  gap: var(--esp-3);
+}
+
+.bolsistas__busca,
+.bolsistas__contador {
+  grid-column: 1 / -1;
+}
+
+.bolsistas__contador {
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__pessoas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.bolsistas__pessoa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  padding: var(--esp-4);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+}
+
+.bolsistas__pessoa-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--esp-3);
+}
+
+.bolsistas__pessoa-nome {
+  color: var(--cor-texto);
+  font-weight: var(--fw-semi);
+  overflow-wrap: anywhere;
+}
+
+.bolsistas__equipe {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.bolsistas__equipe summary {
+  list-style: none;
+}
+
+.bolsistas__equipe summary::-webkit-details-marker {
+  display: none;
+}
+
+.bolsistas__equipe-opcoes {
+  position: absolute;
+  top: calc(100% + var(--esp-2));
+  right: 0;
+  z-index: var(--z-menu);
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+  width: var(--largura-menu);
+  max-width: calc(100vw - var(--esp-6));
+  padding: var(--esp-2);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+  box-shadow: var(--sombra-sobreposta);
+}
+
+.bolsistas__equipe-opcao {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+  min-height: var(--altura-controle);
+  padding: 0 var(--esp-3);
+  color: var(--cor-texto);
+  font-size: var(--fs-2);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--raio-1);
+  cursor: pointer;
+}
+
+.bolsistas__equipe-opcao:hover {
+  background-color: var(--cor-afundado);
+}
+
+.bolsistas__bolsas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.bolsistas__bolsa {
+  padding: var(--esp-1) var(--esp-2);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+  background-color: var(--cor-afundado);
+  border: var(--borda);
+  border-radius: var(--raio-1);
+}
+
+.bolsistas__bolsa--apagada {
+  opacity: 0.55;
+}
+
+.bolsistas__pessoa-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--esp-3);
+}
+
+.bolsistas__pessoa-valor {
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__pessoa-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.bolsistas__sem-caixa {
+  color: var(--cor-texto-3);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__caixas-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-3);
+}
+
+.bolsistas__caixas-titulo {
+  color: var(--cor-texto);
+  font-size: var(--fs-3);
+  font-weight: var(--fw-semi);
+}
+
+.bolsistas__nova-caixa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  padding: var(--esp-4);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+}
+
+.bolsistas__nova-caixa-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.bolsistas__caixa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  padding: var(--esp-4);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+}
+
+.bolsistas__caixa-edicao {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6rem auto;
+  gap: var(--esp-2);
+  align-items: end;
+}
+
+.bolsistas__caixa-meses {
+  min-width: 0;
+}
+
+.bolsistas__caixa-resumo {
+  color: var(--cor-texto);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__caixa-ocultos {
+  color: var(--cor-atencao);
+  font-size: var(--fs-1);
+}
+
+.bolsistas__caixa-itens {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.bolsistas__caixa-vazia {
+  color: var(--cor-texto-3);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+  padding-top: var(--esp-3);
+  border-top: var(--borda);
+}
+
+.bolsistas__item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.bolsistas__item-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2);
+}
+
+.bolsistas__item-nome {
+  color: var(--cor-texto);
+  font-weight: var(--fw-medio);
+}
+
+.bolsistas__item-usado {
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__item-campos {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto;
+  gap: var(--esp-2);
+  align-items: end;
+}
+
+.bolsistas__item-erro {
+  color: var(--cor-problema);
+  font-size: var(--fs-1);
+}
+
+.bolsistas__caixa-acoes {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.bolsistas__confirmacao {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-2);
+}
+
+.bolsistas__indisponivel {
+  display: flex;
+  align-items: center;
+  gap: var(--esp-2);
+  color: var(--cor-texto-2);
+}
+
+@media (max-width: 1024px) {
+  .bolsistas__layout,
+  .bolsistas__carregando {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .bolsistas__filtros,
+  .bolsistas__caixa-edicao,
+  .bolsistas__item-campos {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bolsistas__pessoa-topo {
+    flex-direction: column;
+  }
+
+  .bolsistas__equipe {
+    align-self: flex-start;
+  }
+}

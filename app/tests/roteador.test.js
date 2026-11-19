@@ -36,6 +36,12 @@ describe('roteador', () => {
       aba: null,
     });
     expect(parsearRota('#/analise')).toEqual({ pagina: 'analise', menu: 'analise', id: null, aba: null });
+    expect(parsearRota('#/bolsistas')).toEqual({
+      pagina: 'bolsistas',
+      menu: 'bolsistas',
+      id: null,
+      aba: null,
+    });
     expect(parsearRota('#/admin')).toEqual({ pagina: 'admin', menu: 'admin', id: null, aba: null });
     expect(parsearRota('#/componentes')).toEqual({
       pagina: 'componentes',
