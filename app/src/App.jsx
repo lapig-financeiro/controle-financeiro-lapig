@@ -7,7 +7,6 @@ import { Projeto } from './paginas/Projeto.jsx';
 import { Projetos } from './paginas/Projetos.jsx';
 import { navegarPara, parsearRota, urlProjeto } from './roteador.js';
 import {
-  modoExemploAtivo,
   pendencias as buscarPendencias,
   resumoProjetos,
   salvarFiltroVisao,
@@ -22,15 +21,18 @@ const PENDENCIAS_CATALOGO = [
 ];
 
 export function App() {
-  const ehModoExemplo = modoExemploAtivo();
   const [rota, setRota] = useState(() => parsearRota());
-  const [carregandoSessao, setCarregandoSessao] = useState(!ehModoExemplo);
+  const [carregandoSessao, setCarregandoSessao] = useState(
+    () => !(import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo')
+  );
   const [carregandoPerfil, setCarregandoPerfil] = useState(false);
   const [usuario, setUsuario] = useState(() =>
-    ehModoExemplo ? { id: 'exemplo-admin', email: 'exemplo@lapig.ufg.br' } : null
+    import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo'
+      ? { id: 'exemplo-admin', email: 'exemplo@lapig.ufg.br' }
+      : null
   );
   const [perfil, setPerfil] = useState(() =>
-    ehModoExemplo
+    import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo'
       ? {
           erro: null,
           role: 'admin',
@@ -105,7 +107,7 @@ export function App() {
   }, [verificarManutencao]);
 
   useEffect(() => {
-    if (ehModoExemplo) return undefined;
+    if (import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo') return undefined;
 
     let ativo = true;
 
@@ -150,7 +152,7 @@ export function App() {
       ativo = false;
       inscricao?.subscription?.unsubscribe();
     };
-  }, [ehModoExemplo, aplicarUsuario]);
+  }, [aplicarUsuario]);
 
   const papelConhecido = !carregandoSessao && !carregandoPerfil && perfil.erro === null && perfil.role !== null;
   const isAdmin = papelConhecido && perfil.role === 'admin';
@@ -259,7 +261,11 @@ export function App() {
           centrosVisiveis={filtroDemoAtivo ? { visiveis: 15, total: 17 } : { visiveis: 17, total: 17 }}
           pendencias={PENDENCIAS_CATALOGO}
           onAlternarFiltro={(ativar) => setFiltroDemoAtivo(Boolean(ativar))}
-          onSair={usuario && !ehModoExemplo ? sair : () => navegarPara('#/projetos')}
+          onSair={
+            usuario && !(import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo')
+              ? sair
+              : () => navegarPara('#/projetos')
+          }
           onNavegar={navegarPara}
         />
         <main>
@@ -389,7 +395,11 @@ export function App() {
             navegarPara(urlProjeto(item.project_id, 'pendencias'));
           }
         }}
-        onSair={ehModoExemplo ? () => navegarPara('#/projetos') : sair}
+        onSair={
+          import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo'
+            ? () => navegarPara('#/projetos')
+            : sair
+        }
         onNavegar={navegarPara}
       />
       <main>{renderizarPagina()}</main>

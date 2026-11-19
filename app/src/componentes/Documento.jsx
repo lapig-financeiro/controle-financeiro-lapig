@@ -89,11 +89,13 @@ export function calcularRetanguloFaixa(bbox, viewport, dpr = 1, transformFn = nu
 export function sanitizarHtmlDocx(html) {
   const texto = typeof html === 'string' ? html : '';
   if (!texto) return '';
-  if (typeof DOMParser === 'undefined') return texto;
+  if (typeof DOMParser === 'undefined') return '';
 
   const doc = new DOMParser().parseFromString(`<div>${texto}</div>`, 'text/html');
   doc.body
-    .querySelectorAll('script, style, iframe, object, embed, svg, math, form, link, meta, base')
+    .querySelectorAll(
+      'script, style, iframe, object, embed, svg, math, form, link, meta, base, noscript, template, noembed, noframes, xmp, plaintext'
+    )
     .forEach((no) => no.remove());
 
   doc.body.querySelectorAll('*').forEach((no) => {
@@ -122,10 +124,16 @@ export function criterioPorMotivo(motivo) {
   return 'não achado no documento';
 }
 
-export function formatarCriterioDocumento(tipoOrigem, fato, motivoBusca = null) {
+export function formatarCriterioDocumento(
+  tipoOrigem,
+  fato,
+  motivoBusca = null,
+  paginaEfetiva = undefined
+) {
   if (tipoOrigem === 'documento') {
-    const temPagina = Number.isInteger(fato?.pagina) && fato.pagina >= 1;
-    const prefixo = temPagina ? `lido na página ${fato.pagina}` : 'lido no documento';
+    const paginaCandidata = paginaEfetiva !== undefined ? paginaEfetiva : fato?.pagina;
+    const temPagina = Number.isInteger(paginaCandidata) && paginaCandidata >= 1;
+    const prefixo = temPagina ? `lido na página ${paginaCandidata}` : 'lido no documento';
     const leitor = [fato?.parser, fato?.parser_versao].filter(Boolean).join(' ').trim();
     return leitor ? `${prefixo} (leitor ${leitor})` : prefixo;
   }
@@ -135,42 +143,116 @@ export function formatarCriterioDocumento(tipoOrigem, fato, motivoBusca = null) 
   return '';
 }
 
-function montarTermosDocx({ tipoOrigem, fato, busca, valor }) {
-  const codigo = [];
-  const valores = [];
-  const texto = [];
+function paraNumeroBusca(valor) {
+  if (typeof valor === 'number') return Number.isFinite(valor) ? valor : null;
+  if (typeof valor !== 'string') return null;
+  const texto = valor.trim().replace(/\s/g, '');
+  if (!texto) return null;
+  const n = Number(texto.includes(',') ? texto.replace(/\./g, '').replace(',', '.') : texto);
+  return Number.isFinite(n) ? n : null;
+}
 
-  if (busca?.conta_codigo) {
-    const bruto = String(busca.conta_codigo).trim();
-    if (bruto.includes('#')) {
-      const [prefixo, reduzido] = bruto.split('#');
-      if (prefixo) codigo.push(prefixo);
-      if (reduzido) codigo.push(reduzido);
-    } else if (bruto) {
-      codigo.push(bruto);
+function temBuscaLegado(busca) {
+  if (!busca || typeof busca !== 'object') return false;
+  const temCodigo = typeof busca.conta_codigo === 'string' && busca.conta_codigo.trim().length > 0;
+  const temTexto = typeof busca.texto === 'string' && busca.texto.trim().length > 0;
+  const num = paraNumeroBusca(busca.valor);
+  const temValor = num !== null && num !== 0;
+  return temCodigo || temTexto || temValor;
+}
+
+function textoPorLinhasDoBloco(el) {
+  const linhas = [''];
+  const emPre = el.tagName === 'PRE' || Boolean(el.closest('pre'));
+  const visitar = (no) => {
+    if (no.nodeType === 3) {
+      const bruto = String(no.textContent || '');
+      if (emPre) {
+        const partes = bruto.split(/\r?\n/);
+        linhas[linhas.length - 1] += partes[0];
+        for (let i = 1; i < partes.length; i += 1) {
+          linhas.push(partes[i]);
+        }
+      } else {
+        linhas[linhas.length - 1] += bruto;
+      }
+      return;
+    }
+    if (no.nodeType !== 1) return;
+    if (no.tagName === 'BR') {
+      linhas.push('');
+      return;
+    }
+    for (const filho of no.childNodes) {
+      visitar(filho);
+    }
+  };
+  visitar(el);
+  return linhas
+    .map((l) => l.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+const SELETOR_BLOCO_DOCX = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, dt, dd';
+
+function extrairLinhasDocx(raiz) {
+  if (!raiz) return [];
+  const linhas = [];
+  const candidatos = Array.from(raiz.querySelectorAll(`tr, ${SELETOR_BLOCO_DOCX}`));
+
+  for (const el of candidatos) {
+    if (el.tagName === 'TR') {
+      if (el.querySelector('tr')) continue;
+      const celulas = Array.from(el.querySelectorAll('td, th')).filter(
+        (c) => c.closest('tr') === el
+      );
+      const texto = (celulas.length > 0 ? celulas : [el])
+        .map((c) => c.textContent.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .join(' ');
+      if (texto) {
+        linhas.push({ texto, el });
+      }
+      continue;
+    }
+
+    if (el.closest('tr')) continue;
+    if (el.querySelector(SELETOR_BLOCO_DOCX)) continue;
+    for (const texto of textoPorLinhasDoBloco(el)) {
+      linhas.push({ texto, el });
     }
   }
 
-  const num = busca?.valor != null ? Number(busca.valor) : valor != null ? Number(valor) : null;
-  if (num != null && Number.isFinite(num)) {
-    valores.push(formatarValor(num));
-    if (num < 0) valores.push(`-${formatarValor(Math.abs(num))}`);
+  if (linhas.length === 0) {
+    const bruto = String(raiz.textContent || '');
+    for (const parte of bruto.split(/\r?\n/)) {
+      const texto = parte.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+      if (texto) linhas.push({ texto, el: raiz });
+    }
   }
 
-  if (tipoOrigem === 'documento' && fato?.trecho) {
-    texto.push(String(fato.trecho));
-  }
-  if (busca?.texto) {
-    texto.push(String(busca.texto));
-  }
+  return linhas;
+}
 
-  const unicos = (arr) => [...new Set(arr.map((s) => String(s || '').trim()).filter(Boolean))];
-  return {
-    codigo: unicos(codigo),
-    valores: unicos(valores),
-    texto: unicos(texto),
-    todos: unicos([...texto, ...codigo, ...valores]),
-  };
+function termosDocxPorMotivo(motivo, alvo) {
+  const termos = [];
+  if (motivo === 'codigo' && alvo?.conta_codigo) {
+    termos.push(alvo.conta_codigo);
+  } else if (motivo === 'reduzido' && alvo?.conta_codigo && alvo.conta_codigo.includes('#')) {
+    const [prefixo, reduzido] = alvo.conta_codigo.split('#');
+    if (prefixo.trim()) termos.push(prefixo.trim());
+    if (reduzido.trim()) termos.push(reduzido.trim());
+  } else if (motivo === 'valor' && alvo?.valor != null) {
+    const num = paraNumeroBusca(alvo.valor);
+    if (num !== null) {
+      termos.push(formatarValor(num));
+      if (num < 0) termos.push(`-${formatarValor(Math.abs(num))}`);
+    }
+    if (alvo?.texto) termos.push(alvo.texto);
+  } else if (motivo === 'texto' && alvo?.texto) {
+    termos.push(alvo.texto);
+  }
+  return [...new Set(termos.map((s) => String(s || '').trim()).filter(Boolean))];
 }
 
 function paraBufferCopia(bruto) {
@@ -241,7 +323,13 @@ export function Documento({
     criterio: '',
   });
   const [zoom, setZoom] = useState(1.25);
-  const [medidaPagina, setMedidaPagina] = useState({ largura: 0, altura: 0, faixas: [] });
+  const [medidaPagina, setMedidaPagina] = useState({
+    pagina: null,
+    zoom: null,
+    largura: 0,
+    altura: 0,
+    faixas: [],
+  });
   const [erroPagina, setErroPagina] = useState(null);
   const [tentativaReload, setTentativaReload] = useState(0);
 
@@ -362,7 +450,7 @@ export function Documento({
         htmlDocx: '',
         criterio: '',
       });
-      setMedidaPagina({ largura: 0, altura: 0, faixas: [] });
+      setMedidaPagina({ pagina: null, zoom: null, largura: 0, altura: 0, faixas: [] });
       setErroPagina(null);
       return undefined;
     }
@@ -382,7 +470,7 @@ export function Documento({
 
     destruirPdfAtual();
     setErroPagina(null);
-    setMedidaPagina({ largura: 0, altura: 0, faixas: [] });
+    setMedidaPagina({ pagina: null, zoom: null, largura: 0, altura: 0, faixas: [] });
     setZoom(1.25);
     deveRolarParaFaixaRef.current = true;
     setEstadoDoc({
@@ -403,6 +491,7 @@ export function Documento({
             ...prev,
             carregando: false,
             erro: 'Formato de documento não suportado.',
+            criterio: 'não foi possível ler o documento',
           }));
           return;
         }
@@ -413,6 +502,7 @@ export function Documento({
             ...prev,
             carregando: false,
             erro: resArquivo?.erro || 'Não foi possível carregar o arquivo de origem.',
+            criterio: 'não foi possível ler o documento',
           }));
           return;
         }
@@ -423,6 +513,7 @@ export function Documento({
             ...prev,
             carregando: false,
             erro: 'O arquivo de origem veio vazio.',
+            criterio: 'não foi possível ler o documento',
           }));
           return;
         }
@@ -439,24 +530,50 @@ export function Documento({
               ...prev,
               carregando: false,
               erro: 'O documento não tem texto que possa ser exibido.',
+              criterio: 'não foi possível ler o documento',
             }));
             return;
           }
 
-          const termos = montarTermosDocx({
-            tipoOrigem: tipoAtual,
-            fato: fatoAtual,
-            busca: buscaAtual,
-            valor: valorAtual,
-          });
-          const marcado = marcarNoHtml(htmlLimpo, termos.todos);
+          let alvoDocx = null;
+          if (tipoAtual === 'documento') {
+            const trechoLimpo = typeof fatoAtual?.trecho === 'string' ? fatoAtual.trecho.trim() : '';
+            if (trechoLimpo) {
+              alvoDocx = { texto: trechoLimpo };
+            } else {
+              const numValor = paraNumeroBusca(valorAtual);
+              if (numValor !== null && numValor !== 0) alvoDocx = { valor: numValor };
+            }
+          } else if (tipoAtual === 'legado' && temBuscaLegado(buscaAtual)) {
+            const numBusca = paraNumeroBusca(buscaAtual?.valor);
+            alvoDocx = {
+              conta_codigo:
+                typeof buscaAtual?.conta_codigo === 'string' ? buscaAtual.conta_codigo.trim() : '',
+              texto: typeof buscaAtual?.texto === 'string' ? buscaAtual.texto.trim() : '',
+              valor: numBusca !== null && numBusca !== 0 ? numBusca : null,
+            };
+          }
 
           let motivoDocx = null;
-          if (tipoAtual === 'legado') {
-            const achouCodigo = termos.codigo.some((t) => marcarNoHtml(htmlLimpo, [t]).total > 0);
-            const achouValor = termos.valores.some((t) => marcarNoHtml(htmlLimpo, [t]).total > 0);
-            const achouTexto = termos.texto.some((t) => marcarNoHtml(htmlLimpo, [t]).total > 0);
-            motivoDocx = achouCodigo ? 'codigo' : achouValor ? 'valor' : achouTexto ? 'texto' : null;
+          let htmlFinal = htmlLimpo;
+
+          if (alvoDocx && typeof DOMParser !== 'undefined') {
+            const dom = new DOMParser().parseFromString(`<div>${htmlLimpo}</div>`, 'text/html');
+            const raiz = dom.body.firstElementChild;
+            const linhasDocx = extrairLinhasDocx(raiz);
+            const achados = linhasDocx.length > 0 ? acharAlvo([linhasDocx], alvoDocx) : [];
+
+            if (achados.length > 0) {
+              motivoDocx = achados[0].motivo;
+              const termosMarcar = termosDocxPorMotivo(motivoDocx, alvoDocx);
+              const elementosMarcados = new Set(
+                achados.map((a) => linhasDocx[a.linha]?.el).filter(Boolean)
+              );
+              for (const el of elementosMarcados) {
+                el.innerHTML = marcarNoHtml(el.innerHTML, termosMarcar).html;
+              }
+              htmlFinal = sanitizarHtmlDocx(raiz ? raiz.innerHTML : htmlLimpo);
+            }
           }
 
           const criterioFinal = formatarCriterioDocumento(tipoAtual, fatoAtual, motivoDocx);
@@ -475,7 +592,7 @@ export function Documento({
             totalPaginas: 0,
             paginaAtual: 1,
             alvosPdf: [],
-            htmlDocx: marcado.html,
+            htmlDocx: htmlFinal,
             criterio: criterioFinal,
           });
           return;
@@ -506,53 +623,71 @@ export function Documento({
           Number.isInteger(fatoAtual?.pagina) && fatoAtual.pagina >= 1 && fatoAtual.pagina <= totalPaginas;
 
         let paginaInicial = temPaginaFato ? fatoAtual.pagina : 1;
+        let paginaEfetivaCriterio = temPaginaFato ? fatoAtual.pagina : null;
         let alvosPdf = [];
         let motivoAchado = null;
 
         if (tipoAtual === 'documento' && bboxValido(fatoAtual?.bbox) && temPaginaFato) {
           alvosPdf = [{ pagina: fatoAtual.pagina, bbox: fatoAtual.bbox }];
         } else {
-          const paginasTexto = [];
-          for (let n = 1; n <= totalPaginas; n += 1) {
-            const pg = await pdf.getPage(n);
-            if (!vivo()) return;
-            const textContent = await pg.getTextContent();
-            if (!vivo()) return;
-            paginasTexto.push(linhasDaPagina(textContent.items));
+          let alvoBusca = null;
+          if (tipoAtual === 'documento') {
+            const trechoLimpo = typeof fatoAtual?.trecho === 'string' ? fatoAtual.trecho.trim() : '';
+            alvoBusca = trechoLimpo ? { texto: trechoLimpo } : null;
+          } else if (tipoAtual === 'legado' && temBuscaLegado(buscaAtual)) {
+            const numBusca = paraNumeroBusca(buscaAtual?.valor);
+            alvoBusca = {
+              conta_codigo:
+                typeof buscaAtual?.conta_codigo === 'string' ? buscaAtual.conta_codigo.trim() : '',
+              texto: typeof buscaAtual?.texto === 'string' ? buscaAtual.texto.trim() : '',
+              valor: numBusca !== null && numBusca !== 0 ? numBusca : null,
+            };
           }
 
-          const alvoBusca =
-            tipoAtual === 'documento'
-              ? fatoAtual?.trecho
-                ? { texto: fatoAtual.trecho }
-                : null
-              : buscaAtual || {};
+          if (alvoBusca) {
+            const paginasTexto = [];
+            for (let n = 1; n <= totalPaginas; n += 1) {
+              const pg = await pdf.getPage(n);
+              if (!vivo()) return;
+              const textContent = await pg.getTextContent();
+              if (!vivo()) return;
+              paginasTexto.push(linhasDaPagina(textContent.items));
+            }
 
-          const achados = alvoBusca ? acharAlvo(paginasTexto, alvoBusca) : [];
-          if (achados.length > 0) {
-            const achadosNaPaginaFato =
-              tipoAtual === 'documento' && temPaginaFato
-                ? achados.filter((a) => a.pagina === fatoAtual.pagina)
-                : [];
-            const escolhidos = achadosNaPaginaFato.length > 0 ? achadosNaPaginaFato : achados;
-            paginaInicial = escolhidos[0].pagina;
-            motivoAchado = escolhidos[0].motivo;
-            alvosPdf = escolhidos
-              .map((a) => {
-                const linha = paginasTexto[a.pagina - 1]?.[a.linha];
-                if (!linha) return null;
-                return {
-                  pagina: a.pagina,
-                  bbox: { x0: linha.x0, x1: linha.x1, yMin: linha.yMin, yMax: linha.yMax },
-                };
-              })
-              .filter(Boolean);
+            const achados = acharAlvo(paginasTexto, alvoBusca);
+            if (achados.length > 0) {
+              const achadosNaPaginaFato =
+                tipoAtual === 'documento' && temPaginaFato
+                  ? achados.filter((a) => a.pagina === fatoAtual.pagina)
+                  : [];
+              const escolhidos = achadosNaPaginaFato.length > 0 ? achadosNaPaginaFato : achados;
+              paginaInicial = escolhidos[0].pagina;
+              paginaEfetivaCriterio = paginaInicial;
+              motivoAchado = escolhidos[0].motivo;
+              alvosPdf = escolhidos
+                .map((a) => {
+                  const linha = paginasTexto[a.pagina - 1]?.[a.linha];
+                  if (!linha) return null;
+                  return {
+                    pagina: a.pagina,
+                    bbox: { x0: linha.x0, x1: linha.x1, yMin: linha.yMin, yMax: linha.yMax },
+                  };
+                })
+                .filter(Boolean);
+            } else {
+              paginaInicial = tipoAtual === 'documento' && temPaginaFato ? fatoAtual.pagina : 1;
+            }
           } else {
             paginaInicial = tipoAtual === 'documento' && temPaginaFato ? fatoAtual.pagina : 1;
           }
         }
 
-        const criterioFinal = formatarCriterioDocumento(tipoAtual, fatoAtual, motivoAchado);
+        const criterioFinal = formatarCriterioDocumento(
+          tipoAtual,
+          fatoAtual,
+          motivoAchado,
+          paginaEfetivaCriterio
+        );
         if (tipoAtual === 'legado') {
           onResultadoBuscaRef.current?.({
             achado: Boolean(motivoAchado),
@@ -577,6 +712,7 @@ export function Documento({
           ...prev,
           carregando: false,
           erro: err?.message || 'Não foi possível abrir o documento.',
+          criterio: 'não foi possível ler o documento',
         }));
       }
     }
@@ -609,6 +745,12 @@ export function Documento({
 
     async function desenhar() {
       setErroPagina(null);
+      setMedidaPagina((prev) => ({
+        ...prev,
+        pagina: null,
+        zoom: null,
+        faixas: [],
+      }));
       try {
         const pg = await pdf.getPage(estadoDoc.paginaAtual);
         if (cancelado || renderGenRef.current !== gen) return;
@@ -644,10 +786,17 @@ export function Documento({
           .map((a) => calcularRetanguloFaixa(a.bbox, viewport, dpr, transformFn))
           .filter(Boolean);
 
-        setMedidaPagina({ largura: cssLargura, altura: cssAltura, faixas });
+        setMedidaPagina({
+          pagina: estadoDoc.paginaAtual,
+          zoom,
+          largura: cssLargura,
+          altura: cssAltura,
+          faixas,
+        });
       } catch (err) {
         if (err?.name === 'RenderingCancelledException') return;
         if (!cancelado && renderGenRef.current === gen) {
+          setMedidaPagina((prev) => ({ ...prev, pagina: null, zoom: null, faixas: [] }));
           setErroPagina(err?.message || 'Não foi possível desenhar esta página.');
         }
       }
@@ -676,10 +825,15 @@ export function Documento({
     zoom,
   ]);
 
+  const faixasAtuais =
+    medidaPagina.pagina === estadoDoc.paginaAtual && medidaPagina.zoom === zoom
+      ? medidaPagina.faixas
+      : [];
+
   // Rola até a faixa ou marca destacada após renderizar
   useEffect(() => {
     if (!aberto || !deveRolarParaFaixaRef.current || !visaoRef.current) return;
-    if (estadoDoc.formato === 'pdf' && medidaPagina.faixas.length > 0) {
+    if (estadoDoc.formato === 'pdf' && faixasAtuais.length > 0) {
       const faixaEl = visaoRef.current.querySelector('.documento__faixa');
       if (faixaEl && typeof faixaEl.scrollIntoView === 'function') {
         faixaEl.scrollIntoView({ block: 'center', inline: 'center' });
@@ -692,7 +846,7 @@ export function Documento({
       }
       deveRolarParaFaixaRef.current = false;
     }
-  }, [aberto, estadoDoc.formato, estadoDoc.htmlDocx, medidaPagina.faixas]);
+  }, [aberto, estadoDoc.formato, estadoDoc.htmlDocx, faixasAtuais.length]);
 
   if (!aberto) return null;
 
@@ -845,7 +999,7 @@ export function Documento({
                       aria-label={`Página ${estadoDoc.paginaAtual} do documento`}
                     />
                     <div class="documento__faixas" aria-hidden="true">
-                      {medidaPagina.faixas.map((faixa, idx) => (
+                      {faixasAtuais.map((faixa, idx) => (
                         <div
                           key={idx}
                           class="documento__faixa"

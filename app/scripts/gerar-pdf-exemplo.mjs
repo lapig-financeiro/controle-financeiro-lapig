@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { acharAlvo, linhasDaPagina } from '../../frontend/js/origem-busca.js';
 
 export const NOME_PDF_EXEMPLO = 'balancete-30901-out-26.pdf';
+export const SENTINELA_EXEMPLO = '__EXEMPLO_CF__';
 
 function escaparTextoPdf(texto) {
   return String(texto)
@@ -190,6 +191,7 @@ export async function gerarPdfExemploEmMemoria() {
     }
 
     const manifesto = {
+      sentinela: SENTINELA_EXEMPLO,
       arquivo_nome: NOME_PDF_EXEMPLO,
       paginas: doc.numPages,
       fatos,

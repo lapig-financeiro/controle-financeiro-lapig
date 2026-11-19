@@ -553,6 +553,12 @@ describe('página do Projeto', () => {
     expect(destaques[2].textContent).toContain('1 parcela parcial');
     expect(destaques[2].textContent).not.toContain('próximo em fev/27');
 
+    // Aba Dinheiro: grupo com saldo_livre null quando has_balancete=true mostra situação e título "sem dado".
+    const linhasGrupos = Array.from(document.querySelectorAll('.abas__painel tbody tr'));
+    const linhaServicos = linhasGrupos.find((tr) => tr.textContent.includes('Serviços'));
+    expect(linhaServicos.querySelector('.situacao').textContent).toBe('sem dado');
+    expect(linhaServicos.querySelector('.valor[title="sem dado"]')).not.toBeNull();
+
     explicarLivreMock.mockResolvedValue({
       dados: {
         valor: 60000,
@@ -1053,8 +1059,159 @@ describe('página do Projeto', () => {
       campo: 'valor_total_plano',
     });
     expect(document.querySelector('.documento')).toBeNull();
-    expect(document.querySelector('.abas__painel .aviso-falha').textContent).toContain(
+    expect(document.querySelector('.abas__painel .aviso-falha')).toBeNull();
+    expect(document.querySelector('.abas__painel .projeto__nota-discreta').textContent).toContain(
       'Plano sem arquivo disponível'
     );
+  });
+
+  it('2ª rodada: rejeições com catch, a_receber ausente, Destaque sem grupos, árvore sem partes, grupo ausente e centavos no reserva', async () => {
+    // Item 7: a_receber ausente não vira 0 e não classifica parcela como nota_emitida/parcial.
+    configurarPadrao({ grupos: [] });
+    repassesMock.mockResolvedValueOnce({
+      dados: {
+        parcelas: [
+          { parcela: 1, data_prevista: '2026-01-15', data_texto: null, valor: 100000, valor_texto: null },
+          { parcela: 2, data_prevista: '2026-06-15', data_texto: null, valor: 100000, valor_texto: null },
+        ],
+        valor_total_plano: 200000,
+        data_balancete: '2026-10-15',
+        recursos: { recebido: 150000 },
+      },
+      erro: null,
+    });
+
+    render(
+      <Projeto
+        projectId="p-rec-sem-ar"
+        hoje="2026-11-18"
+        resumoCentro={{ id: 'p-rec-sem-ar', code: '30.911', name: 'Sem a_receber', livre: 50000, situacao: 'em dia' }}
+      />,
+      document.body
+    );
+    await tick();
+
+    const destaquesSemAr = Array.from(document.querySelectorAll('.destaque'));
+    expect(destaquesSemAr[2].textContent).toContain('—');
+    expect(destaquesSemAr[2].textContent).toContain('sem dados de recurso');
+    expect(destaquesSemAr[2].textContent).not.toContain('parcial');
+    expect(destaquesSemAr[2].textContent).not.toContain('nota');
+
+    // Item 5a (clicabilidade): com resumoCentro.livre finito mas grupos=[], Destaque NÃO abre árvore.
+    expect(destaquesSemAr[0].querySelector('button.valor--origem')).toBeNull();
+
+    // Itens 3 & 10: rejeições com try/catch + comparação em centavos (diferença de 0,01 acusa divergência).
+    render(null, document.body);
+    configurarPadrao({
+      grupos: [
+        { grupo_code: 'a', grupo_name: 'Pessoal', previsto: 200, realizado: 100, compromissos: 0, saldo_livre: 100.01, compromissos_cobertura: 'bolsas' },
+      ],
+    });
+    explicarLivreMock.mockRejectedValueOnce(new Error('rede caiu'));
+    origemMock.mockRejectedValueOnce(new Error('erro inesperado'));
+
+    render(
+      <Projeto
+        projectId="p-r2"
+        hoje="2026-11-18"
+        resumoCentro={{ id: 'p-r2', code: '30.912', name: 'Projeto R2', livre: 100.0, situacao: 'em dia' }}
+      />,
+      document.body
+    );
+    await tick();
+
+    document.querySelector('.destaque--principal button.valor--origem').click();
+    await tick();
+    const painel = document.querySelector('.painel-lateral');
+    expect(painel.querySelector('[role="status"]')).toBeNull();
+    const avisosReserva = painel.querySelectorAll('.aviso-falha');
+    // 1º AvisoFalha do erro em explicarLivre + 2º AvisoFalha da divergência exata de R$ 0,01!
+    expect(avisosReserva.length).toBeGreaterThanOrEqual(2);
+    expect(painel.textContent).toContain('difere do valor exibido');
+
+    // Item 5a (árvore vazia enquanto resumo tem número -> mostra motivo + fallback por grupo, não Vazio)
+    // e Item 5b (grupo ausente da árvore -> nota neutra + reserva sem AvisoFalha e sem Tentar de novo).
+    explicarLivreMock.mockResolvedValueOnce({
+      dados: {
+        valor: 100,
+        motivo: null,
+        data_referencia: '2026-10-15',
+        rotulo: 'Livre para gastar',
+        tipo: 'calculo',
+        conta: null,
+        chave: 'livre',
+        sinal: 1,
+        ref: null,
+        nota: null,
+        partes: [],
+      },
+      erro: null,
+    });
+    painel.querySelector('.aviso-falha button').click();
+    await tick();
+    expect(painel.querySelector('.vazio')).toBeNull();
+    expect(painel.querySelector('.projeto__nota-discreta').textContent).toContain('sem partes');
+    expect(painel.textContent).toContain('Pessoal');
+
+    // Fecha e clica na linha do grupo Pessoal (ausente de partes: []): nota neutra, sem AvisoFalha e sem "Tentar de novo".
+    document.querySelector('.painel-lateral__fechar').click();
+    await tick();
+    document.querySelector('.abas__painel .tabela__gatilho').click();
+    await tick();
+    const painelGrupoAusente = document.querySelector('.painel-lateral');
+    expect(painelGrupoAusente.querySelector('.aviso-falha')).toBeNull();
+    expect(painelGrupoAusente.textContent).not.toContain('Tentar de novo');
+    expect(painelGrupoAusente.querySelector('.projeto__nota-discreta').textContent).toContain(
+      'não está disponível'
+    );
+    expect(painelGrupoAusente.textContent).toContain('Previsto');
+
+    // Item 3 (abrirDocumentoDaAba rejeitado via try/catch -> libera carregando e mostra AvisoFalha).
+    document.querySelector('.painel-lateral__fechar').click();
+    await tick();
+    Array.from(document.querySelectorAll('[role="tab"]')).find((t) => t.textContent.includes('Documentos')).click();
+    await tick();
+    document.querySelector('.abas__painel .tabela__gatilho').click();
+    await tick();
+    expect(document.querySelector('.abas__painel [role="status"]')).toBeNull();
+    expect(document.querySelector('.abas__painel .aviso-falha').textContent).toContain(
+      'Não foi possível consultar o documento.'
+    );
+
+    // Item 5a (valor: null + motivo enquanto resumoCentro.livre tem número -> mostra motivo + reserva, não Vazio).
+    render(null, document.body);
+    explicarLivreMock.mockResolvedValueOnce({
+      dados: {
+        valor: null,
+        motivo: 'leitura parcial pendente',
+        data_referencia: '2026-10-15',
+        rotulo: 'Livre para gastar',
+        tipo: 'calculo',
+        conta: null,
+        chave: 'livre',
+        sinal: 1,
+        ref: null,
+        nota: null,
+        partes: [],
+      },
+      erro: null,
+    });
+    render(
+      <Projeto
+        projectId="p-r2"
+        hoje="2026-11-18"
+        resumoCentro={{ id: 'p-r2', code: '30.912', name: 'Projeto R2', livre: 100.0, situacao: 'em dia' }}
+      />,
+      document.body
+    );
+    await tick();
+    document.querySelector('.destaque--principal button.valor--origem').click();
+    await tick();
+    const painelRaizMotivo = document.querySelector('.painel-lateral');
+    expect(painelRaizMotivo.querySelector('.vazio')).toBeNull();
+    expect(painelRaizMotivo.querySelector('.projeto__nota-discreta').textContent).toContain(
+      'leitura parcial pendente'
+    );
+    expect(painelRaizMotivo.textContent).toContain('Pessoal');
   });
 });

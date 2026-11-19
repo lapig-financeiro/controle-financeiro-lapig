@@ -106,3 +106,79 @@ Todos os comandos abaixo foram executados após a última edição no código e 
 - **Desvios do contrato**: nenhum. Todos os campos de `explicar_livre_v2`, `get_origem_v2` e `storage.from(bucket).createSignedUrl` seguem exatamente o contrato F2-A/F2-C.
 - **Uso de `npm.cmd` no Windows PowerShell**: a execução de `npm.ps1` estava bloqueada pela ExecutionPolicy local, então os comandos npm foram executados via `npm.cmd`.
 - **Dúvidas / observação para a integração com a F2-A**: em `Projeto.jsx`, quando `resumo_projetos_v2` traz `situacao = 'sem números'` ou `has_plano && has_balancete && grupos.length === 0`, o Destaque principal fica não clicável (`—`). Se em algum centro `resumo_projetos_v2` trouxer `livre` nulo por outro motivo ainda não mapeado na F1, `Projeto.jsx` já impede abrir a árvore.
+
+---
+
+## 2ª rodada
+
+Todas as 13 correções listadas em [`docs/redesenho/tarefas/F2-C-rodada2.md`](../tarefas/F2-C-rodada2.md) foram aplicadas e verificadas nesta branch (`redesenho/f2-c-telas`).
+
+### Correções aplicadas
+
+1. **Sanitizador do DOCX (`app/src/componentes/Documento.jsx`)**: `sanitizarHtmlDocx` agora remove também `noscript`, `template`, `noembed`, `noframes`, `xmp` e `plaintext`, devolve `''` quando `DOMParser` não existe (falha fechada) e é reexecutada depois de `marcarNoHtml`.
+2. **Validação recursiva da árvore (`app/src/servicos/dados.js`, `Projeto.jsx`, `DeOndeVem.jsx`)**: `validarArvoreExplicacao` passou a validar recursivamente todo nó (`rotulo`, `tipo` entre os 4 permitidos, `partes` array, `ref` válido quando presente, `valor` finito nos filhos), bloqueando payloads como `partes: [null]` também nas respostas do modo exemplo (`responderExemplo`). `Projeto.jsx` e `DeOndeVem.jsx` também ignoram entradas nulas defensivamente.
+3. **Tratamento de exceções (`app/src/paginas/Projeto.jsx`)**: `carregarExplicar` e `abrirDocumentoDaAba` envolvem as chamadas assíncronas em `try/catch`, convertendo rejeições em `erro` explícito e encerrando o estado de carregamento.
+4. **Folhas concorrentes (`app/src/componentes/DeOndeVem.jsx`)**: trocado o contador global único por geração por caminho (`genPorCaminhoRef`) com registro do último clique de abertura de documento (`ultimoCliqueDocRef`), de modo que clicar na folha B não deixe A presa em `"Consultando origem…"`; `buscaTexto` passa a ser limpo no início de uma nova consulta e no erro.
+5. **Clicabilidade e ramos do painel (`app/src/paginas/Projeto.jsx`, `DeOndeVem.jsx`)**:
+   - `podeAbrirOrigem` exige também `grupos.length > 0`;
+   - quando `explicarLivre` devolve `valor: null` ou `partes: []` enquanto o resumo tem número, o painel exibe o motivo **e** a composição reserva por grupo (em vez de `<Vazio>`);
+   - quando o grupo clicado não está presente na árvore, exibe nota neutra + composição reserva por rubrica, sem `AvisoFalha` nem botão `"Tentar de novo"`;
+   - `verificarFechamentoArvore` e `<DeOndeVem>` passaram a usar padrão `valorEsperado = undefined`, acusando divergência quando `valorEsperado={null}` (Destaque nulo com raiz finita).
+6. **Grupo com `saldo_livre` nulo (`app/src/paginas/Projeto.jsx`)**: quando `hasBalancete` é `true`, `situacaoGrupo` retorna `'sem dado'` e os `<Valor>` da tabela/reserva recebem `motivoSemDado="sem dado"`.
+7. **`a_receber` ausente em repasses (`app/src/paginas/Projeto.jsx`)**: `resumirRepasses` preserva `a_receber: null` (sem converter para `0`); quando `a_receber` está ausente/nulo, não classifica parcelas como `nota_emitida`/`parcial` e exibe `"sem dados de recurso"`.
+8. **Visualizador `Documento` (`app/src/componentes/Documento.jsx`)**:
+   - critério passa a refletir a página efetivamente aberta quando a busca encontra o trecho em outra página (`formatarCriterioDocumento`);
+   - `medidaPagina` guarda `{ pagina, zoom, faixas }` e limpa as faixas imediatamente ao trocar página ou zoom (inclusive enquanto `pdf.getPage` ainda está pendente);
+   - falhas de download/leitura atualizam `criterio` para `"não foi possível ler o documento"`;
+   - `legado` sem `busca` (ou sem `conta_codigo`, `texto` ou `valor` válido) pula `getTextContent` e `acharAlvo` e abre a página 1 sem faixa;
+   - no DOCX, a busca reutiliza `acharAlvo` linha a linha / por `<tr>`, exigindo `prefixo` e `reduzido` na mesma linha para `prefixo#reduzido`, e rejeita `valor: ''` para que não vire `0`.
+9. **Aba Documentos (`app/src/paginas/Projeto.jsx`)**: documento sem arquivo disponível (`docAbaSt.nota`) renderiza nota discreta (`<p class="projeto__nota-discreta" role="status">`) em vez de `AvisoFalha`.
+10. **Painel de reserva em centavos (`app/src/paginas/Projeto.jsx`)**: `somarGrupos` e `divergeDoResumo` comparam exatamente em centavos (`Math.round(x * 100)`), sem tolerância de `0,01`.
+11. **Exemplo fora do build (`app/scripts/gerar-pdf-exemplo.mjs`, `app/src/App.jsx`, `app/scripts/verificar-build.mjs`)**: manifesto gerado leva `sentinela: '__EXEMPLO_CF__'`; condições do usuário de exemplo em `App.jsx` usam `import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo'` diretamente para eliminação pelo Rollup; `MARCADORES_EXEMPLO` em `verificar-build.mjs` inclui `'Admin de exemplo'` e `'exemplo@lapig.ufg.br'`.
+12. **CSP no começo do `<head>` (`app/vite.config.js`, `app/scripts/verificar-build.mjs`)**: `inserirCspNoHead` injeta `<meta http-equiv="Content-Security-Policy" ...>` logo após `<meta charset="UTF-8">`, antes de qualquer `<link>` ou `<script>`, validado também por `verificarCspIndexHtml`.
+13. **Endurecimento dos testes (`app/tests/**`)**: detalhado abaixo.
+
+### Bundle atualizado (2ª rodada)
+
+Medido via `npm.cmd --prefix app run build`:
+
+- `dist/index.html`: `0,99 kB` (`0,55 kB` gzip) — `<meta http-equiv="Content-Security-Policy">` posicionada na linha 5, antes de `<link>` e `<script>`
+- `dist/assets/index-*.css`: `45,03 kB` (`7,22 kB` gzip)
+- `dist/assets/index-*.js`: `381,25 kB` (`106,11 kB` gzip)
+- `dist/assets/pdf-*.js`: `365,12 kB` (`107,61 kB` gzip)
+- `dist/assets/pdf.worker.min-*.mjs`: `1.375,84 kB` (`pdf.worker.min-*.js`: `0,10 kB`)
+- `dist/assets/mammoth.browser.min-*.js`: `499,35 kB` (`125,32 kB` gzip)
+
+### Quais testes mudaram na 2ª rodada
+
+- [`app/tests/documento.test.jsx`](../../app/tests/documento.test.jsx) (passou para **10 testes**):
+  - ajustado o caso `pagina: null` + `bbox: null` para esperar `'lido na página 2 (leitor pt-pdf 2.1)'` (página efetiva aberta pela busca) e acrescentado caso em que `fato.pagina: 1` abre e reporta página 2;
+  - acrescentadas asserções de `criterio === 'não foi possível ler o documento'` em erros de download (incluindo `tipoOrigem="legado"`);
+  - adicionado teste dos 4 valores exatos `--faixa-*` (`46px`, `124px`, `333px`, `27px`) com `devicePixelRatio` `1` e `2`, mais `getPage` atrasado limpando `.documento__faixa` imediatamente ao clicar em `"Próxima página"`;
+  - adicionado teste de `legado` sem `busca` válida garantindo zero chamadas a `getTextContent` e abertura na página 1 sem faixa;
+  - adicionado teste do sanitizador (`<noscript><p title="</noscript><img src=x onerror=alert(1)>">`, `template`/`noembed`/`noframes`/`xmp`/`plaintext`, ausência de `DOMParser` devolvendo `''`), código cortado `prefixo#reduzido` falhando em linhas separadas vs casando na mesma `<tr>`, e `valor: ''` sem casar `0,00` no DOCX.
+- [`app/tests/de-onde-vem.test.jsx`](../../app/tests/de-onde-vem.test.jsx) (passou para **4 testes**):
+  - adicionado teste cobrindo `partes: [null]`, `valorEsperado={null}` com raiz finita acusando divergência, duas folhas concorrentes sem travar a folha A em `"Consultando origem…"` (e sem reabrir o modal por cima de B), e limpeza de `buscaTexto` em nova consulta e erro.
+- [`app/tests/projeto.test.jsx`](../../app/tests/projeto.test.jsx) (passou para **10 testes**):
+  - atualizado o teste `aba Documentos...` para conferir ausência de `.aviso-falha` e presença de `.projeto__nota-discreta` quando o plano não tem arquivo;
+  - fortalecido o teste `nunca converte nulo em zero...` conferindo diretamente na `<tr>` de `Serviços` (`saldo_livre: null`, `has_balancete: true`) a situação `'sem dado'` e `Valor` com `title="sem dado"`;
+  - adicionado o teste `2ª rodada: rejeições com catch, a_receber ausente, Destaque sem grupos, árvore sem partes, grupo ausente e centavos no reserva` cobrindo itens 3, 5, 7 e 10.
+- [`app/tests/dados.test.js`](../../app/tests/dados.test.js) (passou para **13 testes**):
+  - adicionado teste rejeitando `'Admin de exemplo'` e `'exemplo@lapig.ufg.br'` em `verificarBuild`;
+  - adicionado teste validando `inserirCspNoHead`, `verificarCspIndexHtml` (posição antes de `<link>` e `<script>`) e conferindo o `app/dist/index.html` real gerado pelo build;
+  - adicionado teste de validação recursiva de `explicarLivre` (`partes: [null]`, `tipo` inválido, filho nulo, `ref` inválido, neto com `partes` inválido);
+  - adicionado teste passando por `dados.js` com `vi.stubEnv('DEV', true)` e `vi.stubEnv('VITE_DADOS', 'exemplo')` com zero chamadas ao Supabase (e barrando resposta malformada também no modo exemplo);
+  - adicionado teste percorrendo todas as 7 árvores de `ARVORES_EXEMPLO` (expondo todos os centros via `salvarFiltroVisao([])`) garantindo fechamento ao centavo e batimento com `resumoProjetos`.
+- [`app/tests/pdf-exemplo.test.js`](../../app/tests/pdf-exemplo.test.js) (atualizado):
+  - validada a presença de `manifesto.sentinela === '__EXEMPLO_CF__'`;
+  - substituída a soma fixa em código pela leitura real dos valores das linhas do PDF extraído pelo `pdfjs-dist` + `acharAlvo`, comparando cada conta com as 6 folhas de `dadosExemplo.explicarLivre` de `30.901`, além dos totais por grupo e `TOTAL DE DEBITOS`.
+- [`app/tests/origem-declarada.test.js`](../../app/tests/origem-declarada.test.js) (atualizado):
+  - varredura recursiva em subpastas de `app/src/paginas/`;
+  - detecção de ternários com ramo nulo (`null`/`undefined`/`false`) e `&&` em `origem`/`onOrigem`, com testes sintéticos incluindo subpasta temporária.
+
+### Verificação final (2ª rodada)
+
+- `npm.cmd --prefix app run build`: **verde** (0 violações de estilo, 0 dados/arquivos de exemplo no bundle, CSP validada no início do `<head>` de `dist/index.html`).
+- `npm.cmd --prefix app test`: **13 arquivos, 81 testes passando (81/81)**.
+- `npm.cmd run lint`: **0 erros, 0 avisos**.
+- `npm.cmd test`: **36 arquivos passando, 571 testes passando e 5 ignorados (576 total)** (os mesmos 5 testes de `tests/pt-parser.test.js` que dependem das fixtures privadas locais não versionadas).

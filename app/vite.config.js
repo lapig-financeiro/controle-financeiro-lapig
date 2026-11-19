@@ -8,7 +8,7 @@ import { garantirPdfExemplo, NOME_PDF_EXEMPLO } from './scripts/gerar-pdf-exempl
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = '/controle-financeiro-lapig/v2/';
 
-const CSP_BUILD = [
+export const CSP_BUILD = [
   "default-src 'self'",
   "script-src 'self'",
   "worker-src 'self' blob:",
@@ -21,15 +21,23 @@ const CSP_BUILD = [
   "form-action 'self'",
 ].join('; ') + ';';
 
+export function inserirCspNoHead(html) {
+  const tagCsp = `<meta http-equiv="Content-Security-Policy" content="${CSP_BUILD}">`;
+  if (/<meta\s+charset=[^>]*>/i.test(html)) {
+    return html.replace(/(<meta\s+charset=[^>]*>)/i, `$1\n  ${tagCsp}`);
+  }
+  return html.replace(/(<head[^>]*>)/i, `$1\n  ${tagCsp}`);
+}
+
 function cspApenasNoBuild() {
   return {
     name: 'csp-apenas-no-build',
-    transformIndexHtml(html, ctx) {
-      if (!ctx?.bundle) return html;
-      return html.replace(
-        '</head>',
-        `  <meta http-equiv="Content-Security-Policy" content="${CSP_BUILD}">\n</head>`
-      );
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        if (!ctx?.bundle) return html;
+        return inserirCspNoHead(html);
+      },
     },
   };
 }

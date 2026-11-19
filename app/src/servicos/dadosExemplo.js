@@ -1022,7 +1022,7 @@ function noFolha({ rotulo, valor, tipo, chave, sinal = 1, ref = null, nota = nul
   };
 }
 
-const ARVORES_EXEMPLO = {
+export const ARVORES_EXEMPLO = {
   [IDS.cerrado]: noCalculo({
     rotulo: 'Livre para gastar',
     valor: 84300,

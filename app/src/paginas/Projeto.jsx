@@ -64,23 +64,24 @@ function numeroFinito(valor) {
 
 function somarGrupos(grupos) {
   if (!Array.isArray(grupos) || grupos.length === 0) {
-    return { soma: null, invalida: false };
+    return { soma: null, somaCentavos: null, invalida: false };
   }
-  let total = 0;
+  let totalCentavos = 0;
   for (const g of grupos) {
     const v = numeroFinito(g?.saldo_livre);
     if (v === null) {
-      return { soma: null, invalida: true };
+      return { soma: null, somaCentavos: null, invalida: true };
     }
-    total += v;
+    totalCentavos += Math.round(v * 100);
   }
-  return { soma: total, invalida: false };
+  return { soma: totalCentavos / 100, somaCentavos: totalCentavos, invalida: false };
 }
 
 function situacaoGrupo(grupo, hasBalancete, defasagemMeses) {
   if (!hasBalancete) return 'sem balancete';
   const livre = numeroFinito(grupo?.saldo_livre);
-  if (livre !== null && livre < 0) return 'problema';
+  if (livre === null) return 'sem dado';
+  if (livre < 0) return 'problema';
   const defasagem = numeroFinito(defasagemMeses);
   if (defasagem !== null && defasagem >= 2) {
     return 'atenção';
@@ -99,13 +100,17 @@ function resumirRepasses(repassesDados, hasPlano, hoje) {
   const recebidoValido = repassesDados.recursos
     ? numeroFinito(repassesDados.recursos.recebido)
     : null;
-  const recursosValidos = recebidoValido !== null
-    ? {
-        ...repassesDados.recursos,
-        recebido: recebidoValido,
-        a_receber: numeroFinito(repassesDados.recursos.a_receber) ?? 0,
-      }
+  const aReceberValido = repassesDados.recursos
+    ? numeroFinito(repassesDados.recursos.a_receber)
     : null;
+  const recursosValidos =
+    recebidoValido !== null && aReceberValido !== null
+      ? {
+          ...repassesDados.recursos,
+          recebido: recebidoValido,
+          a_receber: aReceberValido,
+        }
+      : null;
 
   const calc = situacaoDasParcelas({
     parcelas: repassesDados.parcelas || [],
@@ -291,12 +296,22 @@ export function Projeto({
     const id = projectId;
     const gen = ++genExplicarRef.current;
     setExplicarSt((prev) => ({ ...prev, carregando: true, erro: null }));
-    const res = await explicarLivre(id);
+    let res;
+    try {
+      res = await explicarLivre(id);
+    } catch {
+      res = { dados: null, erro: 'Não foi possível carregar a origem do saldo livre.' };
+    }
     if (!montadoRef.current || projectIdRef.current !== id || gen !== genExplicarRef.current) {
       return;
     }
-    if (res.erro) {
-      setExplicarSt({ carregando: false, dados: null, erro: res.erro, consultado: true });
+    if (res?.erro || !res?.dados) {
+      setExplicarSt({
+        carregando: false,
+        dados: null,
+        erro: res?.erro || 'Não foi possível carregar a origem do saldo livre.',
+        consultado: true,
+      });
       return;
     }
     setExplicarSt({ carregando: false, dados: res.dados, erro: null, consultado: true });
@@ -510,6 +525,7 @@ export function Projeto({
     !erroResumo &&
     hasPlano &&
     hasBalancete &&
+    grupos.length > 0 &&
     !semNumeros;
 
   const abrirPainelRaiz = () => {
@@ -739,12 +755,18 @@ export function Projeto({
     }
   };
 
-  const { soma: somaGrupos, invalida: somaGruposInvalida } = somarGrupos(grupos);
+  const {
+    soma: somaGrupos,
+    somaCentavos: somaGruposCentavos,
+    invalida: somaGruposInvalida,
+  } = somarGrupos(grupos);
   const livreResumoNum = numeroFinito(resumoCentro?.livre);
+  const livreResumoCentavos =
+    livreResumoNum !== null ? Math.round(livreResumoNum * 100) : null;
   const divergeDoResumo =
     grupos.length > 0 &&
     (somaGruposInvalida ||
-      (livreResumoNum !== null && Math.abs(somaGrupos - livreResumoNum) > 0.01));
+      (livreResumoCentavos !== null && somaGruposCentavos !== livreResumoCentavos));
 
   const temErroDocs = Boolean(docsSt.erroBalancetes || docsSt.erroPlanos);
   const documentosUnificados = [
@@ -793,7 +815,12 @@ export function Projeto({
       doc: null,
     });
 
-    const res = await origem(docItem.ref);
+    let res;
+    try {
+      res = await origem(docItem.ref);
+    } catch {
+      res = { dados: null, erro: 'Não foi possível consultar o documento.' };
+    }
     if (!montadoRef.current || projectIdRef.current !== idProjeto || gen !== genDocAbaRef.current) {
       return;
     }
@@ -868,7 +895,7 @@ export function Projeto({
           centavos={false}
           semPrefixo
           alinhadoDireita
-          motivoSemDado="sem balancete"
+          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
           semOrigem="Realizado do grupo no balancete (clique na linha para ver a origem)"
         />
       ),
@@ -883,7 +910,7 @@ export function Projeto({
           centavos={false}
           semPrefixo
           alinhadoDireita
-          motivoSemDado="sem balancete"
+          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
           semOrigem="Compromissos do grupo (clique na linha para ver a origem)"
         />
       ),
@@ -897,9 +924,13 @@ export function Projeto({
           valor={hasBalancete ? g.saldo_livre : null}
           centavos={false}
           semPrefixo
-          problema={hasBalancete && Number(g.saldo_livre) < 0}
+          problema={
+            hasBalancete &&
+            numeroFinito(g.saldo_livre) !== null &&
+            Number(g.saldo_livre) < 0
+          }
           alinhadoDireita
-          motivoSemDado="sem balancete"
+          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
           semOrigem="Saldo livre do grupo (clique na linha para ver a origem)"
         />
       ),
@@ -1073,7 +1104,9 @@ export function Projeto({
             />
           )}
           {docAbaSt.nota && (
-            <AvisoFalha mensagem={docAbaSt.nota} />
+            <p class="projeto__nota-discreta" role="status">
+              {docAbaSt.nota}
+            </p>
           )}
           {documentosUnificados.length > 0 ? (
             <Tabela
@@ -1213,7 +1246,9 @@ export function Projeto({
     : [];
   const noGrupoArvore =
     grupoPainel && Array.isArray(explicarSt.dados?.partes)
-      ? explicarSt.dados.partes.find((p) => p.chave === `grupo:${grupoPainel.grupo_code}`) || null
+      ? explicarSt.dados.partes.find(
+          (p) => p && typeof p === 'object' && p.chave === `grupo:${grupoPainel.grupo_code}`
+        ) || null
       : null;
 
   const renderPainelGruposFallback = () => (
@@ -1315,7 +1350,7 @@ export function Projeto({
             <Valor
               valor={hasBalancete ? grupo.realizado : null}
               centavos
-              motivoSemDado="sem balancete"
+              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
               semOrigem="Realizado do grupo na composição reserva"
             />
           </dd>
@@ -1326,7 +1361,7 @@ export function Projeto({
             <Valor
               valor={hasBalancete ? grupo.compromissos : null}
               centavos
-              motivoSemDado="sem balancete"
+              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
               semOrigem="Comprometido do grupo na composição reserva"
             />
           </dd>
@@ -1337,8 +1372,12 @@ export function Projeto({
             <Valor
               valor={hasBalancete ? grupo.saldo_livre : null}
               centavos
-              problema={hasBalancete && Number(grupo.saldo_livre) < 0}
-              motivoSemDado="sem balancete"
+              problema={
+                hasBalancete &&
+                numeroFinito(grupo.saldo_livre) !== null &&
+                Number(grupo.saldo_livre) < 0
+              }
+              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
               semOrigem="Saldo livre do grupo na composição reserva"
             />
           </dd>
@@ -1366,8 +1405,12 @@ export function Projeto({
                     <Valor
                       valor={hasBalancete ? r.saldo_livre : null}
                       centavos
-                      problema={hasBalancete && Number(r.saldo_livre) < 0}
-                      motivoSemDado="sem balancete"
+                      problema={
+                        hasBalancete &&
+                        numeroFinito(r.saldo_livre) !== null &&
+                        Number(r.saldo_livre) < 0
+                      }
+                      motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
                       semOrigem="Saldo livre da rubrica na composição reserva"
                     />
                   </dd>
@@ -1383,14 +1426,14 @@ export function Projeto({
                   <Valor
                     valor={hasBalancete ? r.realizado : null}
                     centavos
-                    motivoSemDado="sem balancete"
+                    motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
                     semOrigem="Realizado da rubrica na composição reserva"
                   />{' '}
                   · Comprometido{' '}
                   <Valor
                     valor={hasBalancete ? r.compromissos : null}
                     centavos
-                    motivoSemDado="sem balancete"
+                    motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
                     semOrigem="Comprometido da rubrica na composição reserva"
                   />
                 </span>
@@ -1401,6 +1444,20 @@ export function Projeto({
       )}
     </>
   );
+
+  const arvoreDados = explicarSt.dados;
+  const arvoreRaizNula = Boolean(
+    arvoreDados && (arvoreDados.valor === null || arvoreDados.valor === undefined)
+  );
+  const arvoreSemPartes = Boolean(
+    arvoreDados && (!Array.isArray(arvoreDados.partes) || arvoreDados.partes.length === 0)
+  );
+  const arvoreSemDetalhesComResumo = (arvoreRaizNula || arvoreSemPartes) && livreResumoNum !== null;
+  const motivoSemDetalhes = arvoreDados?.motivo
+    ? `Sem árvore detalhada (${arvoreDados.motivo}); exibindo a composição por grupo.`
+    : arvoreRaizNula
+      ? 'A árvore detalhada veio sem valor; exibindo a composição por grupo.'
+      : 'A árvore detalhada veio sem partes; exibindo a composição por grupo.';
 
   return (
     <div class="conteudo">
@@ -1468,16 +1525,21 @@ export function Projeto({
               <AvisoFalha mensagem={explicarSt.erro} aoTentarNovamente={carregarExplicar} />
               {grupos.length > 0 && renderPainelGruposFallback()}
             </div>
-          ) : explicarSt.dados?.valor === null ? (
+          ) : arvoreSemDetalhesComResumo ? (
+            <div class="projeto__painel-reserva">
+              <p class="projeto__nota-discreta">{motivoSemDetalhes}</p>
+              {grupos.length > 0 && renderPainelGruposFallback()}
+            </div>
+          ) : arvoreRaizNula ? (
             <Vazio
               mensagem={
-                explicarSt.dados.motivo
-                  ? `Sem dados para explicar: ${explicarSt.dados.motivo}.`
+                arvoreDados.motivo
+                  ? `Sem dados para explicar: ${arvoreDados.motivo}.`
                   : 'Sem dados de origem.'
               }
             />
-          ) : explicarSt.dados ? (
-            <DeOndeVem arvore={explicarSt.dados} valorEsperado={livreResumoNum} />
+          ) : arvoreDados ? (
+            <DeOndeVem arvore={arvoreDados} valorEsperado={livreResumoNum} />
           ) : null
         )}
 
@@ -1494,21 +1556,20 @@ export function Projeto({
               arvore={noGrupoArvore}
               valorEsperado={numeroFinito(grupoPainel.saldo_livre)}
             />
-          ) : explicarSt.dados?.valor === null ? (
+          ) : arvoreRaizNula ? (
             <div class="projeto__painel-reserva">
               <p class="projeto__nota-discreta">
-                {explicarSt.dados.motivo
-                  ? `Sem árvore detalhada (${explicarSt.dados.motivo}); exibindo a composição por rubrica.`
+                {arvoreDados.motivo
+                  ? `Sem árvore detalhada (${arvoreDados.motivo}); exibindo a composição por rubrica.`
                   : 'Sem árvore detalhada; exibindo a composição por rubrica.'}
               </p>
               {renderPainelGrupoDetalheFallback(grupoPainel)}
             </div>
           ) : explicarSt.consultado ? (
             <div class="projeto__painel-reserva">
-              <AvisoFalha
-                mensagem="A árvore detalhada deste grupo não está disponível; exibindo a composição por rubrica."
-                aoTentarNovamente={carregarExplicar}
-              />
+              <p class="projeto__nota-discreta">
+                A árvore detalhada deste grupo não está disponível; exibindo a composição por rubrica.
+              </p>
               {renderPainelGrupoDetalheFallback(grupoPainel)}
             </div>
           ) : null

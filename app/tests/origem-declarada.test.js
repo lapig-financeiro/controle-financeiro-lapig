@@ -1,10 +1,24 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIRETORIO_PAGINAS = path.resolve(__dirname, '../src/paginas');
+
+function listarArquivosJsx(diretorio) {
+  const resultado = [];
+  for (const entrada of fs.readdirSync(diretorio, { withFileTypes: true })) {
+    const completo = path.join(diretorio, entrada.name);
+    if (entrada.isDirectory()) {
+      resultado.push(...listarArquivosJsx(completo));
+    } else if (entrada.name.endsWith('.jsx')) {
+      resultado.push(completo);
+    }
+  }
+  return resultado.sort();
+}
 
 function pularString(codigo, inicio, aspa) {
   let i = inicio + 1;
@@ -157,16 +171,141 @@ function parsearAtributos(bruto) {
   return attrs;
 }
 
+function removerParentesesExternos(expr) {
+  let s = expr.trim();
+  while (s.startsWith('(') && s.endsWith(')')) {
+    let prof = 0;
+    let aspa = null;
+    let fechaNoFim = true;
+    for (let i = 0; i < s.length; i += 1) {
+      const c = s[i];
+      if (aspa) {
+        if (c === '\\') {
+          i += 1;
+          continue;
+        }
+        if (c === aspa) aspa = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') aspa = c;
+      else if (c === '(' || c === '{' || c === '[') prof += 1;
+      else if (c === ')' || c === '}' || c === ']') {
+        prof -= 1;
+        if (prof === 0 && i < s.length - 1) {
+          fechaNoFim = false;
+          break;
+        }
+      }
+    }
+    if (!fechaNoFim || prof !== 0) break;
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+function dividirTernarioNivelZero(expr) {
+  let profParen = 0;
+  let profChave = 0;
+  let profColchete = 0;
+  let aspa = null;
+  let idxInterrogacao = -1;
+  let ternariosAninhados = 0;
+
+  for (let i = 0; i < expr.length; i += 1) {
+    const c = expr[i];
+    if (aspa) {
+      if (c === '\\') {
+        i += 1;
+        continue;
+      }
+      if (c === aspa) aspa = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      aspa = c;
+      continue;
+    }
+    if (c === '(') profParen += 1;
+    else if (c === ')') profParen -= 1;
+    else if (c === '{') profChave += 1;
+    else if (c === '}') profChave -= 1;
+    else if (c === '[') profColchete += 1;
+    else if (c === ']') profColchete -= 1;
+    else if (profParen === 0 && profChave === 0 && profColchete === 0) {
+      if (c === '?' && expr[i + 1] !== '?' && expr[i + 1] !== '.') {
+        if (idxInterrogacao === -1) idxInterrogacao = i;
+        else ternariosAninhados += 1;
+      } else if (c === ':' && idxInterrogacao !== -1) {
+        if (ternariosAninhados === 0) {
+          return {
+            consequente: expr.slice(idxInterrogacao + 1, i).trim(),
+            alternativa: expr.slice(i + 1).trim(),
+          };
+        }
+        ternariosAninhados -= 1;
+      }
+    }
+  }
+  return null;
+}
+
+function temAndNivelZero(expr) {
+  let profParen = 0;
+  let profChave = 0;
+  let profColchete = 0;
+  let aspa = null;
+  for (let i = 0; i < expr.length; i += 1) {
+    const c = expr[i];
+    if (aspa) {
+      if (c === '\\') {
+        i += 1;
+        continue;
+      }
+      if (c === aspa) aspa = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      aspa = c;
+      continue;
+    }
+    if (c === '(') profParen += 1;
+    else if (c === ')') profParen -= 1;
+    else if (c === '{') profChave += 1;
+    else if (c === '}') profChave -= 1;
+    else if (c === '[') profColchete += 1;
+    else if (c === ']') profColchete -= 1;
+    else if (
+      profParen === 0 &&
+      profChave === 0 &&
+      profColchete === 0 &&
+      c === '&' &&
+      expr[i + 1] === '&'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function exprJsNaoNula(raw) {
+  const v = removerParentesesExternos(raw);
+  if (!v || v === 'null' || v === 'undefined' || v === 'false' || v === '""' || v === "''" || v === '0' || v === 'NaN') {
+    return false;
+  }
+  const ternario = dividirTernarioNivelZero(v);
+  if (ternario) {
+    return exprJsNaoNula(ternario.consequente) && exprJsNaoNula(ternario.alternativa);
+  }
+  if (temAndNivelZero(v)) {
+    return false;
+  }
+  return true;
+}
+
 function expressaoNaoNula(attr) {
   if (!attr) return false;
   if (attr.tipo === 'string') return attr.valor.trim().length > 0;
-  if (attr.tipo === 'expr') {
-    const v = attr.valor.trim();
-    if (!v || v === 'null' || v === 'undefined' || v === 'false' || v === '""' || v === "''") {
-      return false;
-    }
-    return true;
-  }
+  if (attr.tipo === 'expr') return exprJsNaoNula(attr.valor);
   return false;
 }
 
@@ -202,25 +341,25 @@ export function verificarOrigemDeclaradaEmCodigo(codigo, arquivo = 'Pagina.jsx')
   return violacoes;
 }
 
+export function verificarOrigemDeclaradaEmDiretorio(diretorio) {
+  const arquivos = listarArquivosJsx(diretorio);
+  const todasViolacoes = [];
+  for (const caminho of arquivos) {
+    const relativo = path.relative(diretorio, caminho).replace(/\\/g, '/');
+    const conteudo = fs.readFileSync(caminho, 'utf8');
+    todasViolacoes.push(...verificarOrigemDeclaradaEmCodigo(conteudo, relativo));
+  }
+  return { arquivos, violacoes: todasViolacoes };
+}
+
 describe('regra da origem declarada em app/src/paginas/', () => {
-  it('todo <Valor> monetário em paginas/ declara origem+onOrigem ou semOrigem (pulando datas)', () => {
-    const arquivos = fs
-      .readdirSync(DIRETORIO_PAGINAS)
-      .filter((nome) => nome.endsWith('.jsx'))
-      .sort();
-
+  it('todo <Valor> monetário em paginas/ (incluindo subpastas) declara origem+onOrigem ou semOrigem (pulando datas)', () => {
+    const { arquivos, violacoes } = verificarOrigemDeclaradaEmDiretorio(DIRETORIO_PAGINAS);
     expect(arquivos.length).toBeGreaterThan(0);
-
-    const todasViolacoes = [];
-    for (const nome of arquivos) {
-      const conteudo = fs.readFileSync(path.join(DIRETORIO_PAGINAS, nome), 'utf8');
-      todasViolacoes.push(...verificarOrigemDeclaradaEmCodigo(conteudo, nome));
-    }
-
-    expect(todasViolacoes).toEqual([]);
+    expect(violacoes).toEqual([]);
   });
 
-  it('reprova casos sem origem/onOrigem/semOrigem válidos e aceita datas e casos declarados', () => {
+  it('reprova casos sem origem/onOrigem válidos, ternário com ramo nulo e subpastas sem declaração', () => {
     const codigo = `
       export function Exemplo({ pode, abrir }) {
         return (
@@ -230,16 +369,39 @@ describe('regra da origem declarada em app/src/paginas/', () => {
             <Valor valor={300} onOrigem={abrir} />
             <Valor valor={400} origem={null} onOrigem={abrir} />
             <Valor valor={500} semOrigem="" />
+            <Valor valor={510} origem={pode ? { resumo: 'Ver' } : null} onOrigem={abrir} />
+            <Valor valor={520} origem={{ resumo: 'Ver' }} onOrigem={pode ? abrir : undefined} />
+            <Valor valor={530} origem={pode && { resumo: 'Ver' }} onOrigem={abrir} />
             <Valor valor="2026-10-15" tipo="data" />
             <Valor valor="2026-10-15" tipo="data-completa" />
             <Valor valor={600} semOrigem="soma desta tela" />
             <Valor valor={700} origem={{ resumo: 'ok' }} onOrigem={abrir} />
+            <Valor valor={800} origem={pode ? { resumo: 'A' } : { resumo: 'B' }} onOrigem={abrir} />
+            <Valor valor={900} origem={pode ? { resumo: 'A' } : null} onOrigem={pode ? abrir : null} semOrigem="sem detalhe" />
           </>
         );
       }
     `;
 
     const violacoes = verificarOrigemDeclaradaEmCodigo(codigo, 'Teste.jsx');
-    expect(violacoes).toHaveLength(5);
+    expect(violacoes).toHaveLength(8);
+
+    // Confere varredura recursiva em subpasta.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'origem-decl-'));
+    try {
+      const subpasta = path.join(tmp, 'sub', 'detalhe');
+      fs.mkdirSync(subpasta, { recursive: true });
+      fs.writeFileSync(
+        path.join(subpasta, 'Interna.jsx'),
+        'export function Interna() { return <Valor valor={10} />; }\n',
+        'utf8'
+      );
+      const res = verificarOrigemDeclaradaEmDiretorio(tmp);
+      expect(res.arquivos).toHaveLength(1);
+      expect(res.violacoes).toHaveLength(1);
+      expect(res.violacoes[0].arquivo).toBe('sub/detalhe/Interna.jsx');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

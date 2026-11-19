@@ -19,9 +19,10 @@ function paraCentavos(valor) {
 
 /**
  * Confere se todos os nós `calculo` com partes fecham ao centavo (`Σ sinal × filho.valor === valor`)
- * e se a raiz bate com `valorEsperado`. Devolve as falhas e todos os ancestrais que devem abrir.
+ * e se a raiz bate com `valorEsperado` (quando passado, inclusive `null`).
+ * Devolve as falhas e todos os ancestrais que devem abrir.
  */
-export function verificarFechamentoArvore(raiz, valorEsperado = null) {
+export function verificarFechamentoArvore(raiz, valorEsperado = undefined) {
   const falhas = new Map();
   const caminhosAbrir = new Set();
 
@@ -48,8 +49,9 @@ export function verificarFechamentoArvore(raiz, valorEsperado = null) {
       }
 
       if (invalido || somaCent !== valorCent) {
+        const rotulo = typeof no.rotulo === 'string' && no.rotulo ? no.rotulo : 'este item';
         const mensagem = invalido
-          ? `Não foi possível fechar "${no.rotulo}" porque há parte sem valor válido.`
+          ? `Não foi possível fechar "${rotulo}" porque há parte sem valor válido.`
           : `A soma das partes (${dinheiro(somaCent / 100, { centavos: true })}) difere do valor exibido (${dinheiro(valorCent / 100, { centavos: true })}).`;
         falhas.set(caminho, mensagem);
         caminhosAbrir.add(caminho);
@@ -64,25 +66,32 @@ export function verificarFechamentoArvore(raiz, valorEsperado = null) {
 
   visitar(raiz, '0', []);
 
-  const esperadoCent = paraCentavos(valorEsperado);
   const raizCent = paraCentavos(raiz.valor);
-  if (esperadoCent !== null && raizCent !== null && esperadoCent !== raizCent) {
-    const msgDivergencia = `O total da árvore (${dinheiro(raizCent / 100, { centavos: true })}) difere do valor do painel (${dinheiro(esperadoCent / 100, { centavos: true })}).`;
-    const anterior = falhas.get('0');
-    falhas.set('0', anterior ? `${anterior} ${msgDivergencia}` : msgDivergencia);
-    caminhosAbrir.add('0');
+  if (valorEsperado !== undefined && raizCent !== null) {
+    const esperadoCent = paraCentavos(valorEsperado);
+    if (esperadoCent === null) {
+      const msgDivergencia = `O total da árvore (${dinheiro(raizCent / 100, { centavos: true })}) difere do painel, que não tem valor disponível.`;
+      const anterior = falhas.get('0');
+      falhas.set('0', anterior ? `${anterior} ${msgDivergencia}` : msgDivergencia);
+      caminhosAbrir.add('0');
+    } else if (esperadoCent !== raizCent) {
+      const msgDivergencia = `O total da árvore (${dinheiro(raizCent / 100, { centavos: true })}) difere do valor do painel (${dinheiro(esperadoCent / 100, { centavos: true })}).`;
+      const anterior = falhas.get('0');
+      falhas.set('0', anterior ? `${anterior} ${msgDivergencia}` : msgDivergencia);
+      caminhosAbrir.add('0');
+    }
   }
 
   return { falhas, caminhosAbrir };
 }
 
 function textoFolha(no, estadoFolha) {
-  if (no.tipo === 'digitado') {
+  if (no?.tipo === 'digitado') {
     return 'valor digitado, sem documento';
   }
-  if (no.tipo === 'legado') {
+  if (no?.tipo === 'legado') {
     if (estadoFolha?.buscaTexto) return estadoFolha.buscaTexto;
-    if (estadoFolha?.semArquivo || !no.ref) return 'anterior à rastreabilidade, sem arquivo';
+    if (estadoFolha?.semArquivo || !no?.ref) return 'anterior à rastreabilidade, sem arquivo';
     return 'anterior à rastreabilidade: a linha é procurada ao abrir';
   }
   return '';
@@ -101,7 +110,7 @@ function ehNoRaizOuGrupo(no, nivel) {
  */
 export function DeOndeVem({
   arvore = null,
-  valorEsperado = null,
+  valorEsperado = undefined,
   carregando = false,
   erro = null,
   aoTentarNovamente = null,
@@ -116,7 +125,9 @@ export function DeOndeVem({
   const [docAberto, setDocAberto] = useState(null);
 
   const montadoRef = useRef(true);
-  const genOrigemRef = useRef(0);
+  const arvoreGenRef = useRef(0);
+  const genPorCaminhoRef = useRef(new Map());
+  const ultimoCliqueDocRef = useRef(0);
   const buscarOrigemRef = useRef(buscarOrigem);
   buscarOrigemRef.current = buscarOrigem;
 
@@ -124,7 +135,8 @@ export function DeOndeVem({
     montadoRef.current = true;
     return () => {
       montadoRef.current = false;
-      genOrigemRef.current += 1;
+      arvoreGenRef.current += 1;
+      genPorCaminhoRef.current.clear();
     };
   }, []);
 
@@ -137,7 +149,9 @@ export function DeOndeVem({
     setAbertos({});
     setEstadoFolhas({});
     setDocAberto(null);
-    genOrigemRef.current += 1;
+    arvoreGenRef.current += 1;
+    genPorCaminhoRef.current.clear();
+    ultimoCliqueDocRef.current = 0;
   }, [arvore]);
 
   if (carregando) {
@@ -148,7 +162,7 @@ export function DeOndeVem({
     return <AvisoFalha mensagem={erro} aoTentarNovamente={aoTentarNovamente} />;
   }
 
-  if (!arvore) {
+  if (!arvore || typeof arvore !== 'object') {
     return <Vazio mensagem="Nenhuma explicação disponível." />;
   }
 
@@ -158,7 +172,10 @@ export function DeOndeVem({
 
   const consultarFolha = async (no, caminho) => {
     if (!no?.ref) return;
-    const gen = ++genOrigemRef.current;
+    const arvoreGen = arvoreGenRef.current;
+    const genCaminho = (genPorCaminhoRef.current.get(caminho) || 0) + 1;
+    genPorCaminhoRef.current.set(caminho, genCaminho);
+    const cliqueId = ++ultimoCliqueDocRef.current;
 
     setEstadoFolhas((prev) => ({
       ...prev,
@@ -167,6 +184,7 @@ export function DeOndeVem({
         carregando: true,
         erro: null,
         nota: null,
+        buscaTexto: null,
       },
     }));
 
@@ -177,7 +195,13 @@ export function DeOndeVem({
       res = { dados: null, erro: 'Não foi possível consultar a origem deste valor.' };
     }
 
-    if (!montadoRef.current || gen !== genOrigemRef.current) return;
+    if (
+      !montadoRef.current ||
+      arvoreGen !== arvoreGenRef.current ||
+      genPorCaminhoRef.current.get(caminho) !== genCaminho
+    ) {
+      return;
+    }
 
     if (res?.erro || !res?.dados) {
       setEstadoFolhas((prev) => ({
@@ -187,6 +211,7 @@ export function DeOndeVem({
           carregando: false,
           erro: res?.erro || 'Não foi possível consultar a origem deste valor.',
           nota: null,
+          buscaTexto: null,
         },
       }));
       return;
@@ -202,19 +227,23 @@ export function DeOndeVem({
           erro: null,
           nota: null,
           semArquivo: false,
+          buscaTexto: null,
         },
       }));
-      setDocAberto({
-        caminho,
-        titulo: dadosOrigem.documento.titulo || no.rotulo,
-        documento: dadosOrigem.documento,
-        tipoOrigem: dadosOrigem.tipo,
-        fato: dadosOrigem.fato,
-        busca: dadosOrigem.busca,
-        nota: dadosOrigem.nota,
-        valor: dadosOrigem.valor ?? no.valor,
-        parte: no.rotulo,
-      });
+      if (cliqueId === ultimoCliqueDocRef.current) {
+        setDocAberto({
+          caminho,
+          arvoreGen,
+          titulo: dadosOrigem.documento.titulo || no.rotulo,
+          documento: dadosOrigem.documento,
+          tipoOrigem: dadosOrigem.tipo,
+          fato: dadosOrigem.fato,
+          busca: dadosOrigem.busca,
+          nota: dadosOrigem.nota,
+          valor: dadosOrigem.valor ?? no.valor,
+          parte: no.rotulo,
+        });
+      }
     } else {
       const notaExplicita =
         typeof dadosOrigem.nota === 'string' && dadosOrigem.nota.trim()
@@ -231,6 +260,7 @@ export function DeOndeVem({
           erro: null,
           nota: notaSemDoc,
           semArquivo: dadosOrigem.tipo === 'legado',
+          buscaTexto: null,
         },
       }));
     }
@@ -261,6 +291,7 @@ export function DeOndeVem({
     return (
       <ul class={classeLista}>
         {partes.map((no, idx) => {
+          if (!no || typeof no !== 'object') return null;
           const caminho = `${caminhoPai}/${idx}`;
           const filhos = Array.isArray(no.partes) ? no.partes : [];
           const temFilhos = filhos.length > 0;
@@ -409,11 +440,12 @@ export function DeOndeVem({
         carregadorPdf={carregadorPdf}
         carregadorMammoth={carregadorMammoth}
         onResultadoBusca={(resBusca) => {
-          if (!docAberto?.caminho) return;
+          if (!docAberto?.caminho || docAberto.arvoreGen !== arvoreGenRef.current) return;
+          const caminhoDoc = docAberto.caminho;
           setEstadoFolhas((prev) => ({
             ...prev,
-            [docAberto.caminho]: {
-              ...(prev[docAberto.caminho] || {}),
+            [caminhoDoc]: {
+              ...(prev[caminhoDoc] || {}),
               buscaTexto: resBusca.texto,
             },
           }));

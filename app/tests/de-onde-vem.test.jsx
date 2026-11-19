@@ -390,4 +390,135 @@ describe('DeOndeVem', () => {
       'Falha ao consultar origem.'
     );
   });
+
+  it('trata folhas concorrentes sem travar A em carregando, limpa buscaTexto em nova consulta/erro e suporta partes nulas e valorEsperado nulo', async () => {
+    // Item 5c: raiz finita com valorEsperado=null acusa divergência.
+    const fechamentoNulo = verificarFechamentoArvore(ARVORE_COMPLETA, null);
+    expect(fechamentoNulo.falhas.has('0')).toBe(true);
+
+    // Item 2: partes com null não derruba DeOndeVem.
+    const comNulo = structuredClone(ARVORE_COMPLETA);
+    comNulo.partes.push(null);
+    render(<DeOndeVem arvore={comNulo} valorEsperado={null} />, document.body);
+    await tick();
+    const textoFalha = document.querySelector('.aviso-falha')?.textContent || '';
+    expect(textoFalha).toContain('parte sem valor válido');
+    expect(textoFalha).toContain('difere do painel');
+
+    // Item 4: folhas concorrentes e limpeza de buscaTexto.
+    render(null, document.body);
+    let resolverA;
+    let contadorLegado = 0;
+    const buscarOrigem = vi.fn((ref) => {
+      if (ref.alvo_id === 'bl-1') {
+        return new Promise((r) => {
+          resolverA = r;
+        });
+      }
+      if (ref.alvo_id === 'b-1') {
+        return Promise.resolve({
+          dados: {
+            tipo: 'digitado',
+            valor: 100,
+            documento: null,
+            fato: null,
+            busca: null,
+            nota: 'Nota da folha B.',
+          },
+          erro: null,
+        });
+      }
+      if (ref.alvo_id === 'bl-legado') {
+        contadorLegado += 1;
+        if (contadorLegado === 1) {
+          return Promise.resolve({
+            dados: {
+              tipo: 'legado',
+              valor: 150,
+              documento: {
+                id: 'doc-leg',
+                formato: 'pdf',
+                arquivo_nome: 'leg.pdf',
+                bucket: 'b',
+                caminho: 'c',
+              },
+              fato: null,
+              busca: { conta_codigo: '7.1.3.05.01.08124', valor: 41549.25 },
+              nota: null,
+            },
+            erro: null,
+          });
+        }
+        return Promise.resolve({ dados: null, erro: 'Falha na nova tentativa.' });
+      }
+      return Promise.resolve({ dados: null, erro: 'Erro' });
+    });
+
+    const pdfjsMock = criarPdfjsSimulado([['7.1.3.05.01.08124 CONSULTORIA 41.549,25']]);
+
+    render(
+      <DeOndeVem
+        arvore={ARVORE_COMPLETA}
+        buscarOrigem={buscarOrigem}
+        carregarArquivo={vi.fn().mockResolvedValue({ dados: new Uint8Array([1, 2]).buffer, erro: null })}
+        carregadorPdf={async () => pdfjsMock}
+      />,
+      document.body
+    );
+    await tick();
+
+    // Expande Pessoal -> Realizado — Bolsas e Equipamentos.
+    document.querySelector('button[aria-label*="Pessoal"]').click();
+    await tick();
+    document.querySelector('button[aria-label*="Realizado — Bolsas"]').click();
+    document.querySelector('button[aria-label*="Equipamentos"]').click();
+    await tick();
+
+    const acharItem = (trecho) =>
+      Array.from(document.querySelectorAll('.de-onde-vem__rotulo'))
+        .find((el) => el.textContent.includes(trecho))
+        .closest('.de-onde-vem__item');
+
+    const itemA = acharItem('Bolsa pesquisa');
+    const itemB = acharItem('Bolsista A');
+    itemA.querySelector('button.valor--origem').click();
+    await tick();
+    expect(itemA.querySelector('.de-onde-vem__status-folha')).not.toBeNull();
+
+    // Enquanto A está pendente, consulta folha B.
+    itemB.querySelector('button.valor--origem').click();
+    await tick();
+    expect(itemB.querySelector('.de-onde-vem__nota-folha').textContent).toContain('Nota da folha B.');
+
+    // Agora A resolve com documento: A sai de "Consultando origem…", mas NÃO abre Documento em cima do clique posterior de B.
+    resolverA({
+      dados: {
+        tipo: 'documento',
+        valor: 500,
+        documento: { id: 'doc-a', formato: 'pdf', arquivo_nome: 'a.pdf', bucket: 'b', caminho: 'a.pdf' },
+        fato: { pagina: 1, trecho: 't', bbox: null },
+        busca: null,
+        nota: null,
+      },
+      erro: null,
+    });
+    await tick();
+    expect(itemA.querySelector('.de-onde-vem__status-folha')).toBeNull();
+    expect(document.querySelector('.documento')).toBeNull();
+
+    // Testa limpeza de buscaTexto: 1ª consulta grava "achado pelo código", 2ª falha e limpa buscaTexto.
+    const itemLegado = acharItem('Realizado — Equipamentos');
+    itemLegado.querySelector('button.valor--origem').click();
+    await tick();
+    await tick();
+    expect(itemLegado.textContent).toContain('achado pelo código');
+
+    document.querySelector('.documento__fechar').click();
+    await tick();
+
+    itemLegado.querySelector('button.valor--origem').click();
+    await tick();
+    expect(itemLegado.textContent).not.toContain('achado pelo código');
+    expect(itemLegado.querySelector('.aviso-falha').textContent).toContain('Falha na nova tentativa.');
+  });
 });
