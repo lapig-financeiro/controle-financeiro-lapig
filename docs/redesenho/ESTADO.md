@@ -79,6 +79,7 @@ Pré-existente: `get_saldo_livre` (048) ignora rubrica só com previsto negativo
 ## Registro
 | Data | O que aconteceu |
 |---|---|
+| 20/11 | Bolsistas, pedido do Victor depois de testar com o login da Mariana: filtro compacto e não mais fixo; botão "Montar caixas Alertas e Solos" (cria as caixas de quem clica e põe quem é da equipe e tem bolsa vigente). Equipes do 30.111 gravadas pelo plano de trabalho (MapBiomas/IAMAP), com o "pode gravar": 68 Alertas, 9 Solos (pelo nome no plano, ou pelo valor R$ 900/700). Sem equipe até o Victor decidir: inspeção, estatístico e VANT (4), gestoras R$ 5.200 (2), outros 5 fora do plano |
 | 20/11 | Login da Mariana (criado pelo Victor no Supabase) recebeu papel professor e os 7 centros (30.099, 30.109, 30.111, 30.113, 30.116, 30.117, 30.118) por `save_user_assignments`, com o "pode gravar" do Victor; conferido: 7 centros |
 | 20/11 | **068 aplicada** com o ok do Victor (F3-B, tela Bolsistas; master af7b859, run 44649574063, manutenção ligada e desligada). Conferida pela API: RPC 200 para admin (137 bolsistas, 11 centros), 401 sem login, tabelas 403. Revisão final MiniMax: nada bloqueava; 2 médios para a 069 |
 | 19/11 | F3-B pronta e publicada no master (pedido de bolsas da Mariana: tela Bolsistas + 068). Victor confirmou os 7 centros dela (30.099, 30.109, 30.111, 30.113, 30.116, 30.117, 30.118). 068 vai ao ensaio |

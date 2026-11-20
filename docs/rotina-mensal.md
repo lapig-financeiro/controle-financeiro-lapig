@@ -47,4 +47,4 @@ redesenho.
 ## Registro
 | Mês | Data | O que entrou | Pendências novas |
 |---|---|---|---|
-| (primeira rotina ainda não rodada) | | | |
+| nov/2026 (parcial) | 20/11 | Balancetes pelos e-mails da FUNAPE: 30.109 (até 17/11), 30.110 (até 03/11), 30.111 (até 18/11), 30.113 (até 17/11), 78.215 (até 03/11); duas contas classificadas pelo Victor (locação de veículos com motorista → b; uniformes → e). `balancetes_arquivos.mjs` ganhou `--rubrica <reduzido>=<código>` | nenhuma |

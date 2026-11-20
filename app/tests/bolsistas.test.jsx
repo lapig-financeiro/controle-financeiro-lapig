@@ -483,6 +483,47 @@ describe('página Bolsistas — caixas e ações', () => {
     expect(pedidoBolsasMock).toHaveBeenCalledTimes(2);
   });
 
+  it('monta as caixas Alertas e Solos com quem é da equipe, está vigente e ainda não está em caixa', async () => {
+    salvarCaixaPedidoMock
+      .mockResolvedValueOnce({ dados: { id: 'k-al', nome: 'Alertas', meses: 12 }, erro: null })
+      .mockResolvedValueOnce({ dados: { id: 'k-so', nome: 'Solos', meses: 12 }, erro: null });
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
+
+    const cartao = document.querySelector('.bolsistas__caixas-equipes');
+    // Davi (Alertas) só tem bolsa encerrada: não entra.
+    expect(cartao.textContent).toContain('1 de Alertas e 1 de Solos');
+    botaoPorTexto(cartao, 'Montar caixas Alertas e Solos').click();
+    await esperarPor(() => colocarNaCaixaMock.mock.calls.length === 2);
+    await tick();
+
+    expect(salvarCaixaPedidoMock.mock.calls).toEqual([[{ nome: 'Alertas' }], [{ nome: 'Solos' }]]);
+    expect(colocarNaCaixaMock.mock.calls).toEqual([
+      ['k-al', 'h-carla'],
+      ['k-so', 'h-elisa'],
+    ]);
+    expect(document.querySelector('.bolsistas__aviso').textContent).toContain(
+      'Alertas: 1 pessoa · Solos: 1 pessoa'
+    );
+  });
+
+  it('usa a caixa da equipe que já existe em vez de criar outra', async () => {
+    const d = dados();
+    d.caixas.push({ ...CAIXA_RESERVA, id: 'k-al', nome: 'alertas', itens: [] });
+    pedidoBolsasMock.mockResolvedValue({ dados: d, erro: null });
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelector('.bolsistas__caixas-equipes'));
+
+    botaoPorTexto(
+      document.querySelector('.bolsistas__caixas-equipes'),
+      'Montar caixas Alertas e Solos'
+    ).click();
+    await esperarPor(() => colocarNaCaixaMock.mock.calls.length === 2);
+
+    expect(salvarCaixaPedidoMock.mock.calls).toEqual([[{ nome: 'Solos' }]]);
+    expect(colocarNaCaixaMock.mock.calls[0]).toEqual(['k-al', 'h-carla']);
+  });
+
   it('erro de gravação mostra a mensagem e mantém o estado anterior, sem chamar a RPC de novo', async () => {
     colocarNaCaixaMock.mockResolvedValueOnce({ dados: null, erro: 'Falha ao gravar a caixa.' });
     render(<Bolsistas usuarioId="u1" />, document.body);
@@ -536,6 +577,10 @@ describe('página Bolsistas — layout e orientação', () => {
     expect(regraLinha).toMatch(/grid-template-columns/);
     expect(regraLinha).not.toMatch(/position\s*:\s*absolute/);
     expect(blocoCss('.bolsistas__bolsa')).toMatch(/white-space\s*:\s*nowrap/);
+  });
+
+  it('o filtro não fica fixo no topo ao rolar a lista', () => {
+    expect(css).not.toMatch(/\.bolsistas__filtros\s*\{[^}]*position\s*:\s*sticky/);
   });
 
   it('o nome na caixa não é cortado: quebra em vez de reticências', async () => {

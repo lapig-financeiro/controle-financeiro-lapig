@@ -32,6 +32,9 @@ const EQUIPES = [
   { valor: 'solos', rotulo: 'Solos' },
 ];
 
+// Equipes que ganham caixa própria pelo botão "Montar caixas" (pedido do Victor, 20/11).
+const EQUIPES_COM_CAIXA = ['alertas', 'solos'];
+
 const FILTROS_PADRAO = {
   centrosDesmarcados: [],
   legadoCentrosMarcados: null,
@@ -586,6 +589,46 @@ export function Bolsistas({ usuarioId = null }) {
     }
   };
 
+  const faltamNasCaixasDasEquipes = () => {
+    if (!dados) return [];
+    return EQUIPES_COM_CAIXA.map((equipe) => {
+      const nome = rotuloEquipe(equipe);
+      const caixa = dados.caixas.find((c) => normalizarTexto(c.nome) === normalizarTexto(nome));
+      const pessoas = dados.bolsistas.filter(
+        (p) =>
+          p.equipe === equipe &&
+          p.bolsas.some((b) => b.vigente_hoje) &&
+          !caixaDaPessoa(p.holder_id)
+      );
+      return { equipe, nome, caixa: caixa || null, pessoas };
+    }).filter((g) => g.pessoas.length > 0);
+  };
+
+  const montarCaixasDasEquipes = async () => {
+    const grupos = faltamNasCaixasDasEquipes();
+    if (grupos.length === 0) return;
+    const resumo = [];
+    const res = await executar(async () => {
+      for (const grupo of grupos) {
+        let caixaId = grupo.caixa?.id;
+        if (!caixaId) {
+          const criada = await salvarCaixaPedido({ nome: grupo.nome });
+          if (criada?.erro) return criada;
+          caixaId = criada.dados.id;
+        }
+        for (const pessoa of grupo.pessoas) {
+          const r = await colocarNaCaixa(caixaId, pessoa.holder_id);
+          if (r?.erro) return r;
+        }
+        resumo.push(
+          `${grupo.nome}: ${grupo.pessoas.length} ${grupo.pessoas.length === 1 ? 'pessoa' : 'pessoas'}`
+        );
+      }
+      return { dados: null };
+    });
+    if (res.ok) setAviso(`Caixas montadas pelas equipes — ${resumo.join(' · ')}.`);
+  };
+
   const limparOcultos = async (caixaId) => {
     const res = await executar(() => limparOcultosDaCaixa(caixaId));
     if (res.ok) {
@@ -676,6 +719,61 @@ export function Bolsistas({ usuarioId = null }) {
         <div class="bolsistas__layout">
           <section class="bolsistas__lista" aria-label="Bolsistas">
             <div class="bolsistas__filtros">
+              <div class="bolsistas__filtros-linha">
+                <Campo
+                  rotulo="Buscar por nome"
+                  tipo="search"
+                  valor={filtros.busca}
+                  aoMudar={(valor) => setFiltros((anterior) => ({ ...anterior, busca: valor }))}
+                  placeholder="Nome da pessoa"
+                  className="bolsistas__busca"
+                />
+
+                <div class="bolsistas__filtro bolsistas__filtro-situacao">
+                  <Seletor
+                    rotulo="Situação"
+                    valor={filtros.situacao}
+                    aoMudar={(valor) =>
+                      setFiltros((anterior) => ({ ...anterior, situacao: valor }))
+                    }
+                    opcoes={[
+                      { valor: 'vigente', rotulo: 'Vigente hoje' },
+                      { valor: 'termina', rotulo: 'Termina até' },
+                    ]}
+                  />
+                  {filtros.situacao === 'termina' && (
+                    <Campo
+                      rotulo="Termina até"
+                      tipo="date"
+                      valor={filtros.data}
+                      aoMudar={(valor) =>
+                        setFiltros((anterior) => ({ ...anterior, data: valor }))
+                      }
+                    />
+                  )}
+                </div>
+
+                <p class="bolsistas__contador" role="status">
+                  {pessoasFiltradas.length}{' '}
+                  {pessoasFiltradas.length === 1 ? 'pessoa na lista' : 'pessoas na lista'}
+                </p>
+              </div>
+
+              <fieldset class="bolsistas__filtro">
+                <legend class="bolsistas__filtro-titulo">Equipe</legend>
+                <div class="bolsistas__filtro-chips" role="group" aria-label="Filtrar por equipe">
+                  {EQUIPES.map((equipe) => (
+                    <Chip
+                      key={equipe.valor}
+                      ativo={equipesSelecionadas.has(equipe.valor)}
+                      onClick={() => alternarEquipe(equipe.valor)}
+                    >
+                      {equipe.rotulo}
+                    </Chip>
+                  ))}
+                </div>
+              </fieldset>
+
               <fieldset class="bolsistas__filtro">
                 <legend class="bolsistas__filtro-titulo">Centros</legend>
                 <div class="bolsistas__filtro-centros">
@@ -696,58 +794,6 @@ export function Bolsistas({ usuarioId = null }) {
                 </div>
               </fieldset>
 
-              <fieldset class="bolsistas__filtro">
-                <legend class="bolsistas__filtro-titulo">Equipe</legend>
-                <div class="bolsistas__filtro-chips" role="group" aria-label="Filtrar por equipe">
-                  {EQUIPES.map((equipe) => (
-                    <Chip
-                      key={equipe.valor}
-                      ativo={equipesSelecionadas.has(equipe.valor)}
-                      onClick={() => alternarEquipe(equipe.valor)}
-                    >
-                      {equipe.rotulo}
-                    </Chip>
-                  ))}
-                </div>
-              </fieldset>
-
-              <div class="bolsistas__filtro bolsistas__filtro-situacao">
-                <Seletor
-                  rotulo="Situação"
-                  valor={filtros.situacao}
-                  aoMudar={(valor) =>
-                    setFiltros((anterior) => ({ ...anterior, situacao: valor }))
-                  }
-                  opcoes={[
-                    { valor: 'vigente', rotulo: 'Vigente hoje' },
-                    { valor: 'termina', rotulo: 'Termina até' },
-                  ]}
-                />
-                {filtros.situacao === 'termina' && (
-                  <Campo
-                    rotulo="Termina até"
-                    tipo="date"
-                    valor={filtros.data}
-                    aoMudar={(valor) =>
-                      setFiltros((anterior) => ({ ...anterior, data: valor }))
-                    }
-                  />
-                )}
-              </div>
-
-              <Campo
-                rotulo="Buscar por nome"
-                tipo="search"
-                valor={filtros.busca}
-                aoMudar={(valor) => setFiltros((anterior) => ({ ...anterior, busca: valor }))}
-                placeholder="Nome da pessoa"
-                className="bolsistas__busca"
-              />
-
-              <p class="bolsistas__contador" role="status">
-                {pessoasFiltradas.length}{' '}
-                {pessoasFiltradas.length === 1 ? 'pessoa na lista' : 'pessoas na lista'}
-              </p>
             </div>
 
             {dados.caixas.length === 0 && (
@@ -901,6 +947,25 @@ export function Bolsistas({ usuarioId = null }) {
                 Nova caixa
               </Botao>
             </div>
+
+            {faltamNasCaixasDasEquipes().length > 0 && (
+              <div class="bolsistas__caixas-equipes">
+                <p class="bolsistas__caixas-equipes-texto">
+                  {faltamNasCaixasDasEquipes()
+                    .map((g) => `${g.pessoas.length} de ${g.nome}`)
+                    .join(' e ')}{' '}
+                  ainda fora das caixas.
+                </p>
+                <Botao
+                  variante="secundario"
+                  tamanho="compacto"
+                  onClick={montarCaixasDasEquipes}
+                  desabilitado={emAcao}
+                >
+                  Montar caixas {faltamNasCaixasDasEquipes().map((g) => g.nome).join(' e ')}
+                </Botao>
+              </div>
+            )}
 
             {mostrarNovaCaixa && (
               <form class="bolsistas__nova-caixa" onSubmit={criarCaixa}>
