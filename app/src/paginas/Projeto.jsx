@@ -218,12 +218,9 @@ function situacaoCentroAntiga(resumo, grupos, hasBalancete, defasagemMeses) {
   const temAtraso = defasagem !== null && defasagem >= 2;
 
   if (bruta === 'problema') return 'problema';
-  if (bruta === 'atenção' || bruta === 'atencao') {
-    // Na 063, atenção só vem de atraso/pendência; na 069, também da
-    // tarifa. Sem atraso/pendência, a regra antiga seria problema.
-    return temPendencia || temAtraso ? 'atenção' : 'problema';
-  }
 
+  // Regra da 063, na ordem dela: grupo negativo ganha de atraso e pendência
+  // (mesmo quando o resumo da 069 disse atenção por causa da tarifa).
   const temNegativo = grupos.some((grupo) => {
     const livre = numeroFinito(grupo?.saldo_livre);
     return livre !== null && livre < 0;

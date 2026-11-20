@@ -21,6 +21,10 @@ const CLASSE_NIVEL = {
 };
 
 const LARGURA_MAXIMA = 340;
+
+// Um balão aberto por vez: abrir um selo fecha o que estava aberto (o clique no selo
+// não chega ao "clique fora" do outro, porque para a propagação para não seguir o link).
+let fecharBalaoAberto = null;
 const MARGEM = 8;
 
 /**
@@ -52,6 +56,24 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
   };
   const [aberto, setAberto] = useState(false);
   const [posicao, setPosicao] = useState(null);
+
+  // Função estável que fecha este selo (usada pelo "um balão por vez").
+  const fecharEsteRef = useRef(null);
+  if (!fecharEsteRef.current) {
+    fecharEsteRef.current = () => {
+      if (fecharTimerRef.current) {
+        clearTimeout(fecharTimerRef.current);
+        fecharTimerRef.current = null;
+      }
+      setAberto(false);
+    };
+  }
+  useEffect(
+    () => () => {
+      if (fecharBalaoAberto === fecharEsteRef.current) fecharBalaoAberto = null;
+    },
+    []
+  );
 
   const cancelarFechamento = () => {
     if (fecharTimerRef.current) {
@@ -95,16 +117,18 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
     });
   };
 
-  const abrir = () => {
-    if (!temMotivos) return;
-    cancelarFechamento();
-    posicionar();
-    setAberto(true);
-  };
-
   const fechar = () => {
     cancelarFechamento();
     if (temMotivos) setAberto(false);
+  };
+
+  const abrir = () => {
+    if (!temMotivos) return;
+    cancelarFechamento();
+    if (fecharBalaoAberto && fecharBalaoAberto !== fecharEsteRef.current) fecharBalaoAberto();
+    fecharBalaoAberto = fecharEsteRef.current;
+    posicionar();
+    setAberto(true);
   };
 
   useEffect(() => {

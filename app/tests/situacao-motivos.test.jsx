@@ -153,3 +153,31 @@ describe('Situacao com motivos', () => {
     expect(document.querySelector('.situacao__balao')).toBeNull();
   });
 });
+
+describe('Situacao: um balão por vez', () => {
+  it('clicar no selo de outro centro fecha o balão que estava aberto', async () => {
+    render(
+      <Lista ariaLabel="Centros de custo">
+        <LinhaDeLista href="#/a">
+          <Situacao estado="atenção" motivos={MOTIVOS} />
+        </LinhaDeLista>
+        <LinhaDeLista href="#/b">
+          <Situacao estado="problema" motivos={MOTIVOS} />
+        </LinhaDeLista>
+      </Lista>,
+      document.body
+    );
+    const [a, b] = document.querySelectorAll('.situacao');
+    a.click();
+    await tick();
+    expect(document.getElementById(a.getAttribute('aria-describedby')).getAttribute('data-aberto')).toBe('true');
+
+    b.click();
+    await tick();
+    const abertos = Array.from(document.querySelectorAll('.situacao__balao')).filter(
+      (el) => el.getAttribute('data-aberto') === 'true'
+    );
+    expect(abertos).toHaveLength(1);
+    expect(abertos[0].id).toBe(b.getAttribute('aria-describedby'));
+  });
+});

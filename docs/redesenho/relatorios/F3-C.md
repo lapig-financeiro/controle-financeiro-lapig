@@ -442,3 +442,19 @@ rubricas do `30.909`:
 
 Nenhum push, nenhuma aplicação, nenhuma outra IA chamada, nenhum `CF_*` real e nenhum dado real. Os `.sql` de
 060–068 continuam com LF e `skip-worktree`, sem edição.
+
+## Ajustes do Claude depois da revisão final (MiniMax max, 20/11)
+
+A revisão final conferiu os 14 itens da 2ª rodada como corrigidos e disse que nada impede aplicar a 069. Três achados de
+app foram corrigidos aqui, com teste que falha sem a correção:
+
+- `situacaoCentroAntiga` (`Projeto.jsx`): sem a RPC nova, grupo negativo volta a ganhar de atraso e pendência, como na
+  063 (antes, "atenção" do resumo + pendência dava "atenção" mesmo com grupo negativo).
+- `Situacao.jsx`: um balão aberto por vez; clicar no selo de outro centro fecha o anterior (o `stopPropagation` do
+  clique impedia o "clique fora" do outro balão).
+- Modo exemplo com os textos novos do banco ("saldo livre R$ −X por causa de R$ Y de tarifa…", "saldo livre R$ −X.
+  Gasto R$ Y acima do previsto.").
+
+Ficam registrados, sem mudança: lista e centro podem discordar só quando a RPC nova falha (a lista usa o resumo, o
+centro cai na regra antiga com aviso); a frase da tarifa quando o negativo é menor que a tarifa ("saldo livre R$ −10,00
+por causa de R$ 14,34…") é a pedida.

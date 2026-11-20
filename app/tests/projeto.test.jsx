@@ -1856,4 +1856,37 @@ describe('destaque Dinheiro em conta', () => {
       'atenção'
     );
   });
+  it('sem a RPC nova, grupo negativo continua problema mesmo com pendência aberta (ordem da 063)', async () => {
+    const grupos = [
+      {
+        grupo_code: 'b',
+        grupo_name: 'Serviços de Terceiros P. Jurídica',
+        previsto: 0,
+        realizado: 14.34,
+        compromissos: 0,
+        saldo_livre: -14.34,
+        compromissos_cobertura: 'nenhuma',
+      },
+    ];
+    configurarPadrao({ grupos });
+    situacaoCentroMock.mockResolvedValueOnce({
+      dados: null,
+      erro: 'Não foi possível carregar o motivo dos selos.',
+    });
+
+    render(
+      <Projeto
+        projectId="p-1"
+        hoje="2026-11-18"
+        resumoCentro={{ ...resumoCentro, situacao: 'atenção', pendencias_abertas: 1 }}
+      />,
+      document.body
+    );
+    await tick();
+    await tick();
+
+    expect(document.querySelector('.cabecalho-pagina__acoes .situacao').textContent).toContain(
+      'problema'
+    );
+  });
 });

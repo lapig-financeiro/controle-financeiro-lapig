@@ -72,7 +72,7 @@ const CENTROS_BASE = [
         codigo: 'saldo_negativo',
         nivel: 'problema',
         texto:
-          'Rubrica f — Equipamentos e material permanente: gasto R$ 4.250,00 acima do previsto.',
+          'Rubrica f — Equipamentos e material permanente: saldo livre R$ −4.250,00. Gasto R$ 4.250,00 acima do previsto.',
         grupo_code: 'f',
         valor: 4250,
       },
@@ -198,9 +198,10 @@ const CENTROS_BASE = [
         codigo: 'tarifa_bancaria',
         nivel: 'atenção',
         texto:
-          'Rubrica b — Serviços de Terceiros P. Jurídica: R$ 14,34 de tarifa bancária sem previsão no plano. É cobrança comum da FUNAPE; vale prever no próximo remanejamento.',
+          'Rubrica b — Serviços de Terceiros P. Jurídica: saldo livre R$ −14,34 por causa de R$ 14,34 de tarifa bancária sem previsão no plano; sem ela, ficaria dentro do previsto. É cobrança comum da FUNAPE; vale prever no próximo remanejamento.',
         grupo_code: 'b',
         valor: 14.34,
+        tarifa: 14.34,
       },
     ],
   },
