@@ -446,3 +446,114 @@ devolvido com o enviado e o modo exemplo.
   `frontend/`, `mcp/` ou tools da IA.
 - O PGlite não prova concorrência real; os mutantes provam que o advisory lock está no texto das funções.
 - Sem arrastar e soltar; os botões seguem sendo o caminho de teclado e celular.
+
+## 3ª rodada (19/11/2026 — tela conferida no modo exemplo em 1400 px e 390 px, pedido do Victor)
+
+Esta seção registra o que mudou depois da 2ª rodada. **Só o app mudou**: nenhuma linha de
+`database/068_pedido_bolsas.sql`, nenhum dado, nenhuma migração, nenhuma variável `CF_*` real.
+Sem push e sem aplicar nada em produção.
+
+### 3.1. Lista: grade da linha refeita
+
+A linha da pessoa virou três colunas: **nome + equipe** com teto de 30%, **bolsas** com o restante
+e **botões** à direita, com largura de 8,5 a 9 rem. As bolsas e a soma ficaram num contêiner próprio
+(`bolsistas__pessoa-conteudo`): os chips ficam na primeira linha (quebrando inteiros, com
+`white-space: nowrap` em cada um) e a soma vigente fica **abaixo**, em linha própria, sem
+`position: absolute` em nenhum ponto do conteúdo. A grade da página passou de `1.5fr/1fr` para
+`1.7fr/1fr`, o que deu espaço à coluna das bolsas também perto de 1025 px.
+
+O breakpoint de 1024 px empilha a lista e as caixas (como antes); **900 px** empilha a linha da
+pessoa (identidade, bolsas+soma e botões) e liga a barra do rodapé. A guarda de estilo passou a
+aceitar `900px` como quebra (antes só 640/1024), com caso de teste próprio.
+
+### 3.2. Caixa: nome inteiro
+
+O nome da pessoa na caixa perdeu `overflow: hidden`, `text-overflow: ellipsis` e
+`white-space: nowrap`: agora quebra em duas linhas quando precisa (`overflow-wrap: anywhere`).
+O valor e as ações continuam sem truncar e, quando não cabem na mesma linha, passam para a linha
+de baixo (a linha do item tem `flex-wrap`). No desktop de 1400 px cada pessoa segue numa linha só;
+em 1025 px e no celular o nome nunca some nem vira “Bolsista …”.
+
+### 3.3. Passo a passo e primeira caixa
+
+- Abaixo do subtítulo, uma faixa discreta com os três passos numerados:
+  **1. Filtre quem entra · 2. Crie uma caixa (ex.: Time Pastagem) · 3. Ponha as pessoas na caixa**,
+  com **Nova caixa** (abre o mesmo formulário da coluna das caixas) e **Entendi**.
+  O “Entendi” grava `cf_bolsistas_passos_<usuário>` no `localStorage`; na visita seguinte a faixa
+  não aparece.
+- **Sem nenhuma caixa**, aparece logo abaixo dos filtros o cartão
+  **“Crie sua primeira caixa para começar a separar as pessoas”** com botão **Nova caixa**.
+  Os botões “Pôr em …” somem das linhas (a grade da pessoa vira duas colunas) e a coluna das caixas
+  mostra o estado vazio (`Vazio`) com o mesmo botão.
+
+### 3.4. Barra do rodapé em tela estreita
+
+Abaixo de 900 px aparece uma barra fixa no rodapé com o resumo **vindo da RPC** (nada somado no
+app): `Time Pastagem: 12 · R$ 24.600/mês | Reserva: 3 · …`. O botão **Ver caixas** rola até a
+coluna das caixas com `scroll-margin-top` de `altura-topo + esp-3` (o título “Caixas” não fica
+escondido atrás da barra superior). Sem caixa, a barra mostra “Nenhuma caixa ainda.” e o botão
+**Nova caixa**. O conteúdo ganhou padding inferior para a barra não cobrir o fim da página.
+Acima de 900 px a barra continua no DOM, mas com `display: none` — o teste verifica a classe e a
+regra de mídia.
+
+### 3.5. Testes acrescentados
+
+Em `app/tests/bolsistas.test.jsx` (6 testes novos, total 20 no arquivo):
+
+- regressão de grade: a linha tem identidade, conteúdo, bolsas, soma e ações; não tem `style`
+  inline; a regra CSS de `.bolsistas__pessoa` tem `grid-template-columns` e não tem
+  `position: absolute`; o chip tem `white-space: nowrap`;
+- nome da caixa: sem `text-overflow: ellipsis` e sem `overflow: hidden`, com quebra;
+- passo a passo: os três textos e os botões, fechamento com “Entendi” e persistência em
+  `cf_bolsistas_passos_u1` (nova montagem não mostra a faixa);
+- estado sem caixas: cartão de primeira caixa, nenhum botão “Pôr em”, nenhum marcador, `Vazio` na
+  coluna das caixas e formulário aberto pelo cartão;
+- barra do rodapé: resumo da RPC (inclusive a segunda caixa), “Ver caixas”, `display: none` fora
+  da mídia e `position: fixed`/`display: flex` na mídia de 900 px;
+- barra sem caixas: “Nenhuma caixa ainda.” e “Nova caixa”.
+
+Em `app/tests/verificar-estilo.test.js`, um caso confirma que `@media (max-width: 900px)` é aceito
+pela guarda.
+
+### 3.6. Conferência manual (modo exemplo)
+
+`npm run dev:exemplo` com o Chrome em viewport emulado por CDP (o `--window-size` do Windows
+não desce de ~504 px e mentiria a medição; usei `Emulation.setDeviceMetricsOverride`).
+
+- **1400 × 900:** duas colunas (lista à esquerda, caixas à direita). Na linha, nome e chip de
+  equipe ocupam ~30%; o chip `30.901 · R$ 4.200/mês · até set/27` fica inteiro numa linha (219 px)
+  e a soma vigente aparece abaixo, sem sobreposição; os botões “Na caixa Time Pastagem” e
+  “Pôr em Reserva” ficam à direita. A 1025 px a primeira versão ainda encostava o chip nos
+  botões; com a grade 1.7fr/1fr e a coluna de ações de 9 rem a folga passou a mais de 20 px.
+  Em nenhuma largura testada `scrollWidth` passou da viewport.
+- **390 × 844:** tudo empilhado; o passo a passo vira três linhas com os botões embaixo; filtros
+  em uma coluna; cada pessoa tem o nome inteiro, os chips e a soma, e os botões “Pôr em …” na
+  linha de baixo. A barra do rodapé mostra o resumo das duas caixas e **Ver caixas**; ao clicar, a
+  coluna “Caixas” para 68 px do topo (56 do cabeçalho + 12 de respiro), sem ficar sob a barra
+  superior. A 390 px o cabeçalho global fica apertado (nav e sino), mas isso acontece igual em
+  `#/projetos` e não vem desta tela; não mexi nele.
+
+### 3.7. Verificação executada nesta rodada
+
+| Comando | Resultado |
+|---|---|
+| `cd app && npx vitest run` | **19 arquivos, 153 testes passando** |
+| `cd app && npm run verificar-estilo` | **nenhuma violação** |
+| `cd app && npm run build` | **build ok**; `verificar-build`: nenhum dado de exemplo no bundle |
+| `npx vitest run` (raiz) | **44 arquivos, 699 testes passando, 5 pulados** |
+| `npm run lint` | **sem saída** (0 erros/warnings) |
+| `node tools/replica-local/rodar-068-pglite.mjs` | **OK**: `42P01` antes, 068 aplicada e reaplicada, BLOCO 1 da 051, 6 helpers intactos, **17 mutantes** e roteiro final; cofre conferido em **60.501 bytes** |
+
+### 3.8. Arquivos desta rodada
+
+| Arquivo | Mudança |
+|---|---|
+| `app/src/paginas/Bolsistas.jsx` | passo a passo, cartão de primeira caixa, barra do rodapé, grade da linha e nome inteiro na caixa |
+| `app/src/paginas/Bolsistas.css` | grade 1.7fr/1fr, colunas 30%/1fr/9rem, chips `nowrap`, soma em linha própria, breakpoint 900, barra fixa, `scroll-margin-top` |
+| `app/tests/bolsistas.test.jsx` | 10 testes de layout, passo a passo, estado vazio e barra |
+| `app/scripts/verificar-estilo.mjs` | `900px` acrescentado às quebras permitidas |
+| `app/tests/verificar-estilo.test.js` | caso para a quebra de 900 px |
+| `docs/redesenho/tarefas/F3-B-rodada3.md` | arquivo da rodada, incluído no commit |
+
+Nada mudou em `database/`, `frontend/`, `mcp/` ou nas tools da IA; a 068 continua **ainda não
+aplicada** e o relatório anterior segue valendo para o banco.

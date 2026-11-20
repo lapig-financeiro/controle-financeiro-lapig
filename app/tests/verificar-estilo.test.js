@@ -46,7 +46,7 @@ describe('verificar-estilo', () => {
     expect(tokens).toEqual([]);
   });
 
-  it('reprova px, ms e vh literais fora de tokens.css, permitindo 1px, 0 e @media 640/1024', () => {
+  it('reprova px, ms e vh literais fora de tokens.css, permitindo 1px, 0 e @media 640/900/1024', () => {
     const cssRuim = verificarArquivo(
       'componentes/Ruim.css',
       '.x { width: 120px; transition: opacity 250ms; height: 80vh; }',
@@ -60,9 +60,16 @@ describe('verificar-estilo', () => {
       TOKENS_DEFINIDOS
     );
     expect(cssPermitido).toEqual([]);
+
+    const cssPermitido900 = verificarArquivo(
+      'componentes/Bom.css',
+      '@media (max-width: 900px) { .x { padding: 0; } }',
+      TOKENS_DEFINIDOS
+    );
+    expect(cssPermitido900).toEqual([]);
   });
 
-  it('reprova z-index literal e @media fora de 640px/1024px', () => {
+  it('reprova z-index literal e @media fora de 640px/900px/1024px', () => {
     const cssZ = verificarArquivo('componentes/Ruim.css', '.x { z-index: 99; }', TOKENS_DEFINIDOS);
     expect(cssZ.some((p) => p.regra === 'z-index-literal')).toBe(true);
 

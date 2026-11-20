@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import fs from 'node:fs';
+import path from 'node:path';
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -502,5 +504,127 @@ describe('página Bolsistas — caixas e ações', () => {
     expect(document.querySelector('.aviso-falha').textContent).toContain('Falha de consulta.');
     expect(document.body.textContent).toContain('—');
     expect(document.body.textContent).not.toContain('R$ 0');
+  });
+});
+
+describe('página Bolsistas — layout e orientação', () => {
+  const css = fs.readFileSync(path.resolve('src/paginas/Bolsistas.css'), 'utf8');
+
+  function blocoCss(seletor) {
+    const escapado = seletor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const encontrado = css.match(new RegExp(`${escapado}\\s*\\{([^}]*)\\}`));
+    return encontrado ? encontrado[1] : '';
+  }
+
+  it('a linha da pessoa tem grade e não usa position: absolute', async () => {
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
+
+    const linha = document.querySelector('.bolsistas__pessoa[data-holder-id="h-ana"]');
+    expect(linha.querySelector('.bolsistas__pessoa-identidade')).not.toBeNull();
+    expect(linha.querySelector('.bolsistas__pessoa-conteudo .bolsistas__bolsas')).not.toBeNull();
+    expect(linha.querySelector('.bolsistas__pessoa-conteudo .bolsistas__pessoa-soma')).not.toBeNull();
+    expect(linha.querySelector('.bolsistas__pessoa-acoes')).not.toBeNull();
+    expect(linha.getAttribute('style')).toBeNull();
+
+    // A soma fica numa linha própria, depois das bolsas, e não por cima do chip.
+    const conteudo = linha.querySelector('.bolsistas__pessoa-conteudo');
+    const filhos = Array.from(conteudo.children).map((el) => el.className);
+    expect(filhos).toEqual(['bolsistas__bolsas', 'bolsistas__pessoa-soma']);
+
+    const regraLinha = blocoCss('.bolsistas__pessoa');
+    expect(regraLinha).toMatch(/grid-template-columns/);
+    expect(regraLinha).not.toMatch(/position\s*:\s*absolute/);
+    expect(blocoCss('.bolsistas__bolsa')).toMatch(/white-space\s*:\s*nowrap/);
+  });
+
+  it('o nome na caixa não é cortado: quebra em vez de reticências', async () => {
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelector('[data-caixa-id="k1"]'));
+
+    const nome = document.querySelector(
+      '[data-caixa-id="k1"] .bolsistas__item[data-holder-id="h-ana"] .bolsistas__item-nome'
+    );
+    expect(nome.textContent).toBe('Ana Teste');
+    const regraNome = blocoCss('.bolsistas__item-nome');
+    expect(regraNome).toMatch(/overflow-wrap\s*:\s*anywhere/);
+    expect(regraNome).toMatch(/white-space\s*:\s*normal/);
+    expect(regraNome).not.toMatch(/text-overflow\s*:\s*ellipsis/);
+    expect(regraNome).not.toMatch(/overflow\s*:\s*hidden/);
+  });
+
+  it('mostra o passo a passo e fecha com Entendi, lembrando no localStorage', async () => {
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    const passos = await esperarPor(() => document.querySelector('.bolsistas__passos'));
+    const texto = passos.textContent.replace(/\s+/g, ' ');
+    expect(texto).toContain('1. Filtre quem entra');
+    expect(texto).toContain('2. Crie uma caixa (ex.: Time Pastagem)');
+    expect(texto).toContain('3. Ponha as pessoas na caixa');
+    expect(botaoPorTexto(passos, 'Nova caixa')).not.toBeNull();
+
+    botaoPorTexto(passos, 'Entendi').click();
+    await esperarPor(() => !document.querySelector('.bolsistas__passos'));
+    expect(window.localStorage.getItem('cf_bolsistas_passos_u1')).toBe('fechado');
+
+    render(null, document.body);
+    document.body.innerHTML = '';
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
+    expect(document.querySelector('.bolsistas__passos')).toBeNull();
+  });
+
+  it('sem caixas, o cartão de primeira caixa aparece e não há botões “Pôr em”', async () => {
+    const semCaixas = dados();
+    semCaixas.caixas = [];
+    pedidoBolsasMock.mockResolvedValueOnce({ dados: semCaixas, erro: null });
+
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    const cartao = await esperarPor(() => document.querySelector('.bolsistas__primeira-caixa'));
+    expect(cartao.textContent).toContain(
+      'Crie sua primeira caixa para começar a separar as pessoas'
+    );
+    expect(document.querySelectorAll('.bolsistas__botao-colocar')).toHaveLength(0);
+    expect(document.querySelectorAll('.bolsistas__marcador')).toHaveLength(0);
+    expect(
+      document
+        .querySelector('.bolsistas__pessoa')
+        .classList.contains('bolsistas__pessoa--sem-caixas')
+    ).toBe(true);
+    expect(document.querySelector('.bolsistas__caixas .vazio').textContent).toContain(
+      'Nenhuma caixa ainda'
+    );
+
+    botaoPorTexto(cartao, 'Nova caixa').click();
+    await esperarPor(() => document.querySelector('.bolsistas__nova-caixa'));
+    expect(document.querySelector('.bolsistas__nova-caixa')).not.toBeNull();
+  });
+
+  it('a barra do rodapé mostra o resumo vindo da RPC e o botão de caixas', async () => {
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    const barra = await esperarPor(() => document.querySelector('.bolsistas__barra-caixas'));
+    const texto = barra.textContent.replace(/\s+/g, ' ');
+    expect(texto).toContain('Time Pastagem: 2 · R$ 1.234/mês');
+    expect(texto).toContain('Reserva: 0 · R$ 0/mês');
+    expect(botaoPorTexto(barra, 'Ver caixas')).not.toBeNull();
+
+    // Fica no CSS como barra fixa só abaixo de 900 px; no desktop continua no DOM, escondida.
+    expect(blocoCss('.bolsistas__barra-caixas')).toMatch(/display\s*:\s*none/);
+    const inicio900 = css.indexOf('@media (max-width: 900px)');
+    expect(inicio900).toBeGreaterThan(-1);
+    const trecho900 = css.slice(inicio900, css.indexOf('@media (max-width: 640px)'));
+    expect(trecho900).toContain('.bolsistas__barra-caixas');
+    expect(trecho900).toMatch(/position\s*:\s*fixed/);
+    expect(trecho900).toContain('display: flex');
+  });
+
+  it('sem caixas, a barra do rodapé mostra o estado vazio com Nova caixa', async () => {
+    const semCaixas = dados();
+    semCaixas.caixas = [];
+    pedidoBolsasMock.mockResolvedValueOnce({ dados: semCaixas, erro: null });
+
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    const barra = await esperarPor(() => document.querySelector('.bolsistas__barra-caixas'));
+    expect(barra.textContent).toContain('Nenhuma caixa ainda.');
+    expect(botaoPorTexto(barra, 'Nova caixa')).not.toBeNull();
   });
 });

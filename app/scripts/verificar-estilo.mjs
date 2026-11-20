@@ -11,7 +11,7 @@ const PROPRIEDADES_SO_TOKENS = new Set([
 const PALAVRAS_PERMITIDAS = new Set(['0', 'none', 'inherit', 'initial', 'unset']);
 const PALAVRAS_Z_PERMITIDAS = new Set(['0', 'auto', 'inherit', 'initial', 'unset']);
 const PESOS_PERMITIDOS = new Set(['400', '500', '600', 'inherit', 'initial', 'unset']);
-const QUEBRAS_PERMITIDAS = new Set(['640px', '1024px']);
+const QUEBRAS_PERMITIDAS = new Set(['640px', '900px', '1024px']);
 
 function preservarQuebras(texto) {
   return texto.replace(/[^\n]/g, '');
@@ -209,7 +209,7 @@ function verificarMediaQueries(arquivo, semComentarios, problemas) {
         arquivo,
         linha: linhaDoIndice(semComentarios, match.index),
         regra: 'media-invalida',
-        detalhe: `@media fora de 640px/1024px ou prefers-reduced-motion: ${condicao}`,
+        detalhe: `@media fora de 640px/900px/1024px ou prefers-reduced-motion: ${condicao}`,
       });
     }
   }

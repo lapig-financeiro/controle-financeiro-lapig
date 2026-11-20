@@ -45,6 +45,19 @@ function chaveFiltros(usuarioId) {
   return `cf_bolsistas_filtros_${usuarioId || 'local'}`;
 }
 
+function chavePassos(usuarioId) {
+  return `cf_bolsistas_passos_${usuarioId || 'local'}`;
+}
+
+function lerPassos(usuarioId) {
+  if (typeof window === 'undefined' || !window.localStorage) return true;
+  try {
+    return window.localStorage.getItem(chavePassos(usuarioId)) !== 'fechado';
+  } catch {
+    return true;
+  }
+}
+
 function lerFiltros(usuarioId) {
   if (typeof window === 'undefined' || !window.localStorage) return { ...FILTROS_PADRAO };
   try {
@@ -354,12 +367,14 @@ export function Bolsistas({ usuarioId = null }) {
   const [erroAcao, setErroAcao] = useState(null);
   const [aviso, setAviso] = useState(null);
   const [filtros, setFiltros] = useState(() => lerFiltros(usuarioId));
+  const [passosAbertos, setPassosAbertos] = useState(() => lerPassos(usuarioId));
   const [mostrarNovaCaixa, setMostrarNovaCaixa] = useState(false);
   const [novaCaixa, setNovaCaixa] = useState({ nome: '', meses: '12' });
   const [emAcao, setEmAcao] = useState(false);
   const montadoRef = useRef(true);
   const geracaoRef = useRef(0);
   const acaoRef = useRef(false);
+  const caixasRef = useRef(null);
 
   useEffect(() => {
     montadoRef.current = true;
@@ -514,6 +529,26 @@ export function Bolsistas({ usuarioId = null }) {
     });
   };
 
+  const rolarParaCaixas = () => {
+    caixasRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
+
+  const abrirNovaCaixa = () => {
+    setMostrarNovaCaixa(true);
+    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 900px)')?.matches) {
+      setTimeout(rolarParaCaixas, 0);
+    }
+  };
+
+  const fecharPassos = () => {
+    setPassosAbertos(false);
+    try {
+      window.localStorage?.setItem(chavePassos(usuarioId), 'fechado');
+    } catch {
+      /* localStorage pode estar indisponível; o passo a passo volta na próxima sessão */
+    }
+  };
+
   const escolherEquipe = async (pessoa, equipe) => {
     const alvo = equipe === 'sem' ? null : equipe;
     if (equipeDaPessoa(pessoa) === equipe) return;
@@ -575,6 +610,40 @@ export function Bolsistas({ usuarioId = null }) {
         titulo="Bolsistas"
         contexto="Monte o pedido de bolsas: filtre e coloque as pessoas nas caixas"
       />
+
+      {passosAbertos && (
+        <section class="bolsistas__passos" aria-label="Como montar o pedido">
+          <ol class="bolsistas__passos-lista">
+            <li>
+              <span class="bolsistas__passo-numero" aria-hidden="true">1.</span>{' '}
+              Filtre quem entra
+            </li>
+            <li>
+              <span class="bolsistas__passo-numero" aria-hidden="true">2.</span>{' '}
+              Crie uma caixa (ex.: Time Pastagem)
+            </li>
+            <li>
+              <span class="bolsistas__passo-numero" aria-hidden="true">3.</span>{' '}
+              Ponha as pessoas na caixa
+            </li>
+          </ol>
+          <div class="bolsistas__passos-acoes">
+            <Botao
+              variante="secundario"
+              tamanho="compacto"
+              icone={Plus}
+              onClick={abrirNovaCaixa}
+              desabilitado={emAcao}
+            >
+              Nova caixa
+            </Botao>
+            <Botao variante="fantasma" tamanho="compacto" onClick={fecharPassos}>
+              Entendi
+            </Botao>
+          </div>
+        </section>
+      )}
+
       {contexto && <p class="bolsistas__contexto">{contexto}</p>}
 
       {st.erro && <AvisoFalha mensagem={st.erro} aoTentarNovamente={carregar} />}
@@ -681,6 +750,23 @@ export function Bolsistas({ usuarioId = null }) {
               </p>
             </div>
 
+            {dados.caixas.length === 0 && (
+              <div class="bolsistas__primeira-caixa">
+                <p class="bolsistas__primeira-caixa-texto">
+                  Crie sua primeira caixa para começar a separar as pessoas
+                </p>
+                <Botao
+                  variante="secundario"
+                  tamanho="compacto"
+                  icone={Plus}
+                  onClick={abrirNovaCaixa}
+                  desabilitado={emAcao}
+                >
+                  Nova caixa
+                </Botao>
+              </div>
+            )}
+
             {pessoasFiltradas.length === 0 ? (
               <Vazio mensagem="Nenhuma pessoa com esses filtros." />
             ) : (
@@ -695,7 +781,9 @@ export function Bolsistas({ usuarioId = null }) {
                   return (
                     <li
                       key={pessoa.holder_id}
-                      class="bolsistas__pessoa"
+                      class={`bolsistas__pessoa${
+                        dados.caixas.length === 0 ? ' bolsistas__pessoa--sem-caixas' : ''
+                      }`}
                       data-holder-id={pessoa.holder_id}
                     >
                       <div class="bolsistas__pessoa-identidade">
@@ -734,37 +822,37 @@ export function Bolsistas({ usuarioId = null }) {
                         </details>
                       </div>
 
-                      <div class="bolsistas__bolsas">
-                        {bolsasVisiveis.map((bolsa) => (
-                          <span
-                            key={bolsa.scholarship_id}
-                            class={`bolsistas__bolsa${
-                              bolsa.vigente_hoje ? '' : ' bolsistas__bolsa--apagada'
-                            }`}
-                            title={bolsa.vigente_hoje ? 'Vigente hoje' : 'Não vigente hoje'}
-                          >
-                            {bolsaTexto(bolsa)}
+                      <div class="bolsistas__pessoa-conteudo">
+                        <div class="bolsistas__bolsas">
+                          {bolsasVisiveis.map((bolsa) => (
+                            <span
+                              key={bolsa.scholarship_id}
+                              class={`bolsistas__bolsa${
+                                bolsa.vigente_hoje ? '' : ' bolsistas__bolsa--apagada'
+                              }`}
+                              title={bolsa.vigente_hoje ? 'Vigente hoje' : 'Não vigente hoje'}
+                            >
+                              {bolsaTexto(bolsa)}
+                            </span>
+                          ))}
+                        </div>
+
+                        <p class="bolsistas__pessoa-soma">
+                          <span class="bolsistas__pessoa-valor">
+                            soma vigente hoje (todos os seus centros):{' '}
+                            <strong>{dinheiro(pessoa.valor_vigente, { centavos: false })}</strong>/mês
                           </span>
-                        ))}
+                          {temCentroDesmarcado && (
+                            <span class="bolsistas__pessoa-aviso-centro">
+                              inclui bolsa de centro desmarcado
+                            </span>
+                          )}
+                        </p>
                       </div>
 
-                      <div class="bolsistas__pessoa-soma">
-                        <span class="bolsistas__pessoa-valor">
-                          soma vigente hoje (todos os seus centros):{' '}
-                          <strong>{dinheiro(pessoa.valor_vigente, { centavos: false })}</strong>/mês
-                        </span>
-                        {temCentroDesmarcado && (
-                          <span class="bolsistas__pessoa-aviso-centro">
-                            inclui bolsa de centro desmarcado
-                          </span>
-                        )}
-                      </div>
-
-                      <div class="bolsistas__pessoa-acoes">
-                        {dados.caixas.length === 0 ? (
-                          <span class="bolsistas__sem-caixa">Crie uma caixa para colocar as pessoas.</span>
-                        ) : (
-                          dados.caixas.map((caixa) => {
+                      {dados.caixas.length > 0 && (
+                        <div class="bolsistas__pessoa-acoes">
+                          {dados.caixas.map((caixa) => {
                             const esta = caixaAtual?.id === caixa.id;
                             return esta ? (
                               <span
@@ -790,9 +878,9 @@ export function Bolsistas({ usuarioId = null }) {
                                 Pôr em {caixa.nome}
                               </Botao>
                             );
-                          })
-                        )}
-                      </div>
+                          })}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
@@ -800,14 +888,14 @@ export function Bolsistas({ usuarioId = null }) {
             )}
           </section>
 
-          <aside class="bolsistas__caixas" aria-label="Caixas do pedido">
+          <aside ref={caixasRef} class="bolsistas__caixas" aria-label="Caixas do pedido">
             <div class="bolsistas__caixas-topo">
               <h2 class="bolsistas__caixas-titulo">Caixas</h2>
               <Botao
                 variante="primario"
                 tamanho="compacto"
                 icone={Plus}
-                onClick={() => setMostrarNovaCaixa((v) => !v)}
+                onClick={abrirNovaCaixa}
                 desabilitado={emAcao}
               >
                 Nova caixa
@@ -848,7 +936,11 @@ export function Bolsistas({ usuarioId = null }) {
             )}
 
             {dados.caixas.length === 0 ? (
-              <Vazio mensagem="Nenhuma caixa ainda. Crie a primeira para montar o time." />
+              <Vazio
+                mensagem="Nenhuma caixa ainda. Crie a primeira para montar o time."
+                rotuloBotao="Nova caixa"
+                aoClicar={abrirNovaCaixa}
+              />
             ) : (
               dados.caixas.map((caixa) => (
                 <CaixaPedido
@@ -868,6 +960,37 @@ export function Bolsistas({ usuarioId = null }) {
             )}
           </aside>
         </div>
+      )}
+
+      {dados && (
+        <aside class="bolsistas__barra-caixas" aria-label="Resumo das caixas">
+          <div class="bolsistas__barra-resumo">
+            {dados.caixas.length === 0 ? (
+              <span class="bolsistas__barra-vazio">Nenhuma caixa ainda.</span>
+            ) : (
+              dados.caixas.map((caixa) => (
+                <span key={caixa.id} class="bolsistas__barra-caixa">
+                  {caixa.nome}: {caixa.pessoas} ·{' '}
+                  {dinheiro(caixa.total_mensal, { centavos: false })}/mês
+                </span>
+              ))
+            )}
+          </div>
+          {dados.caixas.length === 0 ? (
+            <Botao
+              variante="primario"
+              tamanho="compacto"
+              onClick={abrirNovaCaixa}
+              desabilitado={emAcao}
+            >
+              Nova caixa
+            </Botao>
+          ) : (
+            <Botao variante="secundario" tamanho="compacto" onClick={rolarParaCaixas}>
+              Ver caixas
+            </Botao>
+          )}
+        </aside>
       )}
     </div>
   );
