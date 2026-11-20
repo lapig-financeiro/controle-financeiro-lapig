@@ -2975,3 +2975,112 @@ export async function arquivoDeOrigem(documento) {
     return { dados: null, erro: 'Não foi possível buscar o PDF de exemplo.' };
   }
 }
+
+const CENTRO_INATIVO_ACESSOS_EXEMPLO = {
+  id: '00000000-0000-4000-8000-000000030900',
+  code: '30.900',
+  name: 'Projeto Piloto Encerrado',
+  active: false,
+};
+
+let usuariosAcessosExemplo = [
+  {
+    user_id: 'exemplo-admin',
+    nome: 'Ana Exemplo',
+    email: 'ana.exemplo@example.org',
+    role: 'admin',
+    criado_em: '2026-01-10T10:00:00Z',
+    centros: [IDS.cerrado, IDS.atlas],
+  },
+  {
+    user_id: 'exemplo-admin-2',
+    nome: 'Carlos Exemplo',
+    email: 'carlos.exemplo@example.org',
+    role: 'admin',
+    criado_em: '2026-01-20T10:00:00Z',
+    centros: [],
+  },
+  {
+    user_id: 'exemplo-prof-sem-centro',
+    nome: 'Bruno Exemplo',
+    email: 'bruno.exemplo@example.org',
+    role: 'professor',
+    criado_em: '2026-11-19T14:30:00Z',
+    centros: [],
+  },
+  {
+    user_id: 'exemplo-prof-clara',
+    nome: 'Profa. Clara Mendes',
+    email: 'clara.exemplo@example.org',
+    role: 'professor',
+    criado_em: '2026-02-15T09:00:00Z',
+    centros: [IDS.cerrado, IDS.atlas, IDS.corredor],
+  },
+  {
+    user_id: 'exemplo-prof-renato',
+    nome: 'Prof. Renato Alves',
+    email: 'renato.exemplo@example.org',
+    role: 'professor',
+    criado_em: '2026-03-01T11:00:00Z',
+    centros: [IDS.atlas, IDS.nascentes, IDS.veredas, IDS.solos, IDS.tarifa],
+  },
+  {
+    user_id: 'exemplo-agente',
+    nome: 'Buriti',
+    email: 'buriti.exemplo@example.org',
+    role: 'agente',
+    criado_em: '2026-04-01T08:00:00Z',
+    centros: [IDS.cerrado, IDS.atlas, IDS.nascentes],
+  },
+  {
+    user_id: 'exemplo-automacao',
+    nome: 'Robô de Ingestão',
+    email: 'automacao.exemplo@example.org',
+    role: 'automacao',
+    criado_em: '2026-05-01T08:00:00Z',
+    centros: [],
+  },
+];
+
+function centrosAcessosExemplo() {
+  const ativos = CENTROS_BASE.map((c) => ({
+    id: c.id,
+    code: c.code,
+    name: c.name,
+    active: true,
+  }));
+  return [...ativos, { ...CENTRO_INATIVO_ACESSOS_EXEMPLO }].sort((a, b) =>
+    String(a.code).localeCompare(String(b.code), 'pt-BR')
+  );
+}
+
+export async function acessosUsuarios() {
+  return {
+    dados: {
+      usuarios: structuredClone(usuariosAcessosExemplo),
+      centros: centrosAcessosExemplo(),
+    },
+    erro: null,
+  };
+}
+
+export async function salvarAcessos(userId, role, projectIds) {
+  const usuario = usuariosAcessosExemplo.find((u) => u.user_id === userId);
+  if (!usuario) {
+    return { dados: null, erro: 'Usuário não encontrado.' };
+  }
+  if (usuario.role === 'agente' || usuario.role === 'automacao') {
+    return { dados: null, erro: 'Sem permissão' };
+  }
+  if (!['admin', 'professor'].includes(role)) {
+    return { dados: null, erro: `Papel inválido: ${role}` };
+  }
+
+  const validos = new Set(centrosAcessosExemplo().map((c) => c.id));
+  usuario.role = role;
+  usuario.centros = Array.from(
+    new Set((Array.isArray(projectIds) ? projectIds : []).filter((id) => validos.has(id)))
+  );
+
+  return { dados: { ok: true }, erro: null };
+}
