@@ -32,6 +32,12 @@ function rotuloPapel(role) {
   return ROTULOS_PAPEL[role] || role || '—';
 }
 
+function codigoCentro(centro) {
+  return typeof centro?.code === 'string' && centro.code.trim()
+    ? centro.code.trim()
+    : 'sem código';
+}
+
 function prioridadeLogin(usuario) {
   if (usuario.role === 'professor' && usuario.centros.length === 0) return 0;
   if (usuario.role === 'professor') return 1;
@@ -58,9 +64,10 @@ function ordenarLogins(usuarios) {
 function ordenarCentros(centros) {
   return [...centros].sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
-    const diffCode = String(a.code || '').localeCompare(String(b.code || ''), 'pt-BR', {
-      sensitivity: 'base',
-    });
+    const codeA = typeof a.code === 'string' ? a.code.trim() : '';
+    const codeB = typeof b.code === 'string' ? b.code.trim() : '';
+    if (Boolean(codeA) !== Boolean(codeB)) return codeA ? -1 : 1;
+    const diffCode = codeA.localeCompare(codeB, 'pt-BR', { sensitivity: 'base' });
     if (diffCode !== 0) return diffCode;
     return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR', {
       sensitivity: 'base',
@@ -82,8 +89,15 @@ function resumoOQueVe(usuario, centrosPorId) {
   }
 
   const codigos = usuario.centros
-    .map((id) => centrosPorId.get(id)?.code || id)
-    .sort((a, b) => String(a).localeCompare(String(b), 'pt-BR', { sensitivity: 'base' }));
+    .map((id) => {
+      const c = centrosPorId.get(id);
+      return typeof c?.code === 'string' && c.code.trim() ? c.code.trim() : '';
+    })
+    .sort((a, b) => {
+      if (Boolean(a) !== Boolean(b)) return a ? -1 : 1;
+      return a.localeCompare(b, 'pt-BR', { sensitivity: 'base' });
+    })
+    .map((code) => code || 'sem código');
 
   const prefixo = `${total} ${total === 1 ? 'centro' : 'centros'}`;
   if (codigos.length <= 4) {
@@ -105,6 +119,7 @@ export function Admin({ usuarioId = null }) {
   const [papelPainel, setPapelPainel] = useState('professor');
   const [marcados, setMarcados] = useState(() => new Set());
   const [buscaCentro, setBuscaCentro] = useState('');
+  const [encerradosAberto, setEncerradosAberto] = useState(false);
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erroPainel, setErroPainel] = useState(null);
@@ -112,6 +127,9 @@ export function Admin({ usuarioId = null }) {
   const montadoRef = useRef(true);
   const geracaoRef = useRef(0);
   const salvandoRef = useRef(false);
+  const acoesPainelRef = useRef(null);
+  const confirmandoAnteriorRef = useRef(false);
+  const devolverFocoSalvarRef = useRef(false);
   const papelSelectId = useId();
   const papelAjudaId = useId();
 
@@ -123,22 +141,56 @@ export function Admin({ usuarioId = null }) {
     };
   }, []);
 
-  const carregar = useCallback(async () => {
+  const carregar = useCallback(async ({ posSalvar = false } = {}) => {
     const geracao = ++geracaoRef.current;
     setSt((anterior) => ({ ...anterior, carregando: true, erro: null }));
-    const res = await acessosUsuarios();
-    if (!montadoRef.current || geracao !== geracaoRef.current) return false;
-    if (res.erro) {
-      setSt({ carregando: false, dados: null, erro: res.erro });
+    try {
+      const res = await acessosUsuarios();
+      if (!montadoRef.current || geracao !== geracaoRef.current) return false;
+      if (res?.erro) {
+        setSt((anterior) => {
+          const msg = posSalvar && anterior.dados
+            ? 'Os acessos foram salvos, mas a lista não recarregou.'
+            : res.erro;
+          return { carregando: false, dados: anterior.dados, erro: msg };
+        });
+        return false;
+      }
+      setSt({ carregando: false, dados: res.dados, erro: null });
+      return true;
+    } catch {
+      if (!montadoRef.current || geracao !== geracaoRef.current) return false;
+      setSt((anterior) => {
+        const msg = posSalvar && anterior.dados
+          ? 'Os acessos foram salvos, mas a lista não recarregou.'
+          : 'Não foi possível carregar os acessos.';
+        return { carregando: false, dados: anterior.dados, erro: msg };
+      });
       return false;
     }
-    setSt({ carregando: false, dados: res.dados, erro: null });
-    return true;
   }, []);
 
   useEffect(() => {
-    carregar();
+    carregar().catch(() => {
+      if (montadoRef.current) {
+        setSt((anterior) => ({
+          carregando: false,
+          dados: anterior.dados,
+          erro: 'Não foi possível carregar os acessos.',
+        }));
+      }
+    });
   }, [carregar]);
+
+  useEffect(() => {
+    if (confirmandoRemocao && !confirmandoAnteriorRef.current) {
+      acoesPainelRef.current?.querySelector('.admin__confirmacao .botao--primario')?.focus();
+    } else if (!confirmandoRemocao && confirmandoAnteriorRef.current && devolverFocoSalvarRef.current) {
+      devolverFocoSalvarRef.current = false;
+      acoesPainelRef.current?.querySelector('.admin__painel-botoes .botao--primario')?.focus();
+    }
+    confirmandoAnteriorRef.current = confirmandoRemocao;
+  }, [confirmandoRemocao]);
 
   const dados = st.dados;
 
@@ -170,33 +222,42 @@ export function Admin({ usuarioId = null }) {
   }, [usuariosOrdenados, mostrarBuscaLogins, buscaLogin]);
 
   const abrirPainel = (usuario) => {
-    setUsuarioEditando(usuario);
-    setPapelPainel(usuario.role);
-    setMarcados(new Set(usuario.centros));
+    if (salvandoRef.current || st.carregando) return;
+    const atual = (st.dados?.usuarios || []).find((u) => u.user_id === usuario.user_id) || usuario;
+    setAviso(null);
+    setUsuarioEditando(atual);
+    setPapelPainel(atual.role);
+    setMarcados(new Set(atual.centros));
     setBuscaCentro('');
+    setEncerradosAberto(false);
+    devolverFocoSalvarRef.current = false;
     setConfirmandoRemocao(false);
     setErroPainel(null);
   };
 
   const fecharPainel = () => {
     if (salvandoRef.current) return;
+    devolverFocoSalvarRef.current = false;
     setUsuarioEditando(null);
     setConfirmandoRemocao(false);
     setErroPainel(null);
   };
 
+  // Falha fechada: sem usuarioId, nenhum admin pode ser rebaixado pela tela.
+  const temUsuarioId = typeof usuarioId === 'string' && usuarioId.trim().length > 0;
   const ehProprioAdmin = Boolean(
     usuarioEditando &&
-      usuarioId &&
-      usuarioEditando.user_id === usuarioId &&
-      usuarioEditando.role === 'admin'
+      usuarioEditando.role === 'admin' &&
+      (!temUsuarioId || usuarioEditando.user_id === usuarioId)
   );
 
   const centrosVisiveisBusca = useMemo(() => {
     const termo = normalizarTexto(buscaCentro);
     if (!termo) return centrosOrdenados;
     return centrosOrdenados.filter(
-      (c) => normalizarTexto(c.code).includes(termo) || normalizarTexto(c.name).includes(termo)
+      (c) =>
+        normalizarTexto(codigoCentro(c)).includes(termo) ||
+        normalizarTexto(c.name).includes(termo)
     );
   }, [centrosOrdenados, buscaCentro]);
 
@@ -210,10 +271,17 @@ export function Admin({ usuarioId = null }) {
     [centrosVisiveisBusca]
   );
 
+  const centrosAlvoLote = useMemo(
+    () => (encerradosAberto ? centrosVisiveisBusca : ativosVisiveis),
+    [encerradosAberto, centrosVisiveisBusca, ativosVisiveis]
+  );
+
   const alteracoes = useMemo(() => {
     if (!usuarioEditando) {
       return {
         mudouPapel: false,
+        rebaixandoAdmin: false,
+        centrosMarcados: [],
         adicionados: [],
         removidos: [],
         temMudanca: false,
@@ -221,33 +289,48 @@ export function Admin({ usuarioId = null }) {
     }
 
     const iniciais = new Set(usuarioEditando.centros);
+    const centrosMarcados = [];
     const adicionados = [];
     const removidos = [];
 
     for (const c of centrosOrdenados) {
       const estava = iniciais.has(c.id);
       const esta = marcados.has(c.id);
+      if (esta) centrosMarcados.push(c);
       if (!estava && esta) adicionados.push(c);
       if (estava && !esta) removidos.push(c);
     }
 
     for (const id of marcados) {
-      if (!centrosPorId.has(id) && !iniciais.has(id)) {
-        adicionados.push({ id, code: id, name: id });
+      if (!centrosPorId.has(id)) {
+        const fallback = { id, code: '', name: 'sem código' };
+        centrosMarcados.push(fallback);
+        if (!iniciais.has(id)) adicionados.push(fallback);
       }
     }
     for (const id of iniciais) {
       if (!centrosPorId.has(id) && !marcados.has(id)) {
-        removidos.push({ id, code: id, name: id });
+        removidos.push({ id, code: '', name: 'sem código' });
       }
     }
 
     const mudouPapel = papelPainel !== usuarioEditando.role;
+    const rebaixandoAdmin = usuarioEditando.role === 'admin' && papelPainel === 'professor';
     const temMudanca = mudouPapel || adicionados.length > 0 || removidos.length > 0;
-    return { mudouPapel, adicionados, removidos, temMudanca };
+    return {
+      mudouPapel,
+      rebaixandoAdmin,
+      centrosMarcados,
+      adicionados,
+      removidos,
+      temMudanca,
+    };
   }, [usuarioEditando, papelPainel, marcados, centrosOrdenados, centrosPorId]);
 
+  const precisaConfirmar = alteracoes.rebaixandoAdmin || alteracoes.removidos.length > 0;
+
   const alternarCentro = (projectId) => {
+    devolverFocoSalvarRef.current = false;
     setConfirmandoRemocao(false);
     setErroPainel(null);
     setMarcados((anterior) => {
@@ -259,21 +342,23 @@ export function Admin({ usuarioId = null }) {
   };
 
   const marcarVisiveis = () => {
+    devolverFocoSalvarRef.current = false;
     setConfirmandoRemocao(false);
     setErroPainel(null);
     setMarcados((anterior) => {
       const proximo = new Set(anterior);
-      for (const c of centrosVisiveisBusca) proximo.add(c.id);
+      for (const c of centrosAlvoLote) proximo.add(c.id);
       return proximo;
     });
   };
 
   const limparVisiveis = () => {
+    devolverFocoSalvarRef.current = false;
     setConfirmandoRemocao(false);
     setErroPainel(null);
     setMarcados((anterior) => {
       const proximo = new Set(anterior);
-      for (const c of centrosVisiveisBusca) proximo.delete(c.id);
+      for (const c of centrosAlvoLote) proximo.delete(c.id);
       return proximo;
     });
   };
@@ -296,18 +381,21 @@ export function Admin({ usuarioId = null }) {
       if (!montadoRef.current) return;
       if (res?.erro) {
         setErroPainel(res.erro);
+        devolverFocoSalvarRef.current = false;
         setConfirmandoRemocao(false);
         return;
       }
 
       const nomeSalvo = usuarioEditando.nome;
+      devolverFocoSalvarRef.current = false;
       setUsuarioEditando(null);
       setConfirmandoRemocao(false);
       setAviso(`Acessos de ${nomeSalvo} salvos`);
-      await carregar();
+      await carregar({ posSalvar: true });
     } catch {
       if (!montadoRef.current) return;
       setErroPainel('Não foi possível salvar os acessos.');
+      devolverFocoSalvarRef.current = false;
       setConfirmandoRemocao(false);
     } finally {
       salvandoRef.current = false;
@@ -317,7 +405,8 @@ export function Admin({ usuarioId = null }) {
 
   const aoClicarSalvar = () => {
     if (!alteracoes.temMudanca || salvandoRef.current) return;
-    if (alteracoes.removidos.length > 0 && !confirmandoRemocao) {
+    if (precisaConfirmar && !confirmandoRemocao) {
+      devolverFocoSalvarRef.current = false;
       setConfirmandoRemocao(true);
       return;
     }
@@ -356,6 +445,7 @@ export function Admin({ usuarioId = null }) {
           <Botao
             variante="fantasma"
             tamanho="compacto"
+            desabilitado={salvando || st.carregando}
             onClick={() => abrirPainel(u)}
             aria-label={`Editar ${u.nome}`}
           >
@@ -377,7 +467,7 @@ export function Admin({ usuarioId = null }) {
           onChange={() => alternarCentro(centro.id)}
         />
         <span class="admin__centro-texto">
-          {centro.code} — {centro.name}
+          {codigoCentro(centro)} — {centro.name}
         </span>
       </label>
     </li>
@@ -398,15 +488,23 @@ export function Admin({ usuarioId = null }) {
         </p>
       )}
 
+      {st.erro && (
+        <AvisoFalha mensagem={st.erro} aoTentarNovamente={() => carregar()} />
+      )}
+
       {st.carregando && !dados ? (
         <Esqueleto variante="tabela" linhas={5} rotulo="Carregando acessos dos usuários" />
-      ) : st.erro ? (
-        <AvisoFalha mensagem={st.erro} aoTentarNovamente={carregar} />
       ) : dados && dados.usuarios.length === 0 ? (
         <Vazio mensagem="Nenhum login cadastrado." />
       ) : (
         dados && (
           <section class="admin__lista" aria-label="Logins cadastrados">
+            {st.carregando && (
+              <p class="admin__atualizando" role="status">
+                Atualizando…
+              </p>
+            )}
+
             {mostrarBuscaLogins && (
               <div class="admin__barra-busca">
                 <Campo
@@ -455,6 +553,7 @@ export function Admin({ usuarioId = null }) {
                     const proximo = e.currentTarget.value;
                     if (ehProprioAdmin && proximo !== 'admin') return;
                     setPapelPainel(proximo);
+                    devolverFocoSalvarRef.current = false;
                     setConfirmandoRemocao(false);
                     setErroPainel(null);
                   }}
@@ -503,7 +602,7 @@ export function Admin({ usuarioId = null }) {
                 <Botao
                   variante="fantasma"
                   tamanho="compacto"
-                  desabilitado={salvando || centrosVisiveisBusca.length === 0}
+                  desabilitado={salvando || centrosAlvoLote.length === 0}
                   onClick={marcarVisiveis}
                 >
                   Marcar todos
@@ -511,7 +610,7 @@ export function Admin({ usuarioId = null }) {
                 <Botao
                   variante="fantasma"
                   tamanho="compacto"
-                  desabilitado={salvando || centrosVisiveisBusca.length === 0}
+                  desabilitado={salvando || centrosAlvoLote.length === 0}
                   onClick={limparVisiveis}
                 >
                   Limpar
@@ -529,8 +628,18 @@ export function Admin({ usuarioId = null }) {
                   )}
 
                   {inativosVisiveis.length > 0 && (
-                    <details class="admin__encerrados">
-                      <summary class="admin__encerrados-titulo">
+                    <details
+                      class="admin__encerrados"
+                      open={encerradosAberto}
+                      onToggle={(e) => setEncerradosAberto(Boolean(e.currentTarget.open))}
+                    >
+                      <summary
+                        class="admin__encerrados-titulo"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setEncerradosAberto((v) => !v);
+                        }}
+                      >
                         Encerrados ({inativosVisiveis.length})
                       </summary>
                       <ul class="admin__centros-lista" aria-label="Centros encerrados">
@@ -549,26 +658,46 @@ export function Admin({ usuarioId = null }) {
                     Papel: {rotuloPapel(usuarioEditando.role)} → {rotuloPapel(papelPainel)}
                   </p>
                 )}
-                {alteracoes.adicionados.length > 0 && (
-                  <p class="admin__resumo-linha">
-                    Passa a ver: {alteracoes.adicionados.map((c) => c.code).join(', ')}
-                  </p>
-                )}
-                {alteracoes.removidos.length > 0 && (
-                  <p class="admin__resumo-linha">
-                    Deixa de ver: {alteracoes.removidos.map((c) => c.code).join(', ')}
-                  </p>
+                {alteracoes.rebaixandoAdmin ? (
+                  <>
+                    <p class="admin__resumo-linha">
+                      Passa a ver:{' '}
+                      {alteracoes.centrosMarcados.length === 0
+                        ? 'nenhum centro'
+                        : alteracoes.centrosMarcados.map(codigoCentro).join(', ')}
+                    </p>
+                    <p class="admin__resumo-linha">Deixa de ver: todos os centros</p>
+                  </>
+                ) : (
+                  <>
+                    {alteracoes.adicionados.length > 0 && (
+                      <p class="admin__resumo-linha">
+                        Passa a ver: {alteracoes.adicionados.map(codigoCentro).join(', ')}
+                      </p>
+                    )}
+                    {alteracoes.removidos.length > 0 && (
+                      <p class="admin__resumo-linha">
+                        Deixa de ver: {alteracoes.removidos.map(codigoCentro).join(', ')}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}
 
             {erroPainel && <AvisoFalha mensagem={erroPainel} grave />}
 
-            <div class="admin__painel-acoes">
+            <div class="admin__painel-acoes" ref={acoesPainelRef}>
               {confirmandoRemocao ? (
-                <div class="admin__confirmacao" role="group" aria-label="Confirmar remoção de centros">
+                <div
+                  class="admin__confirmacao"
+                  role="alert"
+                  aria-label="Confirmar remoção de acessos"
+                >
                   <p class="admin__confirmacao-texto">
-                    Deixa de ver {alteracoes.removidos.map((c) => c.code).join(', ')}. Confirmar?
+                    {alteracoes.rebaixandoAdmin
+                      ? 'Deixa de ver todos os centros. Confirmar?'
+                      : `Deixa de ver ${alteracoes.removidos.map(codigoCentro).join(', ')}. Confirmar?`}
                   </p>
                   <div class="admin__confirmacao-botoes">
                     <Botao
@@ -584,7 +713,10 @@ export function Admin({ usuarioId = null }) {
                       variante="fantasma"
                       tamanho="compacto"
                       desabilitado={salvando}
-                      onClick={() => setConfirmandoRemocao(false)}
+                      onClick={() => {
+                        devolverFocoSalvarRef.current = true;
+                        setConfirmandoRemocao(false);
+                      }}
                     >
                       Cancelar
                     </Botao>

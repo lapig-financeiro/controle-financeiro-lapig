@@ -342,7 +342,7 @@ export function App() {
 
     if (rota.pagina === 'admin') {
       if (!papelConhecido || !isAdmin) return null;
-      return <Admin usuarioId={usuario?.id || null} onNavegar={navegarPara} />;
+      return <Admin usuarioId={usuario?.id || null} />;
     }
 
     if (rota.pagina === 'componentes' && !import.meta.env.DEV) {

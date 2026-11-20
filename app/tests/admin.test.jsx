@@ -404,10 +404,238 @@ describe('página Admin — painel lateral e gravação', () => {
     expect(painel.querySelector('input[type="checkbox"][value="c-2"]').checked).toBe(true);
     expect(acessosUsuariosMock).toHaveBeenCalledTimes(1);
   });
+
+  it('aceita centro sem código (null ou espaços) exibindo "sem código" sem mostrar UUID', async () => {
+    const d = payloadBase();
+    d.centros.push(
+      { id: 'c-sem-uuid', code: null, name: 'Centro Sem Código', active: true },
+      { id: 'c-espaco-uuid', code: '  ', name: 'Centro Espaço', active: true }
+    );
+    d.usuarios[5].centros = ['c-sem-uuid', 'c-espaco-uuid'];
+    acessosUsuariosMock.mockResolvedValueOnce({ dados: d, erro: null });
+
+    render(<Admin usuarioId="u-admin-1" />, document.body);
+    await esperarPor(() => linhasTabela().length === 6);
+
+    const linhaDaniel = linhaPorNome('Daniel Novo');
+    expect(linhaDaniel.textContent).toContain('2 centros · sem código, sem código');
+    expect(linhaDaniel.textContent).not.toContain('c-sem-uuid');
+    expect(linhaDaniel.textContent).not.toContain('c-espaco-uuid');
+
+    botaoPorTexto(linhaDaniel, 'Editar').click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.textContent).toContain('sem código — Centro Sem Código');
+    expect(painel.textContent).toContain('sem código — Centro Espaço');
+
+    const checkSem = painel.querySelector('input[type="checkbox"][value="c-sem-uuid"]');
+    checkSem.checked = false;
+    checkSem.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+
+    expect(painel.querySelector('.admin__resumo').textContent).toContain('Deixa de ver: sem código');
+    expect(painel.querySelector('.admin__resumo').textContent).not.toContain('c-sem-uuid');
+
+    botaoPorTexto(painel, 'Salvar').click();
+    await tick();
+    expect(painel.querySelector('.admin__confirmacao').textContent).toContain(
+      'Deixa de ver sem código. Confirmar?'
+    );
+    expect(painel.querySelector('.admin__confirmacao').textContent).not.toContain('c-sem-uuid');
+  });
+
+  it('rebaixar admin para professor exige confirmação mesmo sem remover centros e mostra resumo completo', async () => {
+    const d = payloadBase();
+    d.usuarios.push({
+      user_id: 'u-admin-2',
+      nome: 'Beatriz Admin',
+      email: 'beatriz@example.org',
+      role: 'admin',
+      criado_em: null,
+      centros: [],
+    });
+    acessosUsuariosMock.mockResolvedValue({ dados: d, erro: null });
+
+    render(<Admin usuarioId="u-admin-1" />, document.body);
+    await esperarPor(() => linhasTabela().length === 7);
+
+    botaoPorTexto(linhaPorNome('Beatriz Admin'), 'Editar').click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+
+    const select = painel.querySelector('select');
+    select.value = 'professor';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+
+    const resumo = painel.querySelector('.admin__resumo').textContent;
+    expect(resumo).toContain('Papel: Admin → Professor');
+    expect(resumo).toContain('Passa a ver: nenhum centro');
+    expect(resumo).toContain('Deixa de ver: todos os centros');
+
+    botaoPorTexto(painel, 'Salvar').click();
+    await tick();
+
+    expect(salvarAcessosMock).not.toHaveBeenCalled();
+    const confirmacao = painel.querySelector('.admin__confirmacao');
+    expect(confirmacao).not.toBeNull();
+    expect(confirmacao.getAttribute('role')).toBe('alert');
+    expect(confirmacao.textContent).toContain('Deixa de ver todos os centros. Confirmar?');
+
+    botaoPorTexto(confirmacao, 'Confirmar e salvar').click();
+    await esperarPor(() => !document.querySelector('.painel-lateral'));
+    expect(salvarAcessosMock).toHaveBeenCalledWith('u-admin-2', 'professor', []);
+  });
+
+  it('Limpar com Encerrados fechado preserva centro encerrado marcado e envia na lista; abrir permite limpar', async () => {
+    const d = payloadBase();
+    const bruno = d.usuarios.find((u) => u.user_id === 'u-prof-um');
+    bruno.centros = ['c-1', 'c-inativo'];
+    acessosUsuariosMock.mockResolvedValue({ dados: d, erro: null });
+
+    render(<Admin usuarioId="u-admin-1" />, document.body);
+    await esperarPor(() => linhasTabela().length === 6);
+
+    botaoPorTexto(linhaPorNome('Bruno Professor'), 'Editar').click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+
+    const encerrados = painel.querySelector('details.admin__encerrados');
+    expect(encerrados.open).toBe(false);
+    expect(painel.querySelector('.admin__centros-contador').textContent).toBe('2 centros marcados');
+
+    botaoPorTexto(painel, 'Limpar').click();
+    await tick();
+    expect(painel.querySelector('.admin__centros-contador').textContent).toBe('1 centro marcado');
+    expect(painel.querySelector('input[type="checkbox"][value="c-inativo"]').checked).toBe(true);
+
+    botaoPorTexto(painel, 'Salvar').click();
+    await tick();
+    botaoPorTexto(painel.querySelector('.admin__confirmacao'), 'Confirmar e salvar').click();
+    await esperarPor(() => !document.querySelector('.painel-lateral'));
+    expect(salvarAcessosMock).toHaveBeenCalledWith('u-prof-um', 'professor', ['c-inativo']);
+
+    // Reabre, abre Encerrados e limpa também o inativo.
+    botaoPorTexto(linhaPorNome('Bruno Professor'), 'Editar').click();
+    const painel2 = await esperarPor(() => document.querySelector('.painel-lateral'));
+    const detalhes2 = painel2.querySelector('details.admin__encerrados');
+    detalhes2.querySelector('summary').click();
+    await tick();
+    expect(detalhes2.open).toBe(true);
+
+    botaoPorTexto(painel2, 'Limpar').click();
+    await tick();
+    expect(painel2.querySelector('.admin__centros-contador').textContent).toBe('0 centros marcados');
+    expect(painel2.querySelector('input[type="checkbox"][value="c-inativo"]').checked).toBe(false);
+  });
+
+  it('desabilita Editar durante recarga, mostra Atualizando…, usa dados atualizados e limpa aviso ao abrir outro painel', async () => {
+    let resolverRecarga;
+    const recargaControlada = new Promise((resolve) => {
+      resolverRecarga = resolve;
+    });
+
+    acessosUsuariosMock
+      .mockResolvedValueOnce({ dados: payloadBase(), erro: null })
+      .mockReturnValueOnce(recargaControlada);
+
+    render(<Admin usuarioId="u-admin-1" />, document.body);
+    await esperarPor(() => linhasTabela().length === 6);
+
+    botaoPorTexto(linhaPorNome('Bruno Professor'), 'Editar').click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    const checkC2 = painel.querySelector('input[type="checkbox"][value="c-2"]');
+    checkC2.checked = true;
+    checkC2.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+
+    botaoPorTexto(painel, 'Salvar').click();
+    await esperarPor(() => !document.querySelector('.painel-lateral'));
+
+    expect(document.querySelector('.admin__atualizando')?.textContent).toContain('Atualizando…');
+    expect(document.querySelector('.admin__aviso')?.textContent).toBe(
+      'Acessos de Bruno Professor salvos'
+    );
+    const botoesEditar = Array.from(document.querySelectorAll('.admin__tabela button'));
+    expect(botoesEditar.length).toBeGreaterThan(0);
+    expect(botoesEditar.every((b) => b.disabled)).toBe(true);
+
+    const atualizado = payloadBase();
+    atualizado.usuarios.find((u) => u.user_id === 'u-prof-um').centros = ['c-1', 'c-2'];
+    resolverRecarga({ dados: atualizado, erro: null });
+
+    await esperarPor(() => !document.querySelector('.admin__atualizando'));
+    expect(
+      Array.from(document.querySelectorAll('.admin__tabela button')).every((b) => !b.disabled)
+    ).toBe(true);
+
+    botaoPorTexto(linhaPorNome('Bruno Professor'), 'Editar').click();
+    const painelReaberto = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(document.querySelector('.admin__aviso')).toBeNull();
+    expect(painelReaberto.querySelector('input[type="checkbox"][value="c-2"]').checked).toBe(true);
+  });
+
+  it('mantém a lista anterior e mostra AvisoFalha se a recarga pós-salvamento falhar', async () => {
+    acessosUsuariosMock
+      .mockResolvedValueOnce({ dados: payloadBase(), erro: null })
+      .mockResolvedValueOnce({ dados: null, erro: 'Falha de rede' })
+      .mockResolvedValueOnce({ dados: payloadBase(), erro: null });
+
+    render(<Admin usuarioId="u-admin-1" />, document.body);
+    await esperarPor(() => linhasTabela().length === 6);
+
+    botaoPorTexto(linhaPorNome('Daniel Novo'), 'Editar').click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    const checkC1 = painel.querySelector('input[type="checkbox"][value="c-1"]');
+    checkC1.checked = true;
+    checkC1.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+
+    botaoPorTexto(painel, 'Salvar').click();
+    const avisoFalha = await esperarPor(() => document.querySelector('.aviso-falha'));
+    expect(avisoFalha.textContent).toContain(
+      'Os acessos foram salvos, mas a lista não recarregou.'
+    );
+    expect(linhasTabela()).toHaveLength(6);
+
+    botaoPorTexto(avisoFalha, 'Tentar de novo').click();
+    await esperarPor(() => !document.querySelector('.aviso-falha'));
+    expect(acessosUsuariosMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('move foco para Confirmar e salvar ao entrar no segundo passo e devolve foco para Salvar ao cancelar', async () => {
+    render(<Admin usuarioId="u-admin-1" />, document.body);
+    await esperarPor(() => linhasTabela().length === 6);
+
+    botaoPorTexto(linhaPorNome('Bruno Professor'), 'Editar').click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+
+    const checkC1 = painel.querySelector('input[type="checkbox"][value="c-1"]');
+    checkC1.checked = false;
+    checkC1.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+
+    botaoPorTexto(painel, 'Salvar').click();
+    const confirmacao = await esperarPor(() => painel.querySelector('.admin__confirmacao'));
+    expect(confirmacao.getAttribute('role')).toBe('alert');
+    expect(document.activeElement).toBe(botaoPorTexto(confirmacao, 'Confirmar e salvar'));
+
+    botaoPorTexto(confirmacao, 'Cancelar').click();
+    await esperarPor(() => !painel.querySelector('.admin__confirmacao'));
+    expect(document.activeElement).toBe(botaoPorTexto(painel, 'Salvar'));
+  });
+
+  it('guarda de próprio admin falha fechada quando usuarioId não é informado', async () => {
+    render(<Admin />, document.body);
+    await esperarPor(() => linhasTabela().length === 6);
+
+    botaoPorTexto(linhaPorNome('Ana Admin'), 'Editar').click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    const select = painel.querySelector('select');
+    expect(select.querySelector('option[value="professor"]').disabled).toBe(true);
+    expect(painel.textContent).toContain('Peça a outro administrador');
+  });
 });
 
 describe('serviço de acessos e modo exemplo', () => {
-  it('validador recusa payload sem usuarios ou sem centros ou com campos inválidos', () => {
+  it('validador recusa payload sem usuarios ou sem centros ou com campos inválidos, e aceita code nulo ou em branco', () => {
     expect(validarAcessosUsuarios(null)).toBe(false);
     expect(validarAcessosUsuarios({ centros: [] })).toBe(false);
     expect(validarAcessosUsuarios({ usuarios: [] })).toBe(false);
@@ -425,13 +653,22 @@ describe('serviço de acessos e modo exemplo', () => {
     ).toBe(false);
     expect(
       validarAcessosUsuarios({
+        usuarios: [],
+        centros: [{ id: 'c1', code: 123, name: 'Centro', active: true }],
+      })
+    ).toBe(false);
+    expect(
+      validarAcessosUsuarios({
         usuarios: [{ user_id: 'u1', nome: 'Ana', email: 'a@example.org', role: 'professor', centros: [] }],
-        centros: [{ id: 'c1', code: '30.901', name: 'Centro', active: true }],
+        centros: [
+          { id: 'c1', code: null, name: 'Centro Sem Código', active: true },
+          { id: 'c2', code: '  ', name: 'Centro Espaço', active: false },
+        ],
       })
     ).toBe(true);
   });
 
-  it('acessosUsuarios lê as 3 tabelas em paralelo, falha se qualquer uma falhar e traduz erro 42501 em salvarAcessos', async () => {
+  it('acessosUsuarios falha quando qualquer uma das 3 leituras falha, normaliza code e salvarAcessos barra agente e erros crus', async () => {
     const montarFrom = ({ usersRes, upRes, projRes }) => {
       fromMock.mockImplementation((tabela) => {
         if (tabela === 'app_users') {
@@ -461,13 +698,32 @@ describe('serviço de acessos e modo exemplo', () => {
         error: null,
       },
       upRes: { data: [{ user_id: 'u-1', project_id: 'c-1' }], error: null },
-      projRes: { data: [{ id: 'c-1', code: '30.901', name: 'Centro Um', active: true }], error: null },
+      projRes: {
+        data: [
+          { id: 'c-1', code: null, name: 'Centro Um', active: true },
+          { id: 'c-2', code: '  ', name: 'Centro Dois', active: false },
+        ],
+        error: null,
+      },
     });
 
     const ok = await _realAcessosUsuarios();
     expect(ok.erro).toBeNull();
     expect(ok.dados.usuarios[0].nome).toBe('visitante');
     expect(ok.dados.usuarios[0].centros).toEqual(['c-1']);
+    expect(ok.dados.centros).toEqual([
+      { id: 'c-1', code: '', name: 'Centro Um', active: true },
+      { id: 'c-2', code: '', name: 'Centro Dois', active: false },
+    ]);
+
+    montarFrom({
+      usersRes: { data: null, error: { message: 'falha app_users' } },
+      upRes: { data: [], error: null },
+      projRes: { data: [], error: null },
+    });
+    const falhaUsers = await _realAcessosUsuarios();
+    expect(falhaUsers.dados).toBeNull();
+    expect(falhaUsers.erro).toBe('Não foi possível carregar os acessos.');
 
     montarFrom({
       usersRes: { data: [], error: null },
@@ -476,11 +732,44 @@ describe('serviço de acessos e modo exemplo', () => {
     });
     const falhaUp = await _realAcessosUsuarios();
     expect(falhaUp.dados).toBeNull();
-    expect(falhaUp.erro).toBeTruthy();
+    expect(falhaUp.erro).toBe('Não foi possível carregar os acessos.');
+
+    montarFrom({
+      usersRes: { data: [], error: null },
+      upRes: { data: [], error: null },
+      projRes: { data: null, error: { message: 'falha projects' } },
+    });
+    const falhaProj = await _realAcessosUsuarios();
+    expect(falhaProj.dados).toBeNull();
+    expect(falhaProj.erro).toBe('Não foi possível carregar os acessos.');
+
+    const recusaAgente = await _realSalvarAcessos('u-1', 'agente', ['c-1']);
+    expect(recusaAgente).toEqual({ dados: null, erro: 'Papel inválido.' });
+    expect(rpcMock).not.toHaveBeenCalled();
 
     rpcMock.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied' } });
     const semPerm = await _realSalvarAcessos('u-1', 'professor', ['c-1']);
     expect(semPerm).toEqual({ dados: null, erro: 'Sem permissão' });
+
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '23503',
+        message: 'insert or update on table "user_projects" violates foreign key constraint "fk_proj"',
+      },
+    });
+    const fkCru = await _realSalvarAcessos('u-1', 'professor', ['c-1']);
+    expect(fkCru).toEqual({ dados: null, erro: 'Não foi possível salvar os acessos.' });
+
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: 'P0001',
+        message: 'duplicate key value violates unique constraint "pk_user_projects"',
+      },
+    });
+    const constraintCru = await _realSalvarAcessos('u-1', 'professor', ['c-1']);
+    expect(constraintCru).toEqual({ dados: null, erro: 'Não foi possível salvar os acessos.' });
 
     rpcMock.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'Papel inválido no banco' } });
     const msgBanco = await _realSalvarAcessos('u-1', 'admin', ['c-1']);
@@ -496,26 +785,33 @@ describe('serviço de acessos e modo exemplo', () => {
     });
   });
 
-  it('modo exemplo não tem @ fora de example.org e salvarAcessos altera a memória do módulo', async () => {
+  it('modo exemplo não tem @ fora de example.org, inclui segundo admin e salvarAcessos altera a memória do módulo', async () => {
     const fonteExemplo = fs.readFileSync(
       path.resolve('src/servicos/dadosExemplo.js'),
       'utf8'
     );
     const arrobas = fonteExemplo.match(/[^\s"'`<>]+@[^\s"'`<>]+/g) || [];
-    expect(arrobas.length).toBeGreaterThanOrEqual(6);
+    expect(arrobas.length).toBeGreaterThanOrEqual(7);
     for (const email of arrobas) {
       expect(email.toLowerCase()).toMatch(/@example\.org$/);
     }
 
     const antes = await dadosExemplo.acessosUsuarios();
     expect(antes.erro).toBeNull();
-    expect(antes.dados.usuarios).toHaveLength(6);
+    expect(antes.dados.usuarios).toHaveLength(7);
+    expect(
+      antes.dados.usuarios.filter((u) => u.role === 'admin' && u.user_id !== 'exemplo-admin')
+    ).toHaveLength(1);
     expect(antes.dados.centros.some((c) => c.active === false)).toBe(true);
 
     const profSemCentro = antes.dados.usuarios.find(
       (u) => u.role === 'professor' && u.centros.length === 0
     );
     expect(profSemCentro).toBeDefined();
+
+    const recusaAgenteExemplo = await dadosExemplo.salvarAcessos(profSemCentro.user_id, 'agente', []);
+    expect(recusaAgenteExemplo.dados).toBeNull();
+    expect(recusaAgenteExemplo.erro).toContain('Papel inválido');
 
     const primeiroCentro = antes.dados.centros.find((c) => c.active).id;
     const gravou = await dadosExemplo.salvarAcessos(profSemCentro.user_id, 'professor', [

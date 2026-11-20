@@ -2993,6 +2993,14 @@ let usuariosAcessosExemplo = [
     centros: [IDS.cerrado, IDS.atlas],
   },
   {
+    user_id: 'exemplo-admin-2',
+    nome: 'Carlos Exemplo',
+    email: 'carlos.exemplo@example.org',
+    role: 'admin',
+    criado_em: '2026-01-20T10:00:00Z',
+    centros: [],
+  },
+  {
     user_id: 'exemplo-prof-sem-centro',
     nome: 'Bruno Exemplo',
     email: 'bruno.exemplo@example.org',
@@ -3061,10 +3069,10 @@ export async function salvarAcessos(userId, role, projectIds) {
   if (!usuario) {
     return { dados: null, erro: 'Usuário não encontrado.' };
   }
-  if ((usuario.role === 'agente' && role !== 'agente') || usuario.role === 'automacao') {
+  if (usuario.role === 'agente' || usuario.role === 'automacao') {
     return { dados: null, erro: 'Sem permissão' };
   }
-  if (!['admin', 'professor', 'agente'].includes(role)) {
+  if (!['admin', 'professor'].includes(role)) {
     return { dados: null, erro: `Papel inválido: ${role}` };
   }
 

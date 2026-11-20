@@ -138,14 +138,18 @@ async function responderExemplo(chamada, mensagemErro, opcoes = {}) {
 }
 
 const CODIGOS_COM_MENSAGEM = new Set(['22023', 'P0002', '42501']);
+const CODIGOS_SALVAR_ACESSOS = new Set(['22023', 'P0002', '42501', 'P0001']);
 
-function mensagemDaRpc(error) {
-  if (!error || !CODIGOS_COM_MENSAGEM.has(String(error.code || ''))) return null;
+function mensagemDaRpc(error, codigosPermitidos = CODIGOS_COM_MENSAGEM) {
+  if (!error || !codigosPermitidos.has(String(error.code || ''))) return null;
   const mensagem = typeof error.message === 'string' ? error.message.trim() : '';
   if (!mensagem) return null;
   // Erro de ACL/constraint do próprio Postgres não é mensagem escrita para
   // a pessoa; esses continuam genéricos.
-  if (/^(permission denied|new row|duplicate key|violates|null value)/i.test(mensagem)) {
+  if (
+    /^(permission denied|new row|duplicate key|violates|null value|insert or update|update or delete)/i.test(mensagem) ||
+    /violates\s+.+\s+constraint/i.test(mensagem)
+  ) {
     return null;
   }
   return mensagem;
@@ -1175,7 +1179,7 @@ export async function arquivoDeOrigem(documento) {
 }
 
 const PAPEIS_ACESSO = new Set(['admin', 'professor', 'agente', 'automacao']);
-const PAPEIS_EDITAVEIS = new Set(['admin', 'professor', 'agente']);
+const PAPEIS_EDITAVEIS = new Set(['admin', 'professor']);
 
 function validarUsuarioAcesso(u) {
   return (
@@ -1197,8 +1201,7 @@ function validarCentroAcesso(c) {
     ehObjetoSimples(c) &&
     typeof c.id === 'string' &&
     c.id.trim().length > 0 &&
-    typeof c.code === 'string' &&
-    c.code.trim().length > 0 &&
+    (c.code === null || c.code === undefined || typeof c.code === 'string') &&
     typeof c.name === 'string' &&
     c.name.trim().length > 0 &&
     typeof c.active === 'boolean'
@@ -1270,7 +1273,7 @@ export async function acessosUsuarios() {
 
     const centros = projRes.data.map((c) => ({
       id: c.id,
-      code: c.code,
+      code: typeof c.code === 'string' ? c.code.trim() : '',
       name: c.name,
       active: c.active !== false,
     }));
@@ -1318,8 +1321,10 @@ export async function salvarAcessos(userId, role, projectIds) {
       if (String(error.code || '') === '42501') {
         return { dados: null, erro: 'Sem permissão' };
       }
-      const msg = typeof error.message === 'string' ? error.message.trim() : '';
-      return { dados: null, erro: msg || 'Não foi possível salvar os acessos.' };
+      return {
+        dados: null,
+        erro: mensagemDaRpc(error, CODIGOS_SALVAR_ACESSOS) || 'Não foi possível salvar os acessos.',
+      };
     }
 
     return { dados: { ok: true }, erro: null };
