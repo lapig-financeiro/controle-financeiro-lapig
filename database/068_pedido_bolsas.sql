@@ -28,9 +28,17 @@
 --      para `authenticated`: a leitura e a escrita são só pelas
 --      RPCs v2. O default deny é a barreira, e o `revoke` alcança
 --      também o que os privilégios padrão do schema concederem.
---   6. O agente (Buriti) não lê nem grava aqui. O gatilho de
---      statement `trg_bloqueia_agente` fecha a escrita de tabela e
---      as RPCs recusam o papel antes de qualquer leitura.
+--   6. O agente (Buriti) e a automação (Vigia) não leem nem gravam
+--      aqui. Os gatilhos de statement `trg_bloqueia_agente` e
+--      `trg_bloqueia_automacao` fecham a escrita de tabela e as
+--      RPCs recusam os dois papéis antes de qualquer leitura.
+--   7. Colocar/mover e editar são operações separadas. Colocar leva
+--      junto o valor e a nota do item de origem; editar grava
+--      exatamente o que veio. A lista da tela mostra a caixa atual
+--      como marcador, não como botão.
+--   8. Criar caixa e colocar pessoa tomam um advisory lock por dono
+--      (`caixas_pedido:<uuid do dono>`): duas abas não criam a 11ª
+--      caixa nem deixam a mesma pessoa em duas caixas.
 --
 -- Conferência: tests/sql/test_068_pedido_bolsas.sql
 -- Executor:    tools/replica-local/rodar-068-pglite.mjs
@@ -54,6 +62,20 @@ alter table public.bolsista_equipes add column if not exists holder_id      uuid
 alter table public.bolsista_equipes add column if not exists equipe         text;
 alter table public.bolsista_equipes add column if not exists atualizado_em  timestamptz default now();
 alter table public.bolsista_equipes add column if not exists atualizado_por uuid default auth.uid();
+
+-- A PK vem no create table, mas uma tabela parcialmente criada não a
+-- teria. Adicionar só se faltar é idempotente e não derruba as FKs que
+-- já apontam para ela.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.bolsista_equipes'::regclass and contype = 'p'
+  ) then
+    alter table public.bolsista_equipes
+      add constraint bolsista_equipes_pkey primary key (holder_id);
+  end if;
+end $$;
 
 alter table public.bolsista_equipes drop constraint if exists bolsista_equipes_holder_id_fkey;
 alter table public.bolsista_equipes
@@ -92,6 +114,17 @@ alter table public.caixas_pedido add column if not exists dono          uuid def
 alter table public.caixas_pedido add column if not exists criado_em     timestamptz default now();
 alter table public.caixas_pedido add column if not exists atualizado_em timestamptz default now();
 
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixas_pedido'::regclass and contype = 'p'
+  ) then
+    alter table public.caixas_pedido
+      add constraint caixas_pedido_pkey primary key (id);
+  end if;
+end $$;
+
 alter table public.caixas_pedido drop constraint if exists caixas_pedido_dono_fkey;
 alter table public.caixas_pedido
   add constraint caixas_pedido_dono_fkey
@@ -127,6 +160,17 @@ alter table public.caixa_pedido_itens add column if not exists holder_id    uuid
 alter table public.caixa_pedido_itens add column if not exists valor_mensal numeric(14,2);
 alter table public.caixa_pedido_itens add column if not exists nota         text;
 alter table public.caixa_pedido_itens add column if not exists criado_em    timestamptz default now();
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixa_pedido_itens'::regclass and contype = 'p'
+  ) then
+    alter table public.caixa_pedido_itens
+      add constraint caixa_pedido_itens_pkey primary key (caixa_id, holder_id);
+  end if;
+end $$;
 
 alter table public.caixa_pedido_itens drop constraint if exists caixa_pedido_itens_caixa_id_fkey;
 alter table public.caixa_pedido_itens
@@ -198,6 +242,25 @@ drop trigger if exists trg_bloqueia_agente on public.caixa_pedido_itens;
 create trigger trg_bloqueia_agente
   before insert or update or delete on public.caixa_pedido_itens
   for each statement execute function public.bloqueia_escrita_do_agente();
+
+-- A automação (Vigia) também não escreve aqui, no mesmo formato da 054:
+-- gatilho de statement, sem WHEN, chamando o helper existente. As RPCs
+-- recusam o papel antes de qualquer leitura; o gatilho pega o INSERT
+-- direto do dono da tabela.
+drop trigger if exists trg_bloqueia_automacao on public.bolsista_equipes;
+create trigger trg_bloqueia_automacao
+  before insert or update or delete on public.bolsista_equipes
+  for each statement execute function public._bloquear_financeiro_automacao();
+
+drop trigger if exists trg_bloqueia_automacao on public.caixas_pedido;
+create trigger trg_bloqueia_automacao
+  before insert or update or delete on public.caixas_pedido
+  for each statement execute function public._bloquear_financeiro_automacao();
+
+drop trigger if exists trg_bloqueia_automacao on public.caixa_pedido_itens;
+create trigger trg_bloqueia_automacao
+  before insert or update or delete on public.caixa_pedido_itens
+  for each statement execute function public._bloquear_financeiro_automacao();
 
 -- CPF: a regra única é `_tem_cpf` (064/065). O gatilho roda como
 -- dono e vale inclusive para INSERT direto do dono da tabela.
@@ -279,6 +342,32 @@ comment on function public._bolsista_visivel(uuid) is
 
 revoke all on function public._bolsista_visivel(uuid) from public, anon, authenticated;
 
+-- A lista do pedido tem uma janela de 180 dias além da visibilidade.
+-- Manter a regra num helper só evita que `get_pedido_bolsas_v2` e
+-- `limpar_ocultos_da_caixa_v2` discordem sobre quem está "oculto".
+create or replace function public._bolsista_no_pedido(p_holder_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select public._bolsista_visivel(p_holder_id)
+     and exists (
+       select 1
+         from public.scholarships s
+        where s.holder_id = p_holder_id
+          and s.status <> 'cancelled'
+          and s.end_date >= current_date - 180
+          and (public.is_admin() or s.project_id = any(public.allowed_project_ids()))
+     );
+$$;
+
+comment on function public._bolsista_no_pedido(uuid) is
+  'true se a pessoa entra na lista do pedido: visível e com bolsa não cancelada terminando nos últimos 180 dias no escopo (mig. 068).';
+
+revoke all on function public._bolsista_no_pedido(uuid) from public, anon, authenticated;
+
 -- ------------------------------------------------------------
 -- 4. RPCs
 -- ------------------------------------------------------------
@@ -302,22 +391,14 @@ begin
     raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
   end if;
 
-  if public.is_agente() then
-    raise exception 'O agente não lê nem grava o pedido de bolsas.' using errcode = '42501';
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
   end if;
 
   with pessoas as (
     select h.id, h.full_name
       from public.scholarship_holders h
-     where public._bolsista_visivel(h.id)
-       and exists (
-         select 1
-           from public.scholarships s
-          where s.holder_id = h.id
-            and s.status <> 'cancelled'
-            and s.end_date >= current_date - 180
-            and (v_admin or s.project_id = any(public.allowed_project_ids()))
-       )
+     where public._bolsista_no_pedido(h.id)
   ),
   bolsas as (
     select s.holder_id,
@@ -496,8 +577,8 @@ begin
     raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
   end if;
 
-  if public.is_agente() then
-    raise exception 'O agente não lê nem grava o pedido de bolsas.' using errcode = '42501';
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
   end if;
 
   if p_holder_id is null then
@@ -550,14 +631,15 @@ declare
   v_meses       integer;
   v_caixa       public.caixas_pedido;
   v_count       integer;
+  v_dono        uuid := auth.uid();
 begin
   if auth.uid() is null
      or not exists (select 1 from public.app_users u where u.user_id = auth.uid()) then
     raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
   end if;
 
-  if public.is_agente() then
-    raise exception 'O agente não lê nem grava o pedido de bolsas.' using errcode = '42501';
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
   end if;
 
   if p is null or jsonb_typeof(p) <> 'object' then
@@ -620,16 +702,19 @@ begin
   end if;
 
   if v_id is null then
+    -- Duas abas criando ao mesmo tempo não podem passar do limite de 10.
+    perform pg_advisory_xact_lock(hashtextextended('caixas_pedido:' || v_dono::text, 0));
+
     select count(*) into v_count
       from public.caixas_pedido c
-     where c.dono = auth.uid();
+     where c.dono = v_dono;
 
     if v_count >= 10 then
       raise exception 'Limite de 10 caixas por usuário.' using errcode = '22023';
     end if;
 
     insert into public.caixas_pedido (nome, meses, dono, criado_em, atualizado_em)
-    values (v_nome, coalesce(v_meses, 12), auth.uid(), now(), now())
+    values (v_nome, coalesce(v_meses, 12), v_dono, now(), now())
     returning * into v_caixa;
 
     return jsonb_build_object(
@@ -646,12 +731,9 @@ begin
    where c.id = v_id
      for update;
 
-  if not found then
+  -- Caixa de outro dono responde igual à inexistente: não serve de oráculo.
+  if not found or v_caixa.dono <> v_dono then
     raise exception 'Caixa do pedido não encontrada.' using errcode = 'P0002';
-  end if;
-
-  if v_caixa.dono <> auth.uid() then
-    raise exception 'Só o dono altera esta caixa.' using errcode = '42501';
   end if;
 
   update public.caixas_pedido
@@ -659,6 +741,7 @@ begin
          meses         = coalesce(v_meses, v_caixa.meses),
          atualizado_em = now()
    where id = v_id
+     and dono = v_dono
    returning * into v_caixa;
 
   return jsonb_build_object(
@@ -692,8 +775,8 @@ begin
     raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
   end if;
 
-  if public.is_agente() then
-    raise exception 'O agente não lê nem grava o pedido de bolsas.' using errcode = '42501';
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
   end if;
 
   if p_id is null then
@@ -705,29 +788,156 @@ begin
    where c.id = p_id
      for update;
 
-  if not found then
+  if not found or v_caixa.dono <> auth.uid() then
     raise exception 'Caixa do pedido não encontrada.' using errcode = 'P0002';
   end if;
 
-  if v_caixa.dono <> auth.uid() then
-    raise exception 'Só o dono apaga esta caixa.' using errcode = '42501';
-  end if;
-
-  delete from public.caixas_pedido where id = p_id;
+  delete from public.caixas_pedido where id = p_id and dono = auth.uid();
 
   return jsonb_build_object('id', p_id, 'apagada', true);
 end;
 $$;
 
 comment on function public.apagar_caixa_pedido_v2(uuid) is
-  'Apaga uma caixa do próprio usuário (itens caem por cascade). Caixa inexistente devolve P0002; de outra pessoa, 42501 (mig. 068).';
+  'Apaga uma caixa do próprio usuário (itens caem por cascade). Caixa inexistente e de outra pessoa devolvem P0002 (mig. 068).';
 
 revoke all on function public.apagar_caixa_pedido_v2(uuid) from public, anon;
 grant execute on function public.apagar_caixa_pedido_v2(uuid) to authenticated;
 
--- 4.5 colocar_na_caixa_v2(p_caixa_id, p_holder_id, p_valor_mensal, p_nota)
--- Upsert do item; tira a pessoa das outras caixas do mesmo dono.
+-- 4.5 colocar_na_caixa_v2(p_caixa_id, p_holder_id)
+-- Só coloca ou move. Se a pessoa já está numa caixa do mesmo dono,
+-- leva junto valor_mensal e nota do item de origem; se já está nesta
+-- caixa, não muda nada. Editar valor/nota é a 4.6.
+drop function if exists public.colocar_na_caixa_v2(uuid, uuid, numeric, text);
+
 create or replace function public.colocar_na_caixa_v2(
+  p_caixa_id  uuid,
+  p_holder_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_caixa      public.caixas_pedido;
+  v_item       public.caixa_pedido_itens%rowtype;
+  v_origem     public.caixa_pedido_itens%rowtype;
+  v_saiu       jsonb := '[]'::jsonb;
+  v_valor_uso  numeric;
+begin
+  if auth.uid() is null
+     or not exists (select 1 from public.app_users u where u.user_id = auth.uid()) then
+    raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
+  end if;
+
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
+  end if;
+
+  if p_caixa_id is null or p_holder_id is null then
+    raise exception 'Informe a caixa e a pessoa.' using errcode = '22023';
+  end if;
+
+  select * into v_caixa
+    from public.caixas_pedido c
+   where c.id = p_caixa_id
+     for update;
+
+  -- Caixa de outro dono responde igual à inexistente: não serve de oráculo.
+  if not found or v_caixa.dono <> auth.uid() then
+    raise exception 'Caixa do pedido não encontrada.' using errcode = 'P0002';
+  end if;
+
+  if not public._bolsista_visivel(p_holder_id) then
+    raise exception 'Pessoa fora do seu escopo.' using errcode = '42501';
+  end if;
+
+  -- Serializa por dono para duas abas não deixarem a pessoa em duas caixas.
+  perform pg_advisory_xact_lock(hashtextextended('caixas_pedido:' || v_caixa.dono::text, 0));
+
+  select * into v_item
+    from public.caixa_pedido_itens i
+   where i.caixa_id = p_caixa_id
+     and i.holder_id = p_holder_id;
+
+  if not found then
+    -- Item de origem em outra caixa do mesmo dono (se houver).
+    select i.* into v_origem
+      from public.caixa_pedido_itens i
+      join public.caixas_pedido c on c.id = i.caixa_id
+     where c.dono = v_caixa.dono
+       and i.holder_id = p_holder_id
+     order by c.criado_em, c.id
+     limit 1;
+
+    select coalesce(
+             jsonb_agg(
+               jsonb_build_object('caixa_id', c.id, 'nome', c.nome)
+               order by c.nome, c.id
+             ),
+             '[]'::jsonb
+           )
+      into v_saiu
+      from public.caixas_pedido c
+     where c.dono = v_caixa.dono
+       and c.id <> p_caixa_id
+       and exists (
+         select 1 from public.caixa_pedido_itens i
+          where i.caixa_id = c.id and i.holder_id = p_holder_id
+       );
+
+    delete from public.caixa_pedido_itens i
+     using public.caixas_pedido c
+     where i.caixa_id = c.id
+       and c.dono = v_caixa.dono
+       and c.id <> p_caixa_id
+       and i.holder_id = p_holder_id;
+
+    insert into public.caixa_pedido_itens (caixa_id, holder_id, valor_mensal, nota, criado_em)
+    values (p_caixa_id, p_holder_id, v_origem.valor_mensal, v_origem.nota, now());
+  end if;
+
+  select * into v_item
+    from public.caixa_pedido_itens i
+   where i.caixa_id = p_caixa_id
+     and i.holder_id = p_holder_id;
+
+  select coalesce(
+           v_item.valor_mensal,
+           (
+             select sum(s.amount)
+               from public.scholarships s
+              where s.holder_id = p_holder_id
+                and s.status in ('active', 'ended')
+                and s.start_date <= current_date
+                and current_date <= s.end_date
+                and (public.is_admin() or s.project_id = any(public.allowed_project_ids()))
+           ),
+           0
+         )
+    into v_valor_uso;
+
+  return jsonb_build_object(
+    'caixa_id',     p_caixa_id,
+    'holder_id',    p_holder_id,
+    'valor_mensal', v_item.valor_mensal,
+    'valor_usado',  v_valor_uso,
+    'nota',         v_item.nota,
+    'saiu_de',      v_saiu
+  );
+end;
+$$;
+
+comment on function public.colocar_na_caixa_v2(uuid, uuid) is
+  'Coloca uma pessoa visível na caixa do próprio usuário; se mover, leva valor e nota do item de origem e devolve saiu_de. Se já está na caixa, não muda nada. Caixa alheia responde P0002 (mig. 068).';
+
+revoke all on function public.colocar_na_caixa_v2(uuid, uuid) from public, anon;
+grant execute on function public.colocar_na_caixa_v2(uuid, uuid) to authenticated;
+
+-- 4.6 editar_item_caixa_v2(p_caixa_id, p_holder_id, p_valor_mensal, p_nota)
+-- Grava exatamente o que veio (null limpa); o item tem de existir.
+create or replace function public.editar_item_caixa_v2(
   p_caixa_id     uuid,
   p_holder_id    uuid,
   p_valor_mensal numeric default null,
@@ -740,9 +950,8 @@ set search_path = public, pg_temp
 as $$
 declare
   v_caixa      public.caixas_pedido;
-  v_valor      numeric(14,2);
+  v_valor      numeric;
   v_nota       text;
-  v_saiu       jsonb;
   v_valor_uso  numeric;
 begin
   if auth.uid() is null
@@ -750,8 +959,8 @@ begin
     raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
   end if;
 
-  if public.is_agente() then
-    raise exception 'O agente não lê nem grava o pedido de bolsas.' using errcode = '42501';
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
   end if;
 
   if p_caixa_id is null or p_holder_id is null then
@@ -763,33 +972,35 @@ begin
    where c.id = p_caixa_id
      for update;
 
-  if not found then
+  if not found or v_caixa.dono <> auth.uid() then
     raise exception 'Caixa do pedido não encontrada.' using errcode = 'P0002';
   end if;
 
-  if v_caixa.dono <> auth.uid() then
-    raise exception 'Só o dono altera esta caixa.' using errcode = '42501';
-  end if;
+  perform 1
+    from public.caixa_pedido_itens i
+   where i.caixa_id = p_caixa_id
+     and i.holder_id = p_holder_id
+     for update;
 
-  if not public._bolsista_visivel(p_holder_id) then
-    raise exception 'Pessoa fora do seu escopo.' using errcode = '42501';
+  if not found then
+    raise exception 'Pessoa não está nesta caixa.' using errcode = 'P0002';
   end if;
 
   if p_valor_mensal is not null then
     if p_valor_mensal = 'NaN'::numeric
-       or p_valor_mensal in ('Infinity'::numeric, '-Infinity'::numeric)
-       or p_valor_mensal <= 0
-       or p_valor_mensal > 999999999999.99 then
+       or p_valor_mensal in ('Infinity'::numeric, '-Infinity'::numeric) then
       raise exception 'Valor mensal deve ser um número positivo e finito.' using errcode = '22023';
     end if;
-    v_valor := round(p_valor_mensal, 2)::numeric(14,2);
+    -- Arredonda antes de validar: 0,004 vira 0,00 e é 22023, não 23514.
+    v_valor := round(p_valor_mensal, 2);
+    if v_valor <= 0 or v_valor > 999999999999.99 then
+      raise exception 'Valor mensal deve ser um número positivo e finito.' using errcode = '22023';
+    end if;
+    v_valor := v_valor::numeric(14,2);
   end if;
 
   if p_nota is not null then
     v_nota := nullif(btrim(p_nota), '');
-    if p_nota is not null and btrim(p_nota) <> '' and v_nota is null then
-      raise exception 'Nota inválida.' using errcode = '22023';
-    end if;
     if v_nota is not null and char_length(v_nota) > 300 then
       raise exception 'Nota deve ter até 300 caracteres.' using errcode = '22023';
     end if;
@@ -799,34 +1010,11 @@ begin
     end if;
   end if;
 
-  select coalesce(
-           jsonb_agg(
-             jsonb_build_object('caixa_id', c.id, 'nome', c.nome)
-             order by c.nome, c.id
-           ),
-           '[]'::jsonb
-         )
-    into v_saiu
-    from public.caixas_pedido c
-   where c.dono = auth.uid()
-     and c.id <> p_caixa_id
-     and exists (
-       select 1 from public.caixa_pedido_itens i
-        where i.caixa_id = c.id and i.holder_id = p_holder_id
-     );
-
-  delete from public.caixa_pedido_itens i
-   using public.caixas_pedido c
-   where i.caixa_id = c.id
-     and c.dono = auth.uid()
-     and c.id <> p_caixa_id
-     and i.holder_id = p_holder_id;
-
-  insert into public.caixa_pedido_itens (caixa_id, holder_id, valor_mensal, nota, criado_em)
-  values (p_caixa_id, p_holder_id, v_valor, v_nota, now())
-  on conflict (caixa_id, holder_id) do update
-    set valor_mensal = excluded.valor_mensal,
-        nota         = excluded.nota;
+  update public.caixa_pedido_itens
+     set valor_mensal = v_valor,
+         nota         = v_nota
+   where caixa_id = p_caixa_id
+     and holder_id = p_holder_id;
 
   select coalesce(
            v_valor,
@@ -844,23 +1032,22 @@ begin
     into v_valor_uso;
 
   return jsonb_build_object(
-    'caixa_id',    p_caixa_id,
-    'holder_id',   p_holder_id,
+    'caixa_id',     p_caixa_id,
+    'holder_id',    p_holder_id,
     'valor_mensal', v_valor,
     'valor_usado',  v_valor_uso,
-    'nota',         v_nota,
-    'saiu_de',      v_saiu
+    'nota',         v_nota
   );
 end;
 $$;
 
-comment on function public.colocar_na_caixa_v2(uuid, uuid, numeric, text) is
-  'Coloca ou atualiza uma pessoa visível na caixa do próprio usuário, tira a pessoa das outras caixas do mesmo dono e devolve de quais saiu. Valor nulo usa o vigente; nota e nome sem CPF (mig. 068).';
+comment on function public.editar_item_caixa_v2(uuid, uuid, numeric, text) is
+  'Grava valor e nota exatamente como vieram (null limpa) num item que já existe na caixa do próprio usuário; caixa alheia e item ausente respondem P0002 (mig. 068).';
 
-revoke all on function public.colocar_na_caixa_v2(uuid, uuid, numeric, text) from public, anon;
-grant execute on function public.colocar_na_caixa_v2(uuid, uuid, numeric, text) to authenticated;
+revoke all on function public.editar_item_caixa_v2(uuid, uuid, numeric, text) from public, anon;
+grant execute on function public.editar_item_caixa_v2(uuid, uuid, numeric, text) to authenticated;
 
--- 4.6 tirar_da_caixa_v2(p_caixa_id, p_holder_id)
+-- 4.7 tirar_da_caixa_v2(p_caixa_id, p_holder_id)
 create or replace function public.tirar_da_caixa_v2(p_caixa_id uuid, p_holder_id uuid)
 returns jsonb
 language plpgsql
@@ -875,8 +1062,8 @@ begin
     raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
   end if;
 
-  if public.is_agente() then
-    raise exception 'O agente não lê nem grava o pedido de bolsas.' using errcode = '42501';
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
   end if;
 
   if p_caixa_id is null or p_holder_id is null then
@@ -888,12 +1075,8 @@ begin
    where c.id = p_caixa_id
      for update;
 
-  if not found then
+  if not found or v_caixa.dono <> auth.uid() then
     raise exception 'Caixa do pedido não encontrada.' using errcode = 'P0002';
-  end if;
-
-  if v_caixa.dono <> auth.uid() then
-    raise exception 'Só o dono altera esta caixa.' using errcode = '42501';
   end if;
 
   delete from public.caixa_pedido_itens i
@@ -909,10 +1092,64 @@ end;
 $$;
 
 comment on function public.tirar_da_caixa_v2(uuid, uuid) is
-  'Tira uma pessoa da caixa do próprio usuário. Item inexistente devolve P0002; caixa de outra pessoa, 42501 (mig. 068).';
+  'Tira uma pessoa da caixa do próprio usuário. Item inexistente e caixa de outra pessoa devolvem P0002 (mig. 068).';
 
 revoke all on function public.tirar_da_caixa_v2(uuid, uuid) from public, anon;
 grant execute on function public.tirar_da_caixa_v2(uuid, uuid) to authenticated;
+
+-- 4.8 limpar_ocultos_da_caixa_v2(p_caixa_id)
+-- Apaga os itens de pessoas que saíram da lista (mesma regra da
+-- get_pedido_bolsas_v2), sem devolver nomes.
+create or replace function public.limpar_ocultos_da_caixa_v2(p_caixa_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_caixa     public.caixas_pedido;
+  v_removidos integer := 0;
+begin
+  if auth.uid() is null
+     or not exists (select 1 from public.app_users u where u.user_id = auth.uid()) then
+    raise exception 'Acesso negado ao pedido de bolsas.' using errcode = '42501';
+  end if;
+
+  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
+  end if;
+
+  if p_caixa_id is null then
+    raise exception 'Informe a caixa.' using errcode = '22023';
+  end if;
+
+  select * into v_caixa
+    from public.caixas_pedido c
+   where c.id = p_caixa_id
+     for update;
+
+  if not found or v_caixa.dono <> auth.uid() then
+    raise exception 'Caixa do pedido não encontrada.' using errcode = 'P0002';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('caixas_pedido:' || v_caixa.dono::text, 0));
+
+  delete from public.caixa_pedido_itens i
+   where i.caixa_id = p_caixa_id
+     and not public._bolsista_no_pedido(i.holder_id);
+
+  get diagnostics v_removidos = row_count;
+
+  return jsonb_build_object('caixa_id', p_caixa_id, 'removidos', v_removidos);
+end;
+$$;
+
+comment on function public.limpar_ocultos_da_caixa_v2(uuid) is
+  'Apaga os itens de pessoas que deixaram de aparecer na lista do pedido, só na caixa do próprio usuário; devolve quantos removeu (mig. 068).';
+
+revoke all on function public.limpar_ocultos_da_caixa_v2(uuid) from public, anon;
+grant execute on function public.limpar_ocultos_da_caixa_v2(uuid) to authenticated;
+
 
 -- ------------------------------------------------------------
 -- 5. Asserções dentro da transação
@@ -959,6 +1196,21 @@ begin
          and t.tgfoid = 'public.bloqueia_escrita_do_agente()'::regprocedure
     ) then
       raise exception '068: trg_bloqueia_agente ausente ou incorreto em %', v_sig;
+    end if;
+
+    if not exists (
+      select 1 from pg_trigger t
+       where t.tgrelid = v_tab
+         and t.tgname = 'trg_bloqueia_automacao'
+         and not t.tgisinternal
+         and t.tgenabled = 'O'
+         and t.tgqual is null
+         and (t.tgtype & 1) = 0
+         and (t.tgtype & 2) <> 0
+         and (t.tgtype & (4|8|16)) = (4|8|16)
+         and t.tgfoid = 'public._bloquear_financeiro_automacao()'::regprocedure
+    ) then
+      raise exception '068: trg_bloqueia_automacao ausente ou incorreto em %', v_sig;
     end if;
 
     if has_table_privilege('anon', v_tab, 'SELECT,INSERT,UPDATE,DELETE') then
@@ -1029,34 +1281,116 @@ begin
     end if;
   end loop;
 
-  -- FKs com a ação esperada.
+  -- PKs: contype 'p' com as colunas certas (ordem incluída na composta).
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.bolsista_equipes'::regclass
+       and contype = 'p'
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.bolsista_equipes'::regclass
+                              and a.attname = 'holder_id')]
+  ) then
+    raise exception '068: PK de bolsista_equipes ausente ou com colunas erradas';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixas_pedido'::regclass
+       and contype = 'p'
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixas_pedido'::regclass
+                              and a.attname = 'id')]
+  ) then
+    raise exception '068: PK de caixas_pedido ausente ou com colunas erradas';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixa_pedido_itens'::regclass
+       and contype = 'p'
+       and conkey = array[
+         (select a.attnum from pg_attribute a
+           where a.attrelid = 'public.caixa_pedido_itens'::regclass and a.attname = 'caixa_id'),
+         (select a.attnum from pg_attribute a
+           where a.attrelid = 'public.caixa_pedido_itens'::regclass and a.attname = 'holder_id')
+       ]
+  ) then
+    raise exception '068: PK de caixa_pedido_itens ausente ou com colunas erradas';
+  end if;
+
+  -- FKs: alvo (confrelid) e colunas (conkey -> confkey), sem confiar só no nome.
   if not exists (
     select 1 from pg_constraint
      where conrelid = 'public.bolsista_equipes'::regclass and contype = 'f'
-       and conname = 'bolsista_equipes_holder_id_fkey' and confdeltype = 'c'
+       and conname = 'bolsista_equipes_holder_id_fkey'
+       and confrelid = 'public.scholarship_holders'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.bolsista_equipes'::regclass
+                              and a.attname = 'holder_id')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'public.scholarship_holders'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
   ) then
-    raise exception '068: bolsista_equipes_holder_id_fkey ausente ou sem ON DELETE CASCADE';
+    raise exception '068: bolsista_equipes_holder_id_fkey ausente, com alvo/colunas errados ou sem CASCADE';
   end if;
   if not exists (
     select 1 from pg_constraint
      where conrelid = 'public.caixas_pedido'::regclass and contype = 'f'
-       and conname = 'caixas_pedido_dono_fkey' and confdeltype = 'c'
+       and conname = 'caixas_pedido_dono_fkey'
+       and confrelid = 'auth.users'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixas_pedido'::regclass
+                              and a.attname = 'dono')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'auth.users'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
   ) then
-    raise exception '068: caixas_pedido_dono_fkey ausente ou sem ON DELETE CASCADE';
+    raise exception '068: caixas_pedido_dono_fkey ausente, com alvo/colunas errados ou sem CASCADE';
   end if;
   if not exists (
     select 1 from pg_constraint
      where conrelid = 'public.caixa_pedido_itens'::regclass and contype = 'f'
-       and conname = 'caixa_pedido_itens_caixa_id_fkey' and confdeltype = 'c'
+       and conname = 'caixa_pedido_itens_caixa_id_fkey'
+       and confrelid = 'public.caixas_pedido'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixa_pedido_itens'::regclass
+                              and a.attname = 'caixa_id')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'public.caixas_pedido'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
   ) then
-    raise exception '068: caixa_pedido_itens_caixa_id_fkey ausente ou sem ON DELETE CASCADE';
+    raise exception '068: caixa_pedido_itens_caixa_id_fkey ausente, com alvo/colunas errados ou sem CASCADE';
   end if;
   if not exists (
     select 1 from pg_constraint
      where conrelid = 'public.caixa_pedido_itens'::regclass and contype = 'f'
-       and conname = 'caixa_pedido_itens_holder_id_fkey' and confdeltype = 'c'
+       and conname = 'caixa_pedido_itens_holder_id_fkey'
+       and confrelid = 'public.scholarship_holders'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixa_pedido_itens'::regclass
+                              and a.attname = 'holder_id')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'public.scholarship_holders'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
   ) then
-    raise exception '068: caixa_pedido_itens_holder_id_fkey ausente ou sem ON DELETE CASCADE';
+    raise exception '068: caixa_pedido_itens_holder_id_fkey ausente, com alvo/colunas errados ou sem CASCADE';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.bolsista_equipes'::regclass and contype = 'f'
+       and conname = 'bolsista_equipes_atualizado_por_fkey'
+       and confrelid = 'auth.users'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.bolsista_equipes'::regclass
+                              and a.attname = 'atualizado_por')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'auth.users'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'n'
+  ) then
+    raise exception '068: bolsista_equipes_atualizado_por_fkey ausente, com alvo/colunas errados ou sem SET NULL';
   end if;
 
   -- Nenhum CHECK pode chamar helper de CPF: a regra é o gatilho definer.
@@ -1089,14 +1423,18 @@ begin
     raise exception '068: índice idx_caixa_pedido_itens_holder ausente';
   end if;
 
-  -- RPCs públicas: definer, search_path exato, EXECUTE só para authenticated.
+  -- RPCs públicas: definer, search_path exato, EXECUTE só para authenticated,
+  -- guarda comum contra agente e automação e, nas duas que mexem em caixas,
+  -- o advisory lock por dono.
   foreach v_sig in array array[
     'public.get_pedido_bolsas_v2()',
     'public.salvar_equipe_bolsista_v2(uuid, text)',
     'public.salvar_caixa_pedido_v2(jsonb)',
     'public.apagar_caixa_pedido_v2(uuid)',
-    'public.colocar_na_caixa_v2(uuid, uuid, numeric, text)',
-    'public.tirar_da_caixa_v2(uuid, uuid)'
+    'public.colocar_na_caixa_v2(uuid, uuid)',
+    'public.editar_item_caixa_v2(uuid, uuid, numeric, text)',
+    'public.tirar_da_caixa_v2(uuid, uuid)',
+    'public.limpar_ocultos_da_caixa_v2(uuid)'
   ] loop
     v_fn := v_sig::regprocedure;
 
@@ -1124,11 +1462,35 @@ begin
        ) then
       raise exception '068: ACL incorreta em %', v_sig;
     end if;
+
+    if pg_get_functiondef(v_fn) not like '%is_automacao%' then
+      raise exception '068: % não recusa a automação', v_sig;
+    end if;
   end loop;
+
+  if pg_get_functiondef('public.salvar_caixa_pedido_v2(jsonb)'::regprocedure)
+       not like '%pg_advisory_xact_lock%' then
+    raise exception '068: salvar_caixa_pedido_v2 sem pg_advisory_xact_lock';
+  end if;
+  if pg_get_functiondef('public.colocar_na_caixa_v2(uuid, uuid)'::regprocedure)
+       not like '%pg_advisory_xact_lock%' then
+    raise exception '068: colocar_na_caixa_v2 sem pg_advisory_xact_lock';
+  end if;
+
+  -- A assinatura antiga de colocar (com valor/nota) não pode sobreviver.
+  if exists (
+    select 1 from pg_proc p
+     where p.pronamespace = 'public'::regnamespace
+       and p.proname = 'colocar_na_caixa_v2'
+       and p.pronargs <> 2
+  ) then
+    raise exception '068: sobreviveu uma sobrecarga antiga de colocar_na_caixa_v2';
+  end if;
 
   -- Helpers internos: definer, search_path e nenhum EXECUTE.
   foreach v_sig in array array[
     'public._bolsista_visivel(uuid)',
+    'public._bolsista_no_pedido(uuid)',
     'public._caixas_pedido_sem_cpf()',
     'public._caixa_pedido_itens_sem_cpf()'
   ] loop
@@ -1157,16 +1519,20 @@ begin
     end if;
   end loop;
 
-  -- Triggers de CPF por linha.
+  -- Triggers de CPF por linha: BEFORE INSERT OR UPDATE, sem DELETE nem
+  -- TRUNCATE, e sem WHEN.
   if not exists (
     select 1 from pg_trigger t
      where t.tgrelid = 'public.caixas_pedido'::regclass
        and t.tgname = 'trg_caixas_pedido_sem_cpf'
        and not t.tgisinternal
        and t.tgenabled = 'O'
+       and t.tgqual is null
        and (t.tgtype & 1) <> 0
        and (t.tgtype & 2) <> 0
        and (t.tgtype & (4|16)) = (4|16)
+       and (t.tgtype & 8) = 0
+       and (t.tgtype & 32) = 0
        and t.tgfoid = 'public._caixas_pedido_sem_cpf()'::regprocedure
   ) then
     raise exception '068: trg_caixas_pedido_sem_cpf ausente ou incorreto';
@@ -1177,9 +1543,12 @@ begin
        and t.tgname = 'trg_caixa_pedido_itens_sem_cpf'
        and not t.tgisinternal
        and t.tgenabled = 'O'
+       and t.tgqual is null
        and (t.tgtype & 1) <> 0
        and (t.tgtype & 2) <> 0
        and (t.tgtype & (4|16)) = (4|16)
+       and (t.tgtype & 8) = 0
+       and (t.tgtype & 32) = 0
        and t.tgfoid = 'public._caixa_pedido_itens_sem_cpf()'::regprocedure
   ) then
     raise exception '068: trg_caixa_pedido_itens_sem_cpf ausente ou incorreto';

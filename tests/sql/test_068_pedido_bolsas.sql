@@ -71,6 +71,14 @@ language sql immutable as $$
    limit 1
 $$;
 
+create or replace function pg_temp.item068(p_caixa jsonb, p_holder uuid) returns jsonb
+language sql immutable as $$
+  select value
+    from jsonb_array_elements(coalesce(p_caixa -> 'itens', '[]'::jsonb))
+   where (value ->> 'holder_id')::uuid = p_holder
+   limit 1
+$$;
+
 create or replace function pg_temp.codigos068(p jsonb) returns text[]
 language sql immutable as $$
   select array_agg(value ->> 'code' order by value ->> 'code')
@@ -80,9 +88,11 @@ $$;
 begin;
 
 -- ------------------------------------------------------------
--- BLOCO 0 — tabelas existentes e base sintética no lugar
+-- BLOCO 0 — tabelas existentes, esquema e base sintética
 -- ------------------------------------------------------------
 do $$
+declare
+  v_fn oid;
 begin
   if to_regclass('public.bolsista_equipes') is null
      or to_regclass('public.caixas_pedido') is null
@@ -98,6 +108,160 @@ begin
   if (select count(*) from public.projects where code in ('51.X', '51.Y', '63.INAT')) <> 3 then
     raise exception '068 FALHOU: base 064 incompleta (faltam 51.X/51.Y/63.INAT)';
   end if;
+
+  -- PKs: contype 'p' com as colunas certas.
+  perform pg_temp.ok068(exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.bolsista_equipes'::regclass
+       and contype = 'p'
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.bolsista_equipes'::regclass
+                              and a.attname = 'holder_id')]
+  ), 'PK de bolsista_equipes ausente ou errada');
+
+  perform pg_temp.ok068(exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixas_pedido'::regclass
+       and contype = 'p'
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixas_pedido'::regclass
+                              and a.attname = 'id')]
+  ), 'PK de caixas_pedido ausente ou errada');
+
+  perform pg_temp.ok068(exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixa_pedido_itens'::regclass
+       and contype = 'p'
+       and conkey = array[
+         (select a.attnum from pg_attribute a
+           where a.attrelid = 'public.caixa_pedido_itens'::regclass and a.attname = 'caixa_id'),
+         (select a.attnum from pg_attribute a
+           where a.attrelid = 'public.caixa_pedido_itens'::regclass and a.attname = 'holder_id')
+       ]
+  ), 'PK de caixa_pedido_itens ausente ou errada');
+
+  -- FKs: alvo e colunas, não só o nome.
+  perform pg_temp.ok068(exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.bolsista_equipes'::regclass and contype = 'f'
+       and conname = 'bolsista_equipes_holder_id_fkey'
+       and confrelid = 'public.scholarship_holders'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.bolsista_equipes'::regclass
+                              and a.attname = 'holder_id')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'public.scholarship_holders'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
+  ), 'bolsista_equipes_holder_id_fkey ausente, alvo/colunas errados ou sem CASCADE');
+
+  perform pg_temp.ok068(exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixas_pedido'::regclass and contype = 'f'
+       and conname = 'caixas_pedido_dono_fkey'
+       and confrelid = 'auth.users'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixas_pedido'::regclass
+                              and a.attname = 'dono')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'auth.users'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
+  ), 'caixas_pedido_dono_fkey ausente, alvo/colunas errados ou sem CASCADE');
+
+  perform pg_temp.ok068(exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixa_pedido_itens'::regclass and contype = 'f'
+       and conname = 'caixa_pedido_itens_caixa_id_fkey'
+       and confrelid = 'public.caixas_pedido'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixa_pedido_itens'::regclass
+                              and a.attname = 'caixa_id')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'public.caixas_pedido'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
+  ), 'caixa_pedido_itens_caixa_id_fkey ausente, alvo/colunas errados ou sem CASCADE');
+
+  perform pg_temp.ok068(exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.caixa_pedido_itens'::regclass and contype = 'f'
+       and conname = 'caixa_pedido_itens_holder_id_fkey'
+       and confrelid = 'public.scholarship_holders'::regclass
+       and conkey = array[(select a.attnum from pg_attribute a
+                            where a.attrelid = 'public.caixa_pedido_itens'::regclass
+                              and a.attname = 'holder_id')]
+       and confkey = array[(select a.attnum from pg_attribute a
+                             where a.attrelid = 'public.scholarship_holders'::regclass
+                               and a.attname = 'id')]
+       and confdeltype = 'c'
+  ), 'caixa_pedido_itens_holder_id_fkey ausente, alvo/colunas errados ou sem CASCADE');
+
+  -- Gatilhos de statement: agente e automação, sem WHEN.
+  perform pg_temp.ok068((
+    select count(*) = 3
+      from pg_trigger t
+     where t.tgrelid in (
+             'public.bolsista_equipes'::regclass,
+             'public.caixas_pedido'::regclass,
+             'public.caixa_pedido_itens'::regclass
+           )
+       and t.tgname = 'trg_bloqueia_agente'
+       and not t.tgisinternal
+       and t.tgenabled = 'O'
+       and t.tgqual is null
+       and (t.tgtype & 1) = 0
+       and (t.tgtype & 2) <> 0
+       and (t.tgtype & (4|8|16)) = (4|8|16)
+       and t.tgfoid = 'public.bloqueia_escrita_do_agente()'::regprocedure
+  ), 'trg_bloqueia_agente ausente ou incorreto');
+
+  perform pg_temp.ok068((
+    select count(*) = 3
+      from pg_trigger t
+     where t.tgrelid in (
+             'public.bolsista_equipes'::regclass,
+             'public.caixas_pedido'::regclass,
+             'public.caixa_pedido_itens'::regclass
+           )
+       and t.tgname = 'trg_bloqueia_automacao'
+       and not t.tgisinternal
+       and t.tgenabled = 'O'
+       and t.tgqual is null
+       and (t.tgtype & 1) = 0
+       and (t.tgtype & 2) <> 0
+       and (t.tgtype & (4|8|16)) = (4|8|16)
+       and t.tgfoid = 'public._bloquear_financeiro_automacao()'::regprocedure
+  ), 'trg_bloqueia_automacao ausente ou incorreto');
+
+  -- Assinatura nova de colocar (2 argumentos) e nenhuma sobrecarga antiga.
+  perform pg_temp.ok068(
+    to_regprocedure('public.colocar_na_caixa_v2(uuid, uuid)') is not null,
+    'colocar_na_caixa_v2(uuid, uuid) ausente');
+  perform pg_temp.ok068(not exists (
+    select 1 from pg_proc p
+     where p.pronamespace = 'public'::regnamespace
+       and p.proname = 'colocar_na_caixa_v2'
+       and p.pronargs <> 2
+  ), 'sobrecarga antiga de colocar_na_caixa_v2 sobreviveu');
+
+  -- Editar e limpar existem.
+  perform pg_temp.ok068(
+    to_regprocedure('public.editar_item_caixa_v2(uuid, uuid, numeric, text)') is not null,
+    'editar_item_caixa_v2 ausente');
+  perform pg_temp.ok068(
+    to_regprocedure('public.limpar_ocultos_da_caixa_v2(uuid)') is not null,
+    'limpar_ocultos_da_caixa_v2 ausente');
+
+  -- O lock por dono está no texto das duas funções que contam/apagam/inserem.
+  v_fn := 'public.salvar_caixa_pedido_v2(jsonb)'::regprocedure;
+  perform pg_temp.ok068(
+    pg_get_functiondef(v_fn) like '%pg_advisory_xact_lock%',
+    'salvar_caixa_pedido_v2 sem pg_advisory_xact_lock');
+  v_fn := 'public.colocar_na_caixa_v2(uuid, uuid)'::regprocedure;
+  perform pg_temp.ok068(
+    pg_get_functiondef(v_fn) like '%pg_advisory_xact_lock%',
+    'colocar_na_caixa_v2 sem pg_advisory_xact_lock');
 end $$;
 
 -- Retira o bolsista sintético da base 064 para o roteiro ter um
@@ -160,7 +324,6 @@ do $$
 declare
   r jsonb;
   p jsonb;
-  b jsonb;
   v_codes text[];
 begin
   r := public.get_pedido_bolsas_v2();
@@ -245,11 +408,12 @@ begin
     'Gabi deveria mostrar só a bolsa do 51.Y para b2');
 end $$;
 
--- Admin vê tudo; agente e anon não leem.
+-- Admin vê tudo; automação e agente recebem 42501 nas oito RPCs.
 do $$
 declare
   r jsonb;
   p jsonb;
+  v_holder uuid := '00000000-0000-4000-8000-000000068001';
 begin
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
   r := public.get_pedido_bolsas_v2();
@@ -265,33 +429,58 @@ begin
   perform pg_temp.ok068(jsonb_array_length(p -> 'bolsas') = 2,
     'Gabi deveria ter 2 bolsas para o admin');
 
-  -- Automação tem linha em app_users e não é agente: lê, mas não vê nada.
+  -- Automação: 42501 em todas as RPCs.
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000d1', true);
-  r := public.get_pedido_bolsas_v2();
-  perform pg_temp.ok068(r -> 'bolsistas' = '[]'::jsonb, 'automação não deveria ver pessoas');
-  perform pg_temp.ok068(r -> 'centros' = '[]'::jsonb, 'automação não deveria ver centros');
-  perform pg_temp.ok068(r -> 'caixas' = '[]'::jsonb, 'automação não deveria ver caixas');
-
-  -- Agente: 42501 em todas as RPCs.
-  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', true);
   perform pg_temp.falha_com068('select public.get_pedido_bolsas_v2()', '42501');
   perform pg_temp.falha_com068(
-    format($q$select public.salvar_equipe_bolsista_v2(%L::uuid, 'pastagem')$q$,
-      '00000000-0000-4000-8000-000000068001'),
+    format($q$select public.salvar_equipe_bolsista_v2(%L::uuid, 'pastagem')$q$, v_holder),
     '42501');
   perform pg_temp.falha_com068(
-    $q$select public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'x'))$q$,
-    '42501');
+    $q$select public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'x'))$q$, '42501');
   perform pg_temp.falha_com068(
     format($q$select public.apagar_caixa_pedido_v2(%L::uuid)$q$, gen_random_uuid()::text),
     '42501');
   perform pg_temp.falha_com068(
     format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid)$q$,
-      gen_random_uuid()::text, '00000000-0000-4000-8000-000000068001'),
+      gen_random_uuid()::text, v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, null, null)$q$,
+      gen_random_uuid()::text, v_holder),
     '42501');
   perform pg_temp.falha_com068(
     format($q$select public.tirar_da_caixa_v2(%L::uuid, %L::uuid)$q$,
-      gen_random_uuid()::text, '00000000-0000-4000-8000-000000068001'),
+      gen_random_uuid()::text, v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.limpar_ocultos_da_caixa_v2(%L::uuid)$q$, gen_random_uuid()::text),
+    '42501');
+
+  -- Agente: 42501 em todas as RPCs.
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', true);
+  perform pg_temp.falha_com068('select public.get_pedido_bolsas_v2()', '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.salvar_equipe_bolsista_v2(%L::uuid, 'pastagem')$q$, v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    $q$select public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'x'))$q$, '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.apagar_caixa_pedido_v2(%L::uuid)$q$, gen_random_uuid()::text),
+    '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid)$q$,
+      gen_random_uuid()::text, v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, null, null)$q$,
+      gen_random_uuid()::text, v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.tirar_da_caixa_v2(%L::uuid, %L::uuid)$q$,
+      gen_random_uuid()::text, v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    format($q$select public.limpar_ocultos_da_caixa_v2(%L::uuid)$q$, gen_random_uuid()::text),
     '42501');
 
   -- Sem linha em app_users: 42501.
@@ -389,7 +578,7 @@ declare
   c1 uuid;
   c2 uuid;
   c3 uuid;
-  v_antes integer;
+  ctmp uuid;
 begin
   -- Payload inválido.
   perform pg_temp.falha_com068(
@@ -417,7 +606,23 @@ begin
     $q$select public.salvar_caixa_pedido_v2(jsonb_build_object('id', 'nao-e-uuid', 'nome', 'x'))$q$,
     '22023');
 
-  -- Cria duas caixas.
+  -- Nome de 80 caracteres, meses 1 e 60, e sem meses (padrão 12).
+  r := public.salvar_caixa_pedido_v2(jsonb_build_object('nome', repeat('n', 80), 'meses', 1));
+  ctmp := (r ->> 'id')::uuid;
+  perform pg_temp.ok068((r ->> 'meses')::integer = 1, 'meses 1 deveria ser aceito');
+  perform public.apagar_caixa_pedido_v2(ctmp);
+
+  r := public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'Mesmo 60', 'meses', 60));
+  ctmp := (r ->> 'id')::uuid;
+  perform pg_temp.ok068((r ->> 'meses')::integer = 60, 'meses 60 deveria ser aceito');
+  perform public.apagar_caixa_pedido_v2(ctmp);
+
+  r := public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'Padrão'));
+  ctmp := (r ->> 'id')::uuid;
+  perform pg_temp.ok068((r ->> 'meses')::integer = 12, 'caixa sem meses deveria usar 12');
+  perform public.apagar_caixa_pedido_v2(ctmp);
+
+  -- Cria três caixas.
   r := public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'Time Pastagem', 'meses', 12));
   c1 := (r ->> 'id')::uuid;
   perform pg_temp.ok068(r ->> 'nome' = 'Time Pastagem', 'nome da caixa 1');
@@ -427,72 +632,84 @@ begin
   c2 := (r ->> 'id')::uuid;
   perform pg_temp.ok068((r ->> 'meses')::integer = 18, 'meses da caixa 2');
 
+  r := public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'Terceira', 'meses', 6));
+  c3 := (r ->> 'id')::uuid;
+
   perform set_config('test068.caixa1', c1::text, true);
   perform set_config('test068.caixa2', c2::text, true);
+  perform set_config('test068.caixa3', c3::text, true);
 
   r := public.get_pedido_bolsas_v2();
-  perform pg_temp.ok068(jsonb_array_length(r -> 'caixas') = 2, 'b1 deveria ter 2 caixas');
+  perform pg_temp.ok068(jsonb_array_length(r -> 'caixas') = 3, 'b1 deveria ter 3 caixas');
 
   -- Atualiza a caixa 1.
   r := public.salvar_caixa_pedido_v2(jsonb_build_object('id', c1, 'nome', 'Time Pastagem 2027', 'meses', 10));
   perform pg_temp.ok068(r ->> 'nome' = 'Time Pastagem 2027', 'nome atualizado');
   perform pg_temp.ok068((r ->> 'meses')::integer = 10, 'meses atualizados');
 
-  -- Id inexistente e id de outra pessoa.
+  -- Atualizar sem meses mantém os meses atuais.
+  r := public.salvar_caixa_pedido_v2(jsonb_build_object('id', c2, 'nome', 'Reserva 2027'));
+  perform pg_temp.ok068(r ->> 'nome' = 'Reserva 2027', 'nome atualizado sem meses');
+  perform pg_temp.ok068((r ->> 'meses')::integer = 18, 'meses antigos deveriam ser mantidos');
+
+  -- Id inexistente.
   perform pg_temp.falha_com068(
     format($q$select public.salvar_caixa_pedido_v2(jsonb_build_object('id', %L, 'nome', 'x'))$q$,
       gen_random_uuid()::text),
     'P0002');
 
+  -- Caixa de outro professor responde P0002 em todas as operações.
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b2', true);
   perform pg_temp.falha_com068(
     format($q$select public.salvar_caixa_pedido_v2(jsonb_build_object('id', %L, 'nome', 'x'))$q$, c1::text),
-    '42501');
+    'P0002');
   perform pg_temp.falha_com068(
     format($q$select public.apagar_caixa_pedido_v2(%L::uuid)$q$, c1::text),
-    '42501');
+    'P0002');
+  perform pg_temp.falha_com068(
+    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid)$q$,
+      c1::text, '00000000-0000-4000-8000-000000068007'),
+    'P0002');
+  perform pg_temp.falha_com068(
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, 100, null)$q$,
+      c1::text, '00000000-0000-4000-8000-000000068007'),
+    'P0002');
+  perform pg_temp.falha_com068(
+    format($q$select public.tirar_da_caixa_v2(%L::uuid, %L::uuid)$q$,
+      c1::text, '00000000-0000-4000-8000-000000068007'),
+    'P0002');
+  perform pg_temp.falha_com068(
+    format($q$select public.limpar_ocultos_da_caixa_v2(%L::uuid)$q$, c1::text),
+    'P0002');
 
   r := public.get_pedido_bolsas_v2();
   perform pg_temp.ok068(r -> 'caixas' = '[]'::jsonb, 'b2 não pode ver as caixas de b1');
 
   -- b2 cria a própria caixa.
   r := public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'Do Bruno', 'meses', 12));
-  c3 := (r ->> 'id')::uuid;
+  ctmp := (r ->> 'id')::uuid;
+  perform set_config('test068.caixa_b2', ctmp::text, true);
   r := public.get_pedido_bolsas_v2();
   perform pg_temp.ok068(jsonb_array_length(r -> 'caixas') = 1, 'b2 deveria ter 1 caixa');
   perform pg_temp.ok068((r -> 'caixas' -> 0 ->> 'nome') = 'Do Bruno', 'nome da caixa de b2');
 
-  perform set_config('test068.caixa_b2', c3::text, true);
-
-  -- b1 não apaga a caixa de b2.
+  -- b1 não vê a caixa de b2.
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);
-  perform pg_temp.falha_com068(
-    format($q$select public.apagar_caixa_pedido_v2(%L::uuid)$q$, c3::text),
-    '42501');
-
-  -- Apagar uma caixa vazia funciona.
-  r := public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'Temporária'));
-  c3 := (r ->> 'id')::uuid;
-  perform pg_temp.ok068((public.apagar_caixa_pedido_v2(c3) ->> 'apagada')::boolean,
-    'apagar caixa vazia');
-  perform pg_temp.falha_com068(
-    format($q$select public.apagar_caixa_pedido_v2(%L::uuid)$q$, c3::text),
-    'P0002');
-
-  -- Continua com 2 caixas.
   r := public.get_pedido_bolsas_v2();
-  perform pg_temp.ok068(jsonb_array_length(r -> 'caixas') = 2, 'b1 deveria continuar com 2 caixas');
+  perform pg_temp.ok068(jsonb_array_length(r -> 'caixas') = 3, 'b1 deveria continuar com 3 caixas');
 end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 4 — itens, totais, mover, tirar e item oculto
+-- BLOCO 4 — itens, valores, editar, mover entre três caixas, ocultos
 -- ------------------------------------------------------------
 do $$
 declare
   r jsonb;
   c1 uuid := current_setting('test068.caixa1')::uuid;
   c2 uuid := current_setting('test068.caixa2')::uuid;
+  c3 uuid := current_setting('test068.caixa3')::uuid;
   cx jsonb;
+  it jsonb;
 begin
   -- Ana sem valor_mensal usa o vigente (4000).
   r := public.colocar_na_caixa_v2(c1, '00000000-0000-4000-8000-000000068001'::uuid);
@@ -534,39 +751,85 @@ begin
       c1::text, '00000000-0000-4000-8000-000000068006'),
     '42501');
 
-  -- Valor inválido (zero, negativo, NaN e infinito).
+  -- Editar: valor 0, negativo, NaN, infinito e 0,004 (arredonda para 0).
   perform pg_temp.falha_com068(
-    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid, 0)$q$,
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, 0, null)$q$,
       c1::text, '00000000-0000-4000-8000-000000068001'),
     '22023');
   perform pg_temp.falha_com068(
-    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid, -1)$q$,
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, -1, null)$q$,
       c1::text, '00000000-0000-4000-8000-000000068001'),
     '22023');
   perform pg_temp.falha_com068(
-    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid, %L::numeric)$q$,
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, %L::numeric, null)$q$,
       c1::text, '00000000-0000-4000-8000-000000068001', 'NaN'),
     '22023');
   perform pg_temp.falha_com068(
-    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid, %L::numeric)$q$,
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, %L::numeric, null)$q$,
       c1::text, '00000000-0000-4000-8000-000000068001', 'Infinity'),
+    '22023');
+  perform pg_temp.falha_com068(
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, 0.004, null)$q$,
+      c1::text, '00000000-0000-4000-8000-000000068001'),
     '22023');
 
   -- Nota longa e CPF.
   perform pg_temp.falha_com068(
-    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid, null, %L)$q$,
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, null, %L)$q$,
       c1::text, '00000000-0000-4000-8000-000000068001', repeat('n', 301)),
     '22023');
   perform pg_temp.falha_com068(
-    format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid, null, %L)$q$,
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, null, %L)$q$,
       c1::text, '00000000-0000-4000-8000-000000068001', 'CPF 529-982-247-25'),
     '22023');
 
-  -- Mover Bruno para a caixa 2 com valor próprio e nota.
-  r := public.colocar_na_caixa_v2(
-    c2, '00000000-0000-4000-8000-000000068002'::uuid, 4500, 'Nota curta do pedido');
+  -- Item inexistente e caixa inexistente.
+  perform pg_temp.falha_com068(
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, 100, null)$q$,
+      c1::text, '00000000-0000-4000-8000-000000068003'),
+    'P0002');
+  perform pg_temp.falha_com068(
+    format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, 100, null)$q$,
+      gen_random_uuid()::text, '00000000-0000-4000-8000-000000068001'),
+    'P0002');
+
+  -- Edita Ana; chamar colocar de novo não pode apagar o que foi editado.
+  r := public.editar_item_caixa_v2(
+    c1, '00000000-0000-4000-8000-000000068001'::uuid, 4200, 'Nota da Ana');
+  perform pg_temp.ok068((r ->> 'valor_usado')::numeric = 4200, 'Ana editada deveria usar 4200');
+  perform pg_temp.ok068(r ->> 'nota' = 'Nota da Ana', 'Ana deveria manter a nota');
+
+  r := public.colocar_na_caixa_v2(c1, '00000000-0000-4000-8000-000000068001'::uuid);
+  perform pg_temp.ok068((r ->> 'valor_mensal')::numeric = 4200,
+    'colocar de novo não pode zerar o valor editado');
+  perform pg_temp.ok068(r ->> 'nota' = 'Nota da Ana',
+    'colocar de novo não pode apagar a nota');
+  perform pg_temp.ok068(r -> 'saiu_de' = '[]'::jsonb, 'já na caixa não deveria ter saída');
+
+  r := public.get_pedido_bolsas_v2();
+  cx := pg_temp.caixa068(r, c1);
+  perform pg_temp.ok068((cx ->> 'total_mensal')::numeric = 9200,
+    'caixa 1 deveria somar 4200+5000=9200');
+
+  -- Nota de 300 caracteres é aceita; null limpa valor e nota.
+  r := public.editar_item_caixa_v2(
+    c1, '00000000-0000-4000-8000-000000068001'::uuid, null, repeat('n', 300));
+  perform pg_temp.ok068(char_length(r ->> 'nota') = 300, 'nota de 300 deveria ser aceita');
+  r := public.editar_item_caixa_v2(
+    c1, '00000000-0000-4000-8000-000000068001'::uuid, null, null);
+  perform pg_temp.ok068(r -> 'valor_mensal' = 'null'::jsonb, 'null deveria limpar o valor');
+  perform pg_temp.ok068(r -> 'nota' = 'null'::jsonb, 'null deveria limpar a nota');
+
+  -- Bruno com valor próprio e nota; mover para a caixa 2 leva os dois.
+  r := public.editar_item_caixa_v2(
+    c1, '00000000-0000-4000-8000-000000068002'::uuid, 4500, 'Nota curta do pedido');
+  r := public.colocar_na_caixa_v2(c2, '00000000-0000-4000-8000-000000068002'::uuid);
   perform pg_temp.ok068((r ->> 'valor_usado')::numeric = 4500,
-    'Bruno deveria usar 4500 na caixa 2');
+    'Bruno deveria levar 4500 para a caixa 2');
+  perform pg_temp.ok068((r ->> 'valor_mensal')::numeric = 4500,
+    'mover deveria levar o valor_mensal');
+  perform pg_temp.ok068(r ->> 'nota' = 'Nota curta do pedido',
+    'mover deveria levar a nota');
   perform pg_temp.ok068(jsonb_array_length(r -> 'saiu_de') = 1,
     'mover deveria devolver de qual caixa saiu');
   perform pg_temp.ok068((r -> 'saiu_de' -> 0 ->> 'caixa_id')::uuid = c1,
@@ -583,12 +846,36 @@ begin
     'caixa 2 deveria somar 1000 + 0 + 4500 = 5500');
   perform pg_temp.ok068((cx ->> 'total_periodo')::numeric = 99000,
     'caixa 2 deveria somar 5500 em 18 meses');
+  it := pg_temp.item068(cx, '00000000-0000-4000-8000-000000068002'::uuid);
+  perform pg_temp.ok068((it ->> 'valor_mensal')::numeric = 4500,
+    'o item na caixa 2 deveria guardar 4500');
+  perform pg_temp.ok068(it ->> 'nota' = 'Nota curta do pedido',
+    'o item na caixa 2 deveria guardar a nota');
 
-  -- Voltar ao valor vigente (null) usa 5000.
-  r := public.colocar_na_caixa_v2(c2, '00000000-0000-4000-8000-000000068002'::uuid, null, null);
-  perform pg_temp.ok068((r ->> 'valor_usado')::numeric = 5000,
-    'sem valor_mensal Bruno deveria voltar a 5000');
-  perform pg_temp.ok068(r -> 'nota' = 'null'::jsonb, 'nota nula deveria limpar');
+  -- Colocar de novo na mesma caixa não muda nada nem devolve saída.
+  r := public.colocar_na_caixa_v2(c2, '00000000-0000-4000-8000-000000068002'::uuid);
+  perform pg_temp.ok068((r ->> 'valor_mensal')::numeric = 4500, 'item estável no valor');
+  perform pg_temp.ok068(r ->> 'nota' = 'Nota curta do pedido', 'item estável na nota');
+  perform pg_temp.ok068(r -> 'saiu_de' = '[]'::jsonb, 'item estável sem saída');
+
+  -- Mover entre três caixas: c2 -> c3 -> c1.
+  r := public.colocar_na_caixa_v2(c3, '00000000-0000-4000-8000-000000068002'::uuid);
+  perform pg_temp.ok068((r -> 'saiu_de' -> 0 ->> 'caixa_id')::uuid = c2,
+    'mover da caixa 2 para a 3 deveria devolver c2');
+  r := public.colocar_na_caixa_v2(c1, '00000000-0000-4000-8000-000000068002'::uuid);
+  perform pg_temp.ok068((r -> 'saiu_de' -> 0 ->> 'caixa_id')::uuid = c3,
+    'mover da caixa 3 para a 1 deveria devolver c3');
+  perform pg_temp.ok068((r ->> 'valor_mensal')::numeric = 4500,
+    'o terceiro movimento deveria manter o valor');
+  perform pg_temp.ok068(r ->> 'nota' = 'Nota curta do pedido',
+    'o terceiro movimento deveria manter a nota');
+
+  r := public.get_pedido_bolsas_v2();
+  cx := pg_temp.caixa068(r, c1);
+  perform pg_temp.ok068((cx ->> 'total_mensal')::numeric = 8500,
+    'caixa 1 deveria somar 4000+4500=8500 depois dos três movimentos');
+  cx := pg_temp.caixa068(r, c3);
+  perform pg_temp.ok068((cx ->> 'pessoas')::integer = 0, 'caixa 3 deveria ficar vazia');
 
   -- Tirar Carla e Davi.
   r := public.tirar_da_caixa_v2(c2, '00000000-0000-4000-8000-000000068003'::uuid);
@@ -597,8 +884,8 @@ begin
 
   r := public.get_pedido_bolsas_v2();
   cx := pg_temp.caixa068(r, c2);
-  perform pg_temp.ok068((cx ->> 'pessoas')::integer = 1, 'caixa 2 deveria ficar com Bruno');
-  perform pg_temp.ok068((cx ->> 'total_mensal')::numeric = 5000, 'caixa 2 deveria ficar em 5000');
+  perform pg_temp.ok068((cx ->> 'pessoas')::integer = 0, 'caixa 2 deveria ficar vazia');
+  perform pg_temp.ok068((cx ->> 'total_mensal')::numeric = 0, 'caixa 2 deveria ficar em 0');
 
   perform pg_temp.falha_com068(
     format($q$select public.tirar_da_caixa_v2(%L::uuid, %L::uuid)$q$,
@@ -606,7 +893,8 @@ begin
     'P0002');
 end $$;
 
--- Item de pessoa que deixou de ser visível sai da lista e da soma.
+-- Item de pessoa que deixou de ser visível sai da lista e da soma; o
+-- botão da tela chama limpar_ocultos_da_caixa_v2.
 reset role;
 insert into public.caixa_pedido_itens (caixa_id, holder_id, nota)
 values (current_setting('test068.caixa1')::uuid,
@@ -624,31 +912,39 @@ begin
   cx := pg_temp.caixa068(r, c1);
   perform pg_temp.ok068((cx ->> 'itens_ocultos')::integer = 1,
     'caixa 1 deveria contar 1 item oculto');
-  perform pg_temp.ok068(jsonb_array_length(cx -> 'itens') = 1,
+  perform pg_temp.ok068(jsonb_array_length(cx -> 'itens') = 2,
     'o item fora do escopo não deveria aparecer');
-  perform pg_temp.ok068((cx ->> 'pessoas')::integer = 1,
+  perform pg_temp.ok068((cx ->> 'pessoas')::integer = 2,
     'o item fora do escopo não deveria contar como pessoa');
-  perform pg_temp.ok068((cx ->> 'total_mensal')::numeric = 4000,
+  perform pg_temp.ok068((cx ->> 'total_mensal')::numeric = 8500,
     'o item fora do escopo não deveria entrar na soma');
-end $$;
 
-reset role;
-delete from public.caixa_pedido_itens
- where caixa_id = current_setting('test068.caixa1')::uuid
-   and holder_id = '00000000-0000-4000-8000-000000068006'::uuid;
-set local role authenticated;
+  r := public.limpar_ocultos_da_caixa_v2(c1);
+  perform pg_temp.ok068((r ->> 'removidos')::integer = 1,
+    'limpar_ocultos deveria remover o item fora do escopo');
+  perform pg_temp.ok068(not (r ? 'itens'), 'limpar_ocultos não deveria devolver nomes');
+
+  r := public.get_pedido_bolsas_v2();
+  cx := pg_temp.caixa068(r, c1);
+  perform pg_temp.ok068((cx ->> 'itens_ocultos')::integer = 0,
+    'depois de limpar não deveria sobrar item oculto');
+
+  r := public.limpar_ocultos_da_caixa_v2(c1);
+  perform pg_temp.ok068((r ->> 'removidos')::integer = 0,
+    'limpar de novo não deveria remover ninguém');
+end $$;
 
 do $$
 declare
   r jsonb;
   c1 uuid := current_setting('test068.caixa1')::uuid;
 begin
-  -- b2 não coloca ninguém na caixa de b1.
+  -- b2 não coloca ninguém na caixa de b1 (P0002, igual à inexistente).
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b2', true);
   perform pg_temp.falha_com068(
     format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid)$q$,
       c1::text, '00000000-0000-4000-8000-000000068006'),
-    '42501');
+    'P0002');
 
   -- b2 coloca Gabi na própria caixa.
   r := public.colocar_na_caixa_v2(
@@ -685,8 +981,9 @@ begin
     $q$select public.salvar_caixa_pedido_v2(jsonb_build_object('nome', 'Décima primeira'))$q$,
     '22023');
 
-  -- Apaga uma caixa com item; o cascade é conferido como dono.
-  c_extra := (r -> 'caixas' -> 0 ->> 'id')::uuid;
+  -- Apaga a caixa que tem Gabi; o cascade é conferido como dono.
+  -- O id foi guardado antes, não escolhido pela posição na resposta.
+  c_extra := current_setting('test068.caixa_b2')::uuid;
   perform public.apagar_caixa_pedido_v2(c_extra);
   perform set_config('test068.caixa_extra', c_extra::text, true);
 end $$;
@@ -701,6 +998,11 @@ begin
     ),
     'apagar a caixa deveria apagar os itens'
   );
+  perform pg_temp.ok068(
+    not exists (select 1 from public.caixas_pedido
+                 where id = current_setting('test068.caixa_extra')::uuid),
+    'a caixa apagada não deveria existir'
+  );
 end $$;
 set local role authenticated;
 
@@ -710,8 +1012,9 @@ declare
 begin
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);
 
-  -- b1 apaga a caixa 1 e confere que a 2 ficou.
+  -- b1 apaga as caixas 1 e 3 e confere que a 2 ficou.
   perform public.apagar_caixa_pedido_v2(current_setting('test068.caixa1')::uuid);
+  perform public.apagar_caixa_pedido_v2(current_setting('test068.caixa3')::uuid);
   r := public.get_pedido_bolsas_v2();
   perform pg_temp.ok068(jsonb_array_length(r -> 'caixas') = 1, 'b1 deveria ficar com 1 caixa');
   perform pg_temp.ok068(pg_temp.caixa068(r, current_setting('test068.caixa2')::uuid) is not null,
@@ -719,7 +1022,7 @@ begin
 end $$;
 
 -- ------------------------------------------------------------
--- BLOCO 6 — CPF em nome/nota: RPC, gatilho do dono e INSERT direto
+-- BLOCO 6 — CPF em nome/nota: RPC, gatilho do dono, INSERT e UPDATE
 -- ------------------------------------------------------------
 reset role;
 select set_config(
@@ -732,7 +1035,12 @@ set local role authenticated;
 do $$
 declare
   v_sample text;
+  v_caixa uuid := current_setting('test068.caixa2')::uuid;
+  v_ana uuid := '00000000-0000-4000-8000-000000068001';
 begin
+  -- Deixa a Ana na caixa 2 para os testes de nota.
+  perform public.colocar_na_caixa_v2(v_caixa, v_ana);
+
   foreach v_sample in array array[
     'CPF 529 982 247 25',
     'CPF 529-982-247-25',
@@ -744,10 +1052,8 @@ begin
       '22023');
 
     perform pg_temp.falha_com068(
-      format($q$select public.colocar_na_caixa_v2(%L::uuid, %L::uuid, null, %L)$q$,
-        current_setting('test068.caixa2'),
-        '00000000-0000-4000-8000-000000068001',
-        v_sample),
+      format($q$select public.editar_item_caixa_v2(%L::uuid, %L::uuid, null, %L)$q$,
+        v_caixa, v_ana, v_sample),
       '22023');
   end loop;
 end $$;
@@ -761,11 +1067,13 @@ begin
   );
 end $$;
 
--- O gatilho barra o dono da tabela (não é só a RPC).
+-- O gatilho barra o dono da tabela (não é só a RPC), no INSERT e no UPDATE.
 do $$
 declare
   v_sample text;
   v_caixa uuid := current_setting('test068.caixa2')::uuid;
+  v_ana uuid := '00000000-0000-4000-8000-000000068001';
+  v_gabi uuid := '00000000-0000-4000-8000-000000068007';
 begin
   foreach v_sample in array array[
     'CPF 529 982 247 25',
@@ -780,24 +1088,64 @@ begin
     perform pg_temp.falha_com068(
       format($q$insert into public.caixa_pedido_itens (caixa_id, holder_id, nota)
                values (%L::uuid, %L::uuid, %L)$q$,
-        v_caixa, '00000000-0000-4000-8000-000000068001', v_sample),
+        v_caixa, v_gabi, v_sample),
+      '23514');
+
+    perform pg_temp.falha_com068(
+      format($q$update public.caixas_pedido set nome = %L where id = %L::uuid$q$,
+        v_sample, v_caixa),
+      '23514');
+
+    perform pg_temp.falha_com068(
+      format($q$update public.caixa_pedido_itens set nota = %L
+                where caixa_id = %L::uuid and holder_id = %L::uuid$q$,
+        v_sample, v_caixa, v_ana),
       '23514');
   end loop;
+
+  -- Um UPDATE limpo continua funcionando e a nota volta a ser nula.
+  update public.caixa_pedido_itens set nota = 'nota limpa'
+   where caixa_id = v_caixa and holder_id = v_ana;
+  perform pg_temp.ok068(
+    (select nota from public.caixa_pedido_itens
+      where caixa_id = v_caixa and holder_id = v_ana) = 'nota limpa',
+    'UPDATE de nota sem CPF deveria passar');
+  update public.caixa_pedido_itens set nota = null
+   where caixa_id = v_caixa and holder_id = v_ana;
 end $$;
 
--- O gatilho do agente barra como dono (prova de que está no statement).
+-- Agente e automação barrados como dono (prova de que o gatilho é de statement).
 do $$
 declare
   v_caixa uuid := current_setting('test068.caixa2')::uuid;
   v_holder uuid := '00000000-0000-4000-8000-000000068001';
 begin
+  -- Agente.
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000c1', true);
-
   perform pg_temp.falha_com068(
     $q$insert into public.caixas_pedido (nome) values ('x')$q$, '42501');
   perform pg_temp.falha_com068(
     format($q$insert into public.bolsista_equipes (holder_id, equipe) values (%L::uuid, 'solos')$q$,
-      '00000000-0000-4000-8000-000000068009'),
+      v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    format($q$insert into public.caixa_pedido_itens (caixa_id, holder_id) values (%L::uuid, %L::uuid)$q$,
+      v_caixa, v_holder),
+    '42501');
+  perform pg_temp.falha_com068(
+    $q$update public.caixas_pedido set nome = nome where true$q$, '42501');
+  perform pg_temp.falha_com068(
+    $q$delete from public.caixa_pedido_itens where false$q$, '42501');
+  perform pg_temp.falha_com068(
+    $q$delete from public.bolsista_equipes where false$q$, '42501');
+
+  -- Automação (Vigia).
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000d1', true);
+  perform pg_temp.falha_com068(
+    $q$insert into public.caixas_pedido (nome) values ('x')$q$, '42501');
+  perform pg_temp.falha_com068(
+    format($q$insert into public.bolsista_equipes (holder_id, equipe) values (%L::uuid, 'solos')$q$,
+      v_holder),
     '42501');
   perform pg_temp.falha_com068(
     format($q$insert into public.caixa_pedido_itens (caixa_id, holder_id) values (%L::uuid, %L::uuid)$q$,
@@ -821,6 +1169,8 @@ do $$
 declare
   r jsonb;
   p jsonb;
+  cx jsonb;
+  c2 uuid := current_setting('test068.caixa2')::uuid;
 begin
   r := public.get_pedido_bolsas_v2();
   p := pg_temp.pessoa068(r, 'Ana Pastagem');
@@ -829,8 +1179,12 @@ begin
   p := pg_temp.pessoa068(r, 'Gabi Dois Centros');
   perform pg_temp.ok068(p ->> 'equipe' = 'alertas', 'Gabi deveria estar em alertas');
 
-  -- b1 ficou só com a caixa 2, com Bruno.
+  -- b1 ficou só com a caixa 2, com Ana (o Bruno estava na caixa 1, apagada).
   perform pg_temp.ok068(jsonb_array_length(r -> 'caixas') = 1, 'b1 deveria ter 1 caixa no fim');
+  cx := pg_temp.caixa068(r, c2);
+  perform pg_temp.ok068((cx ->> 'pessoas')::integer = 1, 'caixa 2 deveria ter 1 pessoa no fim');
+  perform pg_temp.ok068((cx ->> 'total_mensal')::numeric = 4000,
+    'caixa 2 deveria somar 4000 no fim');
 end $$;
 
 reset role;

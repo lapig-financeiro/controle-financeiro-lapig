@@ -1608,11 +1608,12 @@ export async function salvarEquipeBolsista(holderId, equipe) {
 export async function salvarCaixaPedido(payload) {
   const bruto = payload && typeof payload === 'object' ? payload : {};
   const nome = typeof bruto.nome === 'string' ? bruto.nome.trim() : '';
-  const meses = bruto.meses === undefined || bruto.meses === null ? 12 : bruto.meses;
+  const temMeses = bruto.meses !== undefined && bruto.meses !== null;
+  const meses = temMeses ? bruto.meses : undefined;
   if (!nome || nome.length > 80) {
     return { dados: null, erro: 'O nome da caixa deve ter de 1 a 80 caracteres.' };
   }
-  if (!Number.isInteger(meses) || meses < 1 || meses > 60) {
+  if (temMeses && (!Number.isInteger(meses) || meses < 1 || meses > 60)) {
     return { dados: null, erro: 'Os meses da caixa devem ser um inteiro entre 1 e 60.' };
   }
 
@@ -1620,7 +1621,7 @@ export async function salvarCaixaPedido(payload) {
     const caixa = caixaPorIdExemplo(bruto.id);
     if (!caixa) return { dados: null, erro: 'Caixa não encontrada.' };
     caixa.nome = nome;
-    caixa.meses = meses;
+    if (temMeses) caixa.meses = meses;
     return { dados: { ...caixaResumoExemplo(caixa) }, erro: null };
   }
 
@@ -1631,7 +1632,7 @@ export async function salvarCaixaPedido(payload) {
   const caixa = {
     id: `caixa-exemplo-${Date.now()}`,
     nome,
-    meses,
+    meses: temMeses ? meses : 12,
     criado_em: new Date().toISOString(),
     itens: [],
   };
@@ -1646,54 +1647,103 @@ export async function apagarCaixaPedido(id) {
   return { dados: { id, apagada: true }, erro: null };
 }
 
-export async function colocarNaCaixa(caixaId, holderId, valorMensal = null, nota = null) {
+export async function colocarNaCaixa(caixaId, holderId) {
   const caixa = caixaPorIdExemplo(caixaId);
   if (!caixa) return { dados: null, erro: 'Caixa não encontrada.' };
   const pessoa = bolsistaPorIdExemplo(holderId);
   if (!pessoa) return { dados: null, erro: 'Pessoa não encontrada.' };
 
-  const valor = valorMensal === null || valorMensal === undefined || valorMensal === ''
+  const jaNesta = caixa.itens.find((i) => i.holder_id === holderId);
+  if (jaNesta) {
+    return {
+      dados: {
+        caixa_id: caixaId,
+        holder_id: holderId,
+        valor_mensal: jaNesta.valor_mensal ?? null,
+        valor_usado: jaNesta.valor_mensal ?? valorVigenteExemplo(pessoa),
+        nota: jaNesta.nota ?? null,
+        saiu_de: [],
+      },
+      erro: null,
+    };
+  }
+
+  const saiuDe = [];
+  let origem = null;
+  for (const outra of caixasPedidoExemplo) {
+    if (outra.id === caixaId) continue;
+    const indice = outra.itens.findIndex((i) => i.holder_id === holderId);
+    if (indice >= 0) {
+      origem = outra.itens[indice];
+      outra.itens.splice(indice, 1);
+      saiuDe.push({ caixa_id: outra.id, nome: outra.nome });
+    }
+  }
+
+  caixa.itens.push({
+    holder_id: holderId,
+    valor_mensal: origem?.valor_mensal ?? null,
+    nota: origem?.nota ?? null,
+  });
+
+  return {
+    dados: {
+      caixa_id: caixaId,
+      holder_id: holderId,
+      valor_mensal: origem?.valor_mensal ?? null,
+      valor_usado: origem?.valor_mensal ?? valorVigenteExemplo(pessoa),
+      nota: origem?.nota ?? null,
+      saiu_de: saiuDe,
+    },
+    erro: null,
+  };
+}
+
+export async function editarItemCaixa(caixaId, holderId, valorMensal = null, nota = null) {
+  const caixa = caixaPorIdExemplo(caixaId);
+  if (!caixa) return { dados: null, erro: 'Caixa não encontrada.' };
+  const pessoa = bolsistaPorIdExemplo(holderId);
+  if (!pessoa) return { dados: null, erro: 'Pessoa não encontrada.' };
+  const item = caixa.itens.find((i) => i.holder_id === holderId);
+  if (!item) return { dados: null, erro: 'Pessoa não está nesta caixa.' };
+
+  const valor = valorMensal === null || valorMensal === undefined
     ? null
     : Number(valorMensal);
-  if (valor !== null && (!Number.isFinite(valor) || valor <= 0)) {
-    return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+  if (valor !== null) {
+    const arredondado = Math.round(valor * 100) / 100;
+    if (!Number.isFinite(arredondado) || arredondado <= 0) {
+      return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+    }
+    item.valor_mensal = arredondado;
+  } else {
+    item.valor_mensal = null;
   }
+
   const notaTexto = nota === null || nota === undefined || String(nota).trim() === ''
     ? null
     : String(nota).trim();
   if (notaTexto !== null && notaTexto.length > 300) {
     return { dados: null, erro: 'A nota deve ter até 300 caracteres.' };
   }
-
-  const saiuDe = [];
-  for (const outra of caixasPedidoExemplo) {
-    if (outra.id === caixaId) continue;
-    const indice = outra.itens.findIndex((i) => i.holder_id === holderId);
-    if (indice >= 0) {
-      outra.itens.splice(indice, 1);
-      saiuDe.push({ caixa_id: outra.id, nome: outra.nome });
-    }
-  }
-
-  const existente = caixa.itens.find((i) => i.holder_id === holderId);
-  if (existente) {
-    existente.valor_mensal = valor;
-    existente.nota = notaTexto;
-  } else {
-    caixa.itens.push({ holder_id: holderId, valor_mensal: valor, nota: notaTexto });
-  }
+  item.nota = notaTexto;
 
   return {
     dados: {
       caixa_id: caixaId,
       holder_id: holderId,
-      valor_mensal: valor,
-      valor_usado: valor ?? valorVigenteExemplo(pessoa),
-      nota: notaTexto,
-      saiu_de: saiuDe,
+      valor_mensal: item.valor_mensal,
+      valor_usado: item.valor_mensal ?? valorVigenteExemplo(pessoa),
+      nota: item.nota,
     },
     erro: null,
   };
+}
+
+export async function limparOcultosDaCaixa(caixaId) {
+  const caixa = caixaPorIdExemplo(caixaId);
+  if (!caixa) return { dados: null, erro: 'Caixa não encontrada.' };
+  return { dados: { caixa_id: caixaId, removidos: 0 }, erro: null };
 }
 
 export async function tirarDaCaixa(caixaId, holderId) {

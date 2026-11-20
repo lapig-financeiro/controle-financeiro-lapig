@@ -56,17 +56,32 @@ async function responderExemplo(chamada, mensagemErro, opcoes = {}) {
   }
 }
 
+const CODIGOS_COM_MENSAGEM = new Set(['22023', 'P0002', '42501']);
+
+function mensagemDaRpc(error) {
+  if (!error || !CODIGOS_COM_MENSAGEM.has(String(error.code || ''))) return null;
+  const mensagem = typeof error.message === 'string' ? error.message.trim() : '';
+  if (!mensagem) return null;
+  // Erro de ACL/constraint do próprio Postgres não é mensagem escrita para
+  // a pessoa; esses continuam genéricos.
+  if (/^(permission denied|new row|duplicate key|violates|null value)/i.test(mensagem)) {
+    return null;
+  }
+  return mensagem;
+}
+
 async function chamarRpc(nome, params, mensagemErro, opcoes = {}) {
+  const { mensagemBanco = false, ...validacao } = opcoes;
   try {
     const { data, error } = params === undefined
       ? await supabase.rpc(nome)
       : await supabase.rpc(nome, params);
 
     if (error) {
-      return { dados: null, erro: mensagemErro };
+      return { dados: null, erro: (mensagemBanco && mensagemDaRpc(error)) || mensagemErro };
     }
 
-    return validarPayload(data, mensagemErro, opcoes);
+    return validarPayload(data, mensagemErro, validacao);
   } catch {
     return { dados: null, erro: mensagemErro };
   }
@@ -380,7 +395,7 @@ export async function pedidoBolsas() {
     'get_pedido_bolsas_v2',
     undefined,
     'Não foi possível carregar o pedido de bolsas.',
-    opcoes
+    { ...opcoes, mensagemBanco: true }
   );
 }
 
@@ -415,24 +430,26 @@ export async function salvarEquipeBolsista(holderId, equipe) {
     'salvar_equipe_bolsista_v2',
     { p_holder_id: holderId, p_equipe: equipeNormalizada },
     'Não foi possível salvar a equipe.',
-    opcoes
+    { ...opcoes, mensagemBanco: true }
   );
 }
 
 export async function salvarCaixaPedido(payload) {
   const bruto = payload && typeof payload === 'object' ? payload : {};
   const nome = typeof bruto.nome === 'string' ? bruto.nome.trim() : '';
-  const meses = bruto.meses === undefined || bruto.meses === null ? 12 : bruto.meses;
+  const temMeses = bruto.meses !== undefined && bruto.meses !== null;
+  const meses = temMeses ? bruto.meses : undefined;
   if (!nome || nome.length > 80) {
     return { dados: null, erro: 'O nome da caixa deve ter de 1 a 80 caracteres.' };
   }
-  if (!Number.isInteger(meses) || meses < 1 || meses > 60) {
+  if (temMeses && (!Number.isInteger(meses) || meses < 1 || meses > 60)) {
     return { dados: null, erro: 'Os meses da caixa devem ser um inteiro entre 1 e 60.' };
   }
   if (bruto.id !== undefined && bruto.id !== null && (typeof bruto.id !== 'string' || !bruto.id.trim())) {
     return { dados: null, erro: 'Caixa não informada corretamente.' };
   }
-  const corpo = { nome, meses };
+  const corpo = { nome };
+  if (temMeses) corpo.meses = meses;
   if (bruto.id !== undefined && bruto.id !== null) corpo.id = bruto.id;
   const opcoes = {
     validar: (d) =>
@@ -441,11 +458,13 @@ export async function salvarCaixaPedido(payload) {
           typeof d === 'object' &&
           typeof d.id === 'string' &&
           d.id.trim() &&
+          (bruto.id === undefined || bruto.id === null || d.id === bruto.id) &&
           typeof d.nome === 'string' &&
-          d.nome.trim() &&
+          d.nome === nome &&
           Number.isInteger(d.meses) &&
           d.meses >= 1 &&
-          d.meses <= 60
+          d.meses <= 60 &&
+          (!temMeses || d.meses === meses)
       ),
   };
   const ex = await carregarExemplo();
@@ -462,7 +481,7 @@ export async function salvarCaixaPedido(payload) {
     'salvar_caixa_pedido_v2',
     { p: corpo },
     'Não foi possível salvar a caixa.',
-    opcoes
+    { ...opcoes, mensagemBanco: true }
   );
 }
 
@@ -473,6 +492,7 @@ export async function apagarCaixaPedido(id) {
   const opcoes = {
     validar: (d) =>
       Boolean(d && typeof d === 'object' && d.id === id && d.apagada === true),
+    mensagemBanco: true,
   };
   const ex = await carregarExemplo();
   if (ex) {
@@ -492,16 +512,66 @@ export async function apagarCaixaPedido(id) {
   );
 }
 
-export async function colocarNaCaixa(caixaId, holderId, valorMensal = null, nota = null) {
+export async function colocarNaCaixa(caixaId, holderId) {
   if (typeof caixaId !== 'string' || !caixaId.trim() || typeof holderId !== 'string' || !holderId.trim()) {
     return { dados: null, erro: 'Caixa e pessoa são obrigatórias.' };
   }
-  const valor =
+  const opcoes = {
+    validar: (d) =>
+      Boolean(
+        d &&
+          typeof d === 'object' &&
+          d.caixa_id === caixaId &&
+          d.holder_id === holderId &&
+          numeroValidoOuNulo(d.valor_mensal) &&
+          numeroFinitoEstrito(d.valor_usado) &&
+          (d.nota === null || d.nota === undefined || typeof d.nota === 'string') &&
+          Array.isArray(d.saiu_de) &&
+          d.saiu_de.every(
+            (c) =>
+              c &&
+              typeof c === 'object' &&
+              typeof c.caixa_id === 'string' &&
+              typeof c.nome === 'string'
+          )
+      ),
+    mensagemBanco: true,
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.colocarNaCaixa(caixaId, holderId),
+          'Não foi possível colocar a pessoa na caixa.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'colocar_na_caixa_v2',
+    { p_caixa_id: caixaId, p_holder_id: holderId },
+    'Não foi possível colocar a pessoa na caixa.',
+    opcoes
+  );
+}
+
+export async function editarItemCaixa(caixaId, holderId, valorMensal = null, nota = null) {
+  if (typeof caixaId !== 'string' || !caixaId.trim() || typeof holderId !== 'string' || !holderId.trim()) {
+    return { dados: null, erro: 'Caixa e pessoa são obrigatórias.' };
+  }
+  const valorBruto =
     valorMensal === null || valorMensal === undefined || valorMensal === ''
       ? null
       : Number(valorMensal);
-  if (valor !== null && (!Number.isFinite(valor) || valor <= 0)) {
-    return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+  let valor = null;
+  if (valorBruto !== null) {
+    if (!Number.isFinite(valorBruto)) {
+      return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+    }
+    valor = Math.round(valorBruto * 100) / 100;
+    if (valor <= 0) {
+      return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+    }
   }
   const notaTexto =
     nota === null || nota === undefined || String(nota).trim() === '' ? null : String(nota).trim();
@@ -515,31 +585,35 @@ export async function colocarNaCaixa(caixaId, holderId, valorMensal = null, nota
           typeof d === 'object' &&
           d.caixa_id === caixaId &&
           d.holder_id === holderId &&
-          numeroValidoOuNulo(d.valor_mensal) &&
+          (valor === null
+            ? d.valor_mensal === null || d.valor_mensal === undefined
+            : Math.abs(Number(d.valor_mensal) - valor) <= 0.005) &&
           numeroFinitoEstrito(d.valor_usado) &&
-          (d.nota === null || d.nota === undefined || typeof d.nota === 'string') &&
-          Array.isArray(d.saiu_de)
+          (notaTexto === null
+            ? d.nota === null || d.nota === undefined
+            : d.nota === notaTexto)
       ),
+    mensagemBanco: true,
   };
   const ex = await carregarExemplo();
   if (ex) {
     return ex.erro
       ? { dados: null, erro: ex.erro }
       : responderExemplo(
-          () => ex.modulo.colocarNaCaixa(caixaId, holderId, valor, notaTexto),
-          'Não foi possível colocar a pessoa na caixa.',
+          () => ex.modulo.editarItemCaixa(caixaId, holderId, valor, notaTexto),
+          'Não foi possível editar a pessoa na caixa.',
           opcoes
         );
   }
   return chamarRpc(
-    'colocar_na_caixa_v2',
+    'editar_item_caixa_v2',
     {
       p_caixa_id: caixaId,
       p_holder_id: holderId,
       p_valor_mensal: valor,
       p_nota: notaTexto,
     },
-    'Não foi possível colocar a pessoa na caixa.',
+    'Não foi possível editar a pessoa na caixa.',
     opcoes
   );
 }
@@ -557,6 +631,7 @@ export async function tirarDaCaixa(caixaId, holderId) {
           d.holder_id === holderId &&
           d.removido === true
       ),
+    mensagemBanco: true,
   };
   const ex = await carregarExemplo();
   if (ex) {
@@ -572,6 +647,39 @@ export async function tirarDaCaixa(caixaId, holderId) {
     'tirar_da_caixa_v2',
     { p_caixa_id: caixaId, p_holder_id: holderId },
     'Não foi possível tirar a pessoa da caixa.',
+    opcoes
+  );
+}
+
+export async function limparOcultosDaCaixa(caixaId) {
+  if (typeof caixaId !== 'string' || !caixaId.trim()) {
+    return { dados: null, erro: 'Caixa não informada.' };
+  }
+  const opcoes = {
+    validar: (d) =>
+      Boolean(
+        d &&
+          typeof d === 'object' &&
+          d.caixa_id === caixaId &&
+          Number.isInteger(d.removidos) &&
+          d.removidos >= 0
+      ),
+    mensagemBanco: true,
+  };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.limparOcultosDaCaixa(caixaId),
+          'Não foi possível tirar quem saiu da lista.',
+          opcoes
+        );
+  }
+  return chamarRpc(
+    'limpar_ocultos_da_caixa_v2',
+    { p_caixa_id: caixaId },
+    'Não foi possível tirar quem saiu da lista.',
     opcoes
   );
 }
@@ -796,25 +904,24 @@ function validarItemDaCaixa(i) {
 }
 
 export function validarCaixaPedido(c) {
+  if (!ehObjetoSimples(c)) return false;
+  if (typeof c.id !== 'string' || !c.id.trim()) return false;
+  if (typeof c.nome !== 'string' || !c.nome.trim() || c.nome.trim().length > 80) return false;
+  if (!Number.isInteger(c.meses) || c.meses < 1 || c.meses > 60) return false;
+  if (typeof c.criado_em !== 'string') return false;
+  if (!Number.isInteger(c.pessoas) || c.pessoas < 0) return false;
+  if (!numeroFinitoEstrito(c.total_mensal) || !numeroFinitoEstrito(c.total_periodo)) return false;
+  if (!Number.isInteger(c.itens_ocultos) || c.itens_ocultos < 0) return false;
+  if (!Array.isArray(c.itens) || !c.itens.every(validarItemDaCaixa)) return false;
+
+  // Conferência (não exibição): as contas vêm prontas da RPC, mas precisam
+  // fechar com os itens. Tolerância de meio centavo para o arredondamento.
+  const perto = (a, b) => Math.abs(Number(a) - Number(b)) <= 0.005;
+  const somaItens = c.itens.reduce((soma, item) => soma + Number(item.valor_usado), 0);
   return (
-    ehObjetoSimples(c) &&
-    typeof c.id === 'string' &&
-    c.id.trim().length > 0 &&
-    typeof c.nome === 'string' &&
-    c.nome.trim().length > 0 &&
-    c.nome.trim().length <= 80 &&
-    Number.isInteger(c.meses) &&
-    c.meses >= 1 &&
-    c.meses <= 60 &&
-    typeof c.criado_em === 'string' &&
-    Number.isInteger(c.pessoas) &&
-    c.pessoas >= 0 &&
-    numeroFinitoEstrito(c.total_mensal) &&
-    numeroFinitoEstrito(c.total_periodo) &&
-    Number.isInteger(c.itens_ocultos) &&
-    c.itens_ocultos >= 0 &&
-    Array.isArray(c.itens) &&
-    c.itens.every(validarItemDaCaixa)
+    c.pessoas === c.itens.length &&
+    perto(c.total_mensal, somaItens) &&
+    perto(c.total_periodo, Number(c.total_mensal) * c.meses)
   );
 }
 

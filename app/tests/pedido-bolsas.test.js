@@ -9,10 +9,13 @@ vi.mock('../src/servicos/supabase.js', () => ({
 import {
   apagarCaixaPedido,
   colocarNaCaixa,
+  editarItemCaixa,
+  limparOcultosDaCaixa,
   pedidoBolsas,
   salvarCaixaPedido,
   salvarEquipeBolsista,
   tirarDaCaixa,
+  validarCaixaPedido,
   validarPedidoBolsas,
 } from '../src/servicos/dados.js';
 import * as dadosExemplo from '../src/servicos/dadosExemplo.js';
@@ -61,6 +64,7 @@ beforeEach(() => {
 describe('validador do pedido de bolsas', () => {
   it('aceita o payload completo da RPC', () => {
     expect(validarPedidoBolsas(PEDIDO)).toBe(true);
+    expect(validarCaixaPedido(PEDIDO.caixas[0])).toBe(true);
   });
 
   it('recusa caixa sem itens_ocultos, bolsa com status inválido, equipe inválida e total não numérico', () => {
@@ -83,6 +87,25 @@ describe('validador do pedido de bolsas', () => {
     expect(validarPedidoBolsas(null)).toBe(false);
     expect(validarPedidoBolsas({ centros: [], bolsistas: [] })).toBe(false);
   });
+
+  it('confere pessoas, soma dos itens e total do período (tolerância de meio centavo)', () => {
+    const pessoasErradas = structuredClone(PEDIDO);
+    pessoasErradas.caixas[0].pessoas = 2;
+    expect(validarCaixaPedido(pessoasErradas.caixas[0])).toBe(false);
+
+    const somaErrada = structuredClone(PEDIDO);
+    somaErrada.caixas[0].total_mensal = 4001;
+    expect(validarCaixaPedido(somaErrada.caixas[0])).toBe(false);
+
+    const periodoErrado = structuredClone(PEDIDO);
+    periodoErrado.caixas[0].total_periodo = 48001;
+    expect(validarCaixaPedido(periodoErrado.caixas[0])).toBe(false);
+
+    const tolerado = structuredClone(PEDIDO);
+    tolerado.caixas[0].total_mensal = 4000.004;
+    tolerado.caixas[0].total_periodo = 48000.048;
+    expect(validarCaixaPedido(tolerado.caixas[0])).toBe(true);
+  });
 });
 
 describe('serviços do pedido de bolsas', () => {
@@ -97,6 +120,36 @@ describe('serviços do pedido de bolsas', () => {
     const invalido = await pedidoBolsas();
     expect(invalido.dados).toBeNull();
     expect(invalido.erro).toContain('Não foi possível');
+  });
+
+  it('mostra a mensagem do banco para 22023/P0002/42501 e mantém genérica nos demais', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: '22023', message: 'Limite de 10 caixas por usuário.' },
+    });
+    const limitada = await salvarCaixaPedido({ nome: 'Nova' });
+    expect(limitada.erro).toBe('Limite de 10 caixas por usuário.');
+
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'P0002', message: 'Caixa do pedido não encontrada.' },
+    });
+    const semCaixa = await apagarCaixaPedido('k1');
+    expect(semCaixa.erro).toBe('Caixa do pedido não encontrada.');
+
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'XX000', message: 'erro interno' },
+    });
+    const generica = await salvarCaixaPedido({ nome: 'Nova' });
+    expect(generica.erro).toBe('Não foi possível salvar a caixa.');
+
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', message: 'permission denied for function salvar_caixa_pedido_v2' },
+    });
+    const acl = await salvarCaixaPedido({ nome: 'Nova' });
+    expect(acl.erro).toBe('Não foi possível salvar a caixa.');
   });
 
   it('salvarEquipeBolsista valida a equipe e envia o parâmetro certo', async () => {
@@ -125,7 +178,7 @@ describe('serviços do pedido de bolsas', () => {
     expect(vazia.erro).toBeNull();
   });
 
-  it('salvarCaixaPedido envia id/nome/meses dentro de p e recusa payload inválido', async () => {
+  it('salvarCaixaPedido só manda meses quando definido e confere o devolvido', async () => {
     rpcMock.mockResolvedValueOnce({
       data: { id: 'k1', nome: 'Time', meses: 10 },
       error: null,
@@ -135,6 +188,22 @@ describe('serviços do pedido de bolsas', () => {
       p: { nome: 'Time', meses: 10, id: 'k1' },
     });
     expect(res.erro).toBeNull();
+
+    rpcMock.mockResolvedValueOnce({
+      data: { id: 'k9', nome: 'Nova', meses: 12 },
+      error: null,
+    });
+    const nova = await salvarCaixaPedido({ nome: 'Nova' });
+    expect(rpcMock).toHaveBeenLastCalledWith('salvar_caixa_pedido_v2', { p: { nome: 'Nova' } });
+    expect(nova.erro).toBeNull();
+
+    rpcMock.mockResolvedValueOnce({
+      data: { id: 'k9', nome: 'Outra', meses: 12 },
+      error: null,
+    });
+    const divergente = await salvarCaixaPedido({ nome: 'Nova' });
+    expect(divergente.dados).toBeNull();
+    expect(divergente.erro).toContain('Não foi possível');
 
     const antes = rpcMock.mock.calls.length;
     expect((await salvarCaixaPedido({ nome: '   ' })).erro).toContain('nome da caixa');
@@ -153,19 +222,17 @@ describe('serviços do pedido de bolsas', () => {
       data: {
         caixa_id: 'k1',
         holder_id: 'h1',
-        valor_mensal: 4500,
-        valor_usado: 4500,
-        nota: 'nota',
-        saiu_de: [],
+        valor_mensal: null,
+        valor_usado: 4000,
+        nota: null,
+        saiu_de: [{ caixa_id: 'k0', nome: 'Antiga' }],
       },
       error: null,
     });
-    await colocarNaCaixa('k1', 'h1', 4500, 'nota');
+    await colocarNaCaixa('k1', 'h1');
     expect(rpcMock).toHaveBeenLastCalledWith('colocar_na_caixa_v2', {
       p_caixa_id: 'k1',
       p_holder_id: 'h1',
-      p_valor_mensal: 4500,
-      p_nota: 'nota',
     });
 
     rpcMock.mockResolvedValueOnce({
@@ -179,10 +246,70 @@ describe('serviços do pedido de bolsas', () => {
     });
 
     const antes = rpcMock.mock.calls.length;
-    expect((await colocarNaCaixa('k1', 'h1', 0)).erro).toContain('valor');
-    expect((await colocarNaCaixa('k1', 'h1', -1)).erro).toContain('valor');
-    expect((await colocarNaCaixa('k1', 'h1', null, 'x'.repeat(301))).erro).toContain('nota');
+    expect((await colocarNaCaixa('', 'h1')).erro).toContain('obrigatórias');
+    expect((await colocarNaCaixa('k1', '')).erro).toContain('obrigatórias');
     expect(rpcMock.mock.calls.length).toBe(antes);
+  });
+
+  it('editarItemCaixa envia valor e nota e confere o devolvido', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: {
+        caixa_id: 'k1',
+        holder_id: 'h1',
+        valor_mensal: 4500,
+        valor_usado: 4500,
+        nota: 'nota',
+      },
+      error: null,
+    });
+    await editarItemCaixa('k1', 'h1', 4500, 'nota');
+    expect(rpcMock).toHaveBeenLastCalledWith('editar_item_caixa_v2', {
+      p_caixa_id: 'k1',
+      p_holder_id: 'h1',
+      p_valor_mensal: 4500,
+      p_nota: 'nota',
+    });
+
+    rpcMock.mockResolvedValueOnce({
+      data: {
+        caixa_id: 'k1',
+        holder_id: 'h1',
+        valor_mensal: 4000,
+        valor_usado: 4000,
+        nota: 'nota',
+      },
+      error: null,
+    });
+    const divergente = await editarItemCaixa('k1', 'h1', 4500, 'nota');
+    expect(divergente.dados).toBeNull();
+    expect(divergente.erro).toContain('Não foi possível');
+
+    const antes = rpcMock.mock.calls.length;
+    expect((await editarItemCaixa('k1', 'h1', 0)).erro).toContain('valor');
+    expect((await editarItemCaixa('k1', 'h1', -1)).erro).toContain('valor');
+    expect((await editarItemCaixa('k1', 'h1', 0.004)).erro).toContain('valor');
+    expect((await editarItemCaixa('k1', 'h1', 1, 'x'.repeat(301))).erro).toContain('nota');
+    expect(rpcMock.mock.calls.length).toBe(antes);
+  });
+
+  it('limparOcultosDaCaixa chama a RPC e exige contagem inteira', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: { caixa_id: 'k1', removidos: 2 },
+      error: null,
+    });
+    const res = await limparOcultosDaCaixa('k1');
+    expect(rpcMock).toHaveBeenLastCalledWith('limpar_ocultos_da_caixa_v2', {
+      p_caixa_id: 'k1',
+    });
+    expect(res.dados.removidos).toBe(2);
+
+    rpcMock.mockResolvedValueOnce({
+      data: { caixa_id: 'k1', removidos: 1.5 },
+      error: null,
+    });
+    const invalido = await limparOcultosDaCaixa('k1');
+    expect(invalido.dados).toBeNull();
+    expect(invalido.erro).toContain('Não foi possível');
   });
 
   it('falha de RPC vira erro explícito, nunca zero', async () => {
@@ -219,14 +346,26 @@ describe('modo exemplo do pedido de bolsas', () => {
     expect(caixa.total_periodo).toBe(caixa.total_mensal * caixa.meses);
   });
 
-  it('move a pessoa entre caixas e devolve de onde saiu', async () => {
+  it('edita a pessoa e move entre caixas levando valor e nota', async () => {
     const inicial = await dadosExemplo.pedidoBolsas();
     const origem = inicial.dados.caixas[0];
     const destino = inicial.dados.caixas[1];
     const pessoa = origem.itens[0];
 
-    const res = await dadosExemplo.colocarNaCaixa(destino.id, pessoa.holder_id, 1234, 'teste');
+    const editado = await dadosExemplo.editarItemCaixa(
+      origem.id,
+      pessoa.holder_id,
+      1234,
+      'teste'
+    );
+    expect(editado.erro).toBeNull();
+    expect(editado.dados.valor_mensal).toBe(1234);
+    expect(editado.dados.nota).toBe('teste');
+
+    const res = await dadosExemplo.colocarNaCaixa(destino.id, pessoa.holder_id);
     expect(res.erro).toBeNull();
+    expect(res.dados.valor_mensal).toBe(1234);
+    expect(res.dados.nota).toBe('teste');
     expect(res.dados.saiu_de).toEqual([{ caixa_id: origem.id, nome: origem.nome }]);
 
     const depois = await dadosExemplo.pedidoBolsas();
@@ -235,10 +374,19 @@ describe('modo exemplo do pedido de bolsas', () => {
     expect(caixaOrigem.itens.some((i) => i.holder_id === pessoa.holder_id)).toBe(false);
     expect(caixaDestino.itens.some((i) => i.holder_id === pessoa.holder_id)).toBe(true);
 
+    // Colocar de novo na mesma caixa não apaga o que foi editado.
+    const repetido = await dadosExemplo.colocarNaCaixa(destino.id, pessoa.holder_id);
+    expect(repetido.dados.valor_mensal).toBe(1234);
+    expect(repetido.dados.nota).toBe('teste');
+    expect(repetido.dados.saiu_de).toEqual([]);
+
     await dadosExemplo.tirarDaCaixa(destino.id, pessoa.holder_id);
     const final = await dadosExemplo.pedidoBolsas();
     expect(final.dados.caixas.find((c) => c.id === destino.id).itens.some(
       (i) => i.holder_id === pessoa.holder_id
     )).toBe(false);
+
+    const limpo = await dadosExemplo.limparOcultosDaCaixa(destino.id);
+    expect(limpo.dados).toEqual({ caixa_id: destino.id, removidos: 0 });
   });
 });

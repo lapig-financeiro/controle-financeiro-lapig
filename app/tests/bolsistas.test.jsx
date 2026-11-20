@@ -8,14 +8,18 @@ const {
   salvarCaixaPedidoMock,
   apagarCaixaPedidoMock,
   colocarNaCaixaMock,
+  editarItemCaixaMock,
   tirarDaCaixaMock,
+  limparOcultosDaCaixaMock,
 } = vi.hoisted(() => ({
   pedidoBolsasMock: vi.fn(),
   salvarEquipeBolsistaMock: vi.fn(),
   salvarCaixaPedidoMock: vi.fn(),
   apagarCaixaPedidoMock: vi.fn(),
   colocarNaCaixaMock: vi.fn(),
+  editarItemCaixaMock: vi.fn(),
   tirarDaCaixaMock: vi.fn(),
+  limparOcultosDaCaixaMock: vi.fn(),
 }));
 
 vi.mock('../src/servicos/dados.js', () => ({
@@ -24,7 +28,9 @@ vi.mock('../src/servicos/dados.js', () => ({
   salvarCaixaPedido: salvarCaixaPedidoMock,
   apagarCaixaPedido: apagarCaixaPedidoMock,
   colocarNaCaixa: colocarNaCaixaMock,
+  editarItemCaixa: editarItemCaixaMock,
   tirarDaCaixa: tirarDaCaixaMock,
+  limparOcultosDaCaixa: limparOcultosDaCaixaMock,
 }));
 
 import { Bolsistas } from '../src/paginas/Bolsistas.jsx';
@@ -65,7 +71,7 @@ const BOLSISTAS = [
     nome: 'Ana Teste',
     equipe: 'pastagem',
     valor_vigente: 4000,
-    bolsas: [bolsa('s-ana', 'c1', 4000)],
+    bolsas: [bolsa('s-ana', 'c1', 4000), bolsa('s-ana-2', 'c2', 1200)],
   },
   {
     holder_id: 'h-bento',
@@ -157,6 +163,18 @@ function botaoDe(holderId, caixaId) {
   );
 }
 
+function marcadorDe(holderId, caixaId) {
+  return document.querySelector(
+    `.bolsistas__marcador[data-holder-id="${holderId}"][data-caixa-id="${caixaId}"]`
+  );
+}
+
+function botaoPorTexto(escopo, texto) {
+  return Array.from(escopo.querySelectorAll('button')).find(
+    (el) => el.textContent.trim() === texto
+  );
+}
+
 beforeEach(() => {
   for (const mock of [
     pedidoBolsasMock,
@@ -164,7 +182,9 @@ beforeEach(() => {
     salvarCaixaPedidoMock,
     apagarCaixaPedidoMock,
     colocarNaCaixaMock,
+    editarItemCaixaMock,
     tirarDaCaixaMock,
+    limparOcultosDaCaixaMock,
   ]) {
     mock.mockReset();
   }
@@ -174,11 +194,32 @@ beforeEach(() => {
   salvarCaixaPedidoMock.mockResolvedValue({ dados: { id: 'k3', nome: 'Nova', meses: 9 }, erro: null });
   apagarCaixaPedidoMock.mockResolvedValue({ dados: { id: 'k1', apagada: true }, erro: null });
   colocarNaCaixaMock.mockResolvedValue({
-    dados: { caixa_id: 'k2', holder_id: 'h-ana', valor_usado: 4000, saiu_de: [] },
+    dados: {
+      caixa_id: 'k2',
+      holder_id: 'h-ana',
+      valor_mensal: null,
+      valor_usado: 4000,
+      nota: null,
+      saiu_de: [{ caixa_id: 'k1', nome: 'Time Pastagem' }],
+    },
+    erro: null,
+  });
+  editarItemCaixaMock.mockResolvedValue({
+    dados: {
+      caixa_id: 'k1',
+      holder_id: 'h-diego',
+      valor_mensal: 4500,
+      valor_usado: 4500,
+      nota: 'nota da caixa',
+    },
     erro: null,
   });
   tirarDaCaixaMock.mockResolvedValue({
     dados: { caixa_id: 'k1', holder_id: 'h-ana', removido: true },
+    erro: null,
+  });
+  limparOcultosDaCaixaMock.mockResolvedValue({
+    dados: { caixa_id: 'k1', removidos: 1 },
     erro: null,
   });
 });
@@ -212,7 +253,7 @@ describe('página Bolsistas — filtros', () => {
     expect(marcados).toEqual([true, true, true]);
   });
 
-  it('centro desmarcado esconde quem só tem bolsa nele e atualiza o localStorage', async () => {
+  it('centro desmarcado esconde quem só tem bolsa nele e guarda o desmarcado', async () => {
     render(<Bolsistas usuarioId="u1" />, document.body);
     await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
 
@@ -221,16 +262,44 @@ describe('página Bolsistas — filtros', () => {
     c2.dispatchEvent(new Event('change', { bubbles: true }));
     await esperarPor(() => !nomesNaLista().includes('Bento Teste'));
 
+    // Ana tem bolsa em c1 e c2: continua na lista, mas só mostra a de c1.
     expect(nomesNaLista()).toEqual(['Ana Teste', 'Diego Teste']);
     expect(document.querySelector('.bolsistas__contador').textContent).toBe('2 pessoas na lista');
+    const linhaAna = document.querySelector('.bolsistas__pessoa[data-holder-id="h-ana"]');
+    expect(linhaAna.querySelectorAll('.bolsistas__bolsa')).toHaveLength(1);
+    expect(linhaAna.textContent).toContain('inclui bolsa de centro desmarcado');
 
     await esperarPor(() => {
       const salvo = JSON.parse(window.localStorage.getItem('cf_bolsistas_filtros_u1') || '{}');
-      return Array.isArray(salvo.centros) && !salvo.centros.includes('c2');
+      return Array.isArray(salvo.centrosDesmarcados) && salvo.centrosDesmarcados.includes('c2');
     });
     const salvo = JSON.parse(window.localStorage.getItem('cf_bolsistas_filtros_u1'));
-    expect(salvo.centros).not.toContain('c2');
-    expect(salvo.centros).toContain('c1');
+    expect(salvo.centrosDesmarcados).toEqual(['c2']);
+  });
+
+  it('centro novo entra marcado e lista antiga que sumiu volta para todos', async () => {
+    window.localStorage.setItem(
+      'cf_bolsistas_filtros_u1',
+      JSON.stringify({ centrosDesmarcados: ['c2'], equipes: ['pastagem', 'sem'] })
+    );
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
+
+    const marcados = Array.from(document.querySelectorAll('.bolsistas__filtro-centro')).map(
+      (el) => el.checked
+    );
+    expect(marcados).toEqual([true, false, true]);
+
+    render(null, document.body);
+    window.localStorage.setItem(
+      'cf_bolsistas_filtros_u1',
+      JSON.stringify({ centros: ['centro-que-nao-existe'], equipes: ['pastagem', 'sem'] })
+    );
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
+    expect(
+      Array.from(document.querySelectorAll('.bolsistas__filtro-centro')).every((el) => el.checked)
+    ).toBe(true);
   });
 
   it('equipe padrão esconde Alertas e Solos; os chips mudam a lista e são lembrados', async () => {
@@ -280,35 +349,79 @@ describe('página Bolsistas — caixas e ações', () => {
 
     const resumo = document.querySelector('[data-caixa-id="k1"] .bolsistas__caixa-resumo');
     const texto = resumo.textContent.replace(/\u00a0/g, ' ');
-    expect(texto).toBe('2 pessoas · R$ 1.234 por mês · R$ 14.808 em 12 meses');
+    expect(texto).toBe('2 pessoas · R$ 1.234/mês · R$ 14.808 em 12 meses');
     expect(texto).not.toContain('4.500');
   });
 
-  it('colocar, mover e tirar chamam os serviços certos e recarregam pela RPC', async () => {
+  it('mostra a caixa atual como marcador e move/chama colocar com dois parâmetros', async () => {
     render(<Bolsistas usuarioId="u1" />, document.body);
     await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
 
-    expect(botaoDe('h-ana', 'k1').textContent).toBe('Em Time Pastagem');
+    expect(marcadorDe('h-ana', 'k1').textContent).toBe('Na caixa Time Pastagem');
+    expect(botaoDe('h-ana', 'k1')).toBeNull();
     expect(botaoDe('h-ana', 'k2').textContent).toBe('Pôr em Reserva');
 
     botaoDe('h-ana', 'k2').click();
     await tick();
-    expect(colocarNaCaixaMock).toHaveBeenCalledWith('k2', 'h-ana', null, null);
+    expect(colocarNaCaixaMock).toHaveBeenCalledWith('k2', 'h-ana');
     expect(pedidoBolsasMock).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('.bolsistas__aviso').textContent).toContain(
+      'Ana Teste saiu de Time Pastagem.'
+    );
 
     botaoDe('h-bento', 'k1').click();
     await tick();
-    expect(colocarNaCaixaMock).toHaveBeenLastCalledWith('k1', 'h-bento', null, null);
+    expect(colocarNaCaixaMock).toHaveBeenLastCalledWith('k1', 'h-bento');
 
-    const tirar = document.querySelector(
-      '.bolsistas__item[data-holder-id="h-ana"] button'
-    );
-    tirar.click();
+    const linhaAna = document.querySelector('.bolsistas__item[data-holder-id="h-ana"]');
+    botaoPorTexto(linhaAna, 'Tirar').click();
     await tick();
     expect(tirarDaCaixaMock).toHaveBeenCalledWith('k1', 'h-ana');
   });
 
-  it('o chip de equipe salva a equipe da pessoa', async () => {
+  it('edita valor e nota pela RPC de editar, sem passar por colocar', async () => {
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelector('[data-caixa-id="k1"]'));
+
+    const linhaDiego = document.querySelector('.bolsistas__item[data-holder-id="h-diego"]');
+    expect(linhaDiego.querySelector('.bolsistas__item-editado').textContent).toBe('editado');
+    botaoPorTexto(linhaDiego, 'Editar').click();
+    await tick();
+
+    const editor = linhaDiego.querySelector('.bolsistas__item-editor');
+    const [valor, nota] = editor.querySelectorAll('input');
+    valor.value = '4.500';
+    valor.dispatchEvent(new InputEvent('input', { bubbles: true, data: '4.500' }));
+    nota.value = 'nota da caixa';
+    nota.dispatchEvent(new InputEvent('input', { bubbles: true, data: 'nota da caixa' }));
+    await tick();
+    botaoPorTexto(editor, 'Salvar pessoa').click();
+    await tick();
+
+    expect(editarItemCaixaMock).toHaveBeenCalledWith('k1', 'h-diego', 4500, 'nota da caixa');
+    expect(colocarNaCaixaMock).not.toHaveBeenCalled();
+  });
+
+  it('valor em formato inválido não chama a RPC', async () => {
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelector('[data-caixa-id="k1"]'));
+
+    const linhaDiego = document.querySelector('.bolsistas__item[data-holder-id="h-diego"]');
+    botaoPorTexto(linhaDiego, 'Editar').click();
+    await tick();
+    const editor = linhaDiego.querySelector('.bolsistas__item-editor');
+    const valor = editor.querySelector('input');
+    valor.value = 'lixo';
+    valor.dispatchEvent(new InputEvent('input', { bubbles: true, data: 'lixo' }));
+    await tick();
+    botaoPorTexto(editor, 'Salvar pessoa').click();
+    await tick();
+
+    expect(editarItemCaixaMock).not.toHaveBeenCalled();
+    expect(linhaDiego.querySelector('.bolsistas__item-erro').textContent).toContain('valor positivo');
+  });
+
+  it('o chip de equipe salva a equipe e avisa quando ela sai do filtro', async () => {
     render(<Bolsistas usuarioId="u1" />, document.body);
     await esperarPor(() => document.querySelector('.bolsistas__pessoa[data-holder-id="h-ana"]'));
 
@@ -320,6 +433,28 @@ describe('página Bolsistas — caixas e ações', () => {
     await tick();
 
     expect(salvarEquipeBolsistaMock).toHaveBeenCalledWith('h-ana', 'alertas');
+    expect(document.querySelector('.bolsistas__aviso').textContent).toBe(
+      'Ana Teste agora está em Alertas (fora do filtro).'
+    );
+  });
+
+  it('tira quem saiu da lista pela RPC de limpar e recarrega', async () => {
+    const comOcultos = dados();
+    comOcultos.caixas[0].itens_ocultos = 1;
+    pedidoBolsasMock.mockResolvedValueOnce({ dados: comOcultos, erro: null });
+    render(<Bolsistas usuarioId="u1" />, document.body);
+    await esperarPor(() => document.querySelector('.bolsistas__caixa-ocultos'));
+
+    const aviso = document.querySelector('.bolsistas__caixa-ocultos');
+    expect(aviso.textContent).toContain('1 pessoa saiu da lista');
+    botaoPorTexto(aviso, 'Tirar quem saiu da lista').click();
+    await tick();
+
+    expect(limparOcultosDaCaixaMock).toHaveBeenCalledWith('k1');
+    expect(document.querySelector('.bolsistas__aviso').textContent).toBe(
+      '1 pessoa que saiu da lista foi tirada da caixa.'
+    );
+    expect(pedidoBolsasMock).toHaveBeenCalledTimes(2);
   });
 
   it('criar caixa envia nome e meses e recarrega', async () => {
@@ -351,11 +486,11 @@ describe('página Bolsistas — caixas e ações', () => {
     render(<Bolsistas usuarioId="u1" />, document.body);
     await esperarPor(() => document.querySelectorAll('.bolsistas__pessoa').length === 3);
 
-    botaoDe('h-ana', 'k1').click();
+    botaoDe('h-bento', 'k1').click();
     await tick();
 
     expect(document.querySelector('.aviso-falha').textContent).toContain('Falha ao gravar a caixa.');
-    expect(botaoDe('h-ana', 'k1').textContent).toBe('Em Time Pastagem');
+    expect(botaoDe('h-bento', 'k1').textContent).toBe('Pôr em Time Pastagem');
     expect(pedidoBolsasMock).toHaveBeenCalledTimes(1);
   });
 

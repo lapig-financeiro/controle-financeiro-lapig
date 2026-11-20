@@ -304,3 +304,145 @@ suíte da raiz ficar verde; isso é ambiente, não mudança de código.
 - Sem página de admin para as caixas dos outros: por decisão do pedido, admin vê só as próprias nesta
   rodada.
 - Sem alteração em `frontend/` (site antigo), `mcp/` ou nas tools da IA.
+
+## 2ª rodada (19/11/2026 — revisões MiniMax max/DeepSeek max de `f0cebde` + teste da tela)
+
+Esta seção registra o que mudou depois da 1ª rodada; onde as duas divergirem, vale esta.
+Nada foi publicado, aplicado ou testado contra produção, e nenhuma variável `CF_*` real foi usada.
+O PGlite rodou só em memória.
+
+### 2.1. Banco: operações separadas
+
+`colocar_na_caixa_v2` mudou de assinatura para **`(p_caixa_id uuid, p_holder_id uuid)`** e agora só
+**coloca ou move**. Se a pessoa já está numa caixa do mesmo dono, o `valor_mensal` e a `nota` do item de
+origem vão junto; se já está na caixa de destino, nada muda. A função devolve `saiu_de` com as caixas de
+onde saiu. A sobrecarga antiga de 4 argumentos é removida com `drop function if exists` (a 068 ainda não
+foi aplicada em produção) e uma asserção recusa qualquer sobrecarga que sobreviva.
+
+A edição passou a ser **`editar_item_caixa_v2(p_caixa_id, p_holder_id, p_valor_mensal, p_nota)`**: grava
+exatamente o que veio (`null` limpa), exige que o item exista (`P0002`) e arredonda o valor **antes** de
+validar — `0,004` vira `0,00` e devolve `22023`, não `23514`. O editor do item usa só essa RPC; a lista e os
+botões de caixa usam só a de colocar. Na tela, a caixa onde a pessoa já está virou marcador não clicável
+("Na caixa X").
+
+### 2.2. Banco: advisory lock por dono
+
+`salvar_caixa_pedido_v2` (criação) e `colocar_na_caixa_v2` tomam, antes de contar/apagar/inserir:
+
+```sql
+perform pg_advisory_xact_lock(hashtextextended('caixas_pedido:' || v_dono::text, 0));
+```
+
+Isso impede duas abas de criarem a 11ª caixa ou de deixarem a mesma pessoa em duas caixas. **O PGlite não
+prova concorrência**: a garantia provada em teste é textual — `pg_get_functiondef` tem de conter
+`pg_advisory_xact_lock`, e os mutantes 11 e 12 removem a chamada e falham a asserção. A correção de
+concorrência de verdade depende do lock do Postgres em produção.
+
+### 2.3. Banco: automação, PKs, FKs e itens ocultos
+
+- A guarda comum das oito RPCs passou a ser `auth.uid()` + linha em `app_users` + `not is_agente() and
+  not is_automacao(null)`. O papel `automacao` (Vigia) recebe `42501` em todas.
+- As três tabelas ganharam **`trg_bloqueia_automacao`** no formato da 054: BEFORE INSERT OR UPDATE OR
+  DELETE **FOR EACH STATEMENT**, sem WHEN, chamando `_bloquear_financeiro_automacao()`. O agente continua
+  com `trg_bloqueia_agente`; os dois gatilhos são conferidos no formato exato.
+- As PKs são adicionadas de forma idempotente se faltarem (sem derrubar FKs que já apontam para elas) e as
+  asserções conferem `contype = 'p'` com `conkey` exato. As FKs são conferidas por `confrelid`, `conkey`,
+  `confkey` e ação de delete, não só pelo nome: alvos `scholarship_holders(id)`, `caixas_pedido(id)` e
+  `auth.users(id)`.
+- RPC nova **`limpar_ocultos_da_caixa_v2(p_caixa_id)`**: só o dono, apaga os itens de quem saiu da lista
+  pela **mesma regra da `get_pedido_bolsas_v2`** (helper `_bolsista_no_pedido` = visibilidade + bolsa não
+  cancelada nos últimos 180 dias), não devolve nomes e retorna `{ caixa_id, removidos }`.
+- Caixa de outro dono responde **`P0002` igual à inexistente** em `salvar` (update), `apagar`, `colocar`,
+  `editar`, `tirar` e `limpar`. O nome da caixa alheia não serve de oráculo.
+- O gatilho de CPF foi conferido como estritamente BEFORE INSERT OR UPDATE por linha (sem DELETE nem
+  TRUNCATE, sem WHEN).
+
+### 2.4. App: dados, parser e validação
+
+- `servicos/dados.js` ganhou `editarItemCaixa()` e `limparOcultosDaCaixa()`, e `colocarNaCaixa()` passou a
+  receber só caixa e pessoa. `salvarCaixaPedido()` só manda `meses` quando ele foi definido.
+- As RPCs desta tela devolvem a mensagem do banco quando o SQLSTATE é `22023`, `P0002` ou `42501` e a
+  mensagem é uma das escritas pela 068 (erros de ACL/constraint do Postgres continuam genéricos). Os
+  testes cobrem mensagem de limite, caixa inexistente, código desconhecido e `permission denied`.
+- `validarCaixaPedido` passou a conferir `pessoas === itens.length`, `total_mensal` igual à soma de
+  `valor_usado` e `total_periodo === total_mensal × meses`, com tolerância de `0,005`. Salvar caixa e
+  salvar item conferem que o devolvido bate com o enviado; se não bater, viram erro, não dado meio certo.
+- `util/moeda.js` (`parseValorBR`) resolve o bug de `4.500` virar R$ 4,50: ponto seguido de exatamente três
+  dígitos é milhar, vírgula é decimal. Cobre `4500`, `4.500`, `4.500,00`, `4,50`, `R$ 4.500`,
+  `1.234.567,89`, `12.000`, vazio, lixo e formatos ambíguos.
+- O modo exemplo acompanha: duas caixas, 25 pessoas sintéticas, mover leva valor/nota, editar grava
+  exatamente e `limparOcultos` devolve zero (não há pessoa oculta no exemplo).
+
+### 2.5. App: filtros e tela
+
+- O filtro de centros passou a guardar os **desmarcados** (`centrosDesmarcados`), então centro novo entra
+  marcado. Se o formato antigo (`centros` = marcados) só tiver centros que não existem mais, a tela volta
+  para todos em vez de começar vazia.
+- O rótulo da soma virou **"soma vigente hoje (todos os seus centros): R$ x"** e, quando alguma bolsa
+  vigente da pessoa é de centro desmarcado, aparece ao lado **"inclui bolsa de centro desmarcado"**. O
+  valor continua vindo da RPC; o app não soma.
+- Mudar a equipe para uma fora do filtro mostra **"Fulano agora está em Alertas (fora do filtro)."**;
+  mover mostra **"Fulano saiu de Time Pastagem."**.
+- A lista ficou densa no desktop (nome/equipe | bolsas | soma | botões), quebrando em 640/1024; filtros e
+  contador ficam fixos no topo da coluna ao rolar no desktop.
+- Cada pessoa da caixa ocupa **uma linha**: nome · valor usado (com "editado" quando há `valor_mensal`) ·
+  ícone de nota · Editar · Tirar. "Editar" abre valor e nota na própria linha. O resumo da caixa
+  ("12 pessoas · R$ 24.600/mês · R$ 295.200 em 12 meses") fica em destaque no topo. O aviso de item oculto
+  ganhou o botão **"Tirar quem saiu da lista"**.
+
+### 2.6. Testes e mutantes
+
+`tests/sql/test_068_pedido_bolsas.sql` foi reescrito para o novo contrato (blocos 0–7): esquema (PK/FK,
+gatilhos, assinatura e lock), visibilidade, equipe, caixas, itens/edição/movimento entre três caixas,
+limite/cascade, CPF por RPC + INSERT e UPDATE do dono, agente/automação e estado final. Os casos novos
+incluem: `colocar` de novo sem apagar valor/nota, `editar` com `0,004`, nota de 300, nome de 80, meses 1 e
+60, caixa alheia em todas as operações (`P0002`), limpar ocultos (1 e depois 0), e apagar caixa com item
+pelo id guardado.
+
+O runner agora prova **17 mutantes**:
+
+| # | Mutante | Motivo que o roteiro acusou |
+|---:|---|---|
+| 1 | bolsa de centro fora do escopo | `b1 recebeu bolsa de centro fora do escopo` |
+| 2 | pessoa com bolsa cancelada listada | `admin não lista quem só tem bolsa cancelada` |
+| 3 | `salvar_equipe` sem visibilidade | `operação deveria falhar mas passou` |
+| 4 | `valor_vigente` somando bolsa não vigente | `Davi (ended no passado) deveria valer 0 hoje` |
+| 5 | não tirar das outras caixas | `caixa 1 deveria ficar com 1 pessoa` |
+| 6 | sem limite de 10 caixas | `operação deveria falhar mas passou` |
+| 7 | item não visível contado na caixa | `caixa 1 deveria contar 1 item oculto` |
+| 8 | sem pré-checagem de CPF na RPC | `esperado SQLSTATE 22023, veio 23514` |
+| 9 | `grant select` para `authenticated` | `operação deveria falhar mas passou` |
+| 10 | apagar caixa sem checar o dono | `operação deveria falhar mas passou` |
+| 11 | `salvar_caixa` sem `pg_advisory_xact_lock` | `sem pg_advisory_xact_lock` |
+| 12 | `colocar` sem `pg_advisory_xact_lock` | `sem pg_advisory_xact_lock` |
+| 13 | `caixas_pedido` sem `trg_bloqueia_automacao` | `trg_bloqueia_automacao ausente ou incorreto` |
+| 14 | `caixas_pedido` sem PK | `PK de caixas_pedido ausente ou errada` |
+| 15 | FK de item apontando para `projects` | `alvo/colunas errados` |
+| 16 | `colocar` sem levar valor/nota | `Bruno deveria levar 4500 para a caixa 2` |
+| 17 | `editar` sem recusar a automação | `esperado SQLSTATE 42501` |
+
+No app, `app/tests/moeda.test.js` cobre o parser; `bolsistas.test.jsx` cobre centro desmarcado, centro
+novo marcado, formato antigo que sumiu, chips, busca, totais da RPC, marcador da caixa atual, mover/tirar
+com dois parâmetros, editar valor/nota pela RPC certa, valor inválido sem RPC, aviso de equipe fora do
+filtro, aviso de "saiu de", limpar ocultos e falha sem zero; `pedido-bolsas.test.js` cobre os validadores
+(contas da caixa), o envio condicional de `meses`, a mensagem do banco nos três SQLSTATEs, o encaixe do
+devolvido com o enviado e o modo exemplo.
+
+### 2.7. Verificação executada nesta rodada
+
+| Comando | Resultado |
+|---|---|
+| `node tools/replica-local/rodar-068-pglite.mjs` | **OK**: `42P01` antes, 68 aplicada e reaplicada, BLOCO 1 da 051, 6 helpers intactos, **17 mutantes** e roteiro final |
+| `npx vitest run` (raiz) | **44 arquivos, 699 testes passando, 5 pulados** |
+| `npm run lint` | **sem saída** (0 erros/warnings) |
+| `cd app && npx vitest run` | **19 arquivos, 147 testes passando** |
+| `cd app && npm run verificar-estilo` | **nenhuma violação** |
+| `cd app && npm run build` | **build ok**; `verificar-build`: nenhum dado de exemplo no bundle |
+
+### 2.8. O que não mudou / não foi feito
+
+- **Sem push, sem aplicar migração, sem cofre, sem `CF_*` reais.** A 068 continua "ainda não aplicada".
+- Nada mudou em `scholarships`, saldos, `get_saldo_livre`, `explicar_livre_v2`, `resumo_projetos_v2`,
+  `frontend/`, `mcp/` ou tools da IA.
+- O PGlite não prova concorrência real; os mutantes provam que o advisory lock está no texto das funções.
+- Sem arrastar e soltar; os botões seguem sendo o caminho de teclado e celular.

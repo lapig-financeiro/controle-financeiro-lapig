@@ -197,15 +197,13 @@ async function main() {
     );
 
     await esperarFalhaTest068(
-      '2) get_pedido_bolsas_v2 listando pessoa com bolsa cancelada',
+      '2) _bolsista_no_pedido listando pessoa com bolsa cancelada',
       async () => {
-        const fn = extrairFuncao(texto068, 'get_pedido_bolsas_v2');
-        const alvo = `            and s.status <> 'cancelled'
-            and s.end_date >= current_date - 180`;
+        const fn = extrairFuncao(texto068, '_bolsista_no_pedido');
+        const alvo = `          and s.status <> 'cancelled'`;
         const mut = fn.replace(
           alvo,
-          `            and (s.status <> 'cancelled' or true)
-            and s.end_date >= current_date - 180`,
+          `          and (s.status <> 'cancelled' or true)`,
         );
         if (mut === fn) throw new Error('Falha ao montar mutante 2.');
         await sql(mut);
@@ -251,12 +249,12 @@ async function main() {
       '5) colocar_na_caixa_v2 não tirando a pessoa das outras caixas',
       async () => {
         const fn = extrairFuncao(texto068, 'colocar_na_caixa_v2');
-        const alvo = `  delete from public.caixa_pedido_itens i
-   using public.caixas_pedido c
-   where i.caixa_id = c.id
-     and c.dono = auth.uid()
-     and c.id <> p_caixa_id
-     and i.holder_id = p_holder_id;`;
+        const alvo = `    delete from public.caixa_pedido_itens i
+     using public.caixas_pedido c
+     where i.caixa_id = c.id
+       and c.dono = v_caixa.dono
+       and c.id <> p_caixa_id
+       and i.holder_id = p_holder_id;`;
         const mut = fn.replace(alvo, '');
         if (mut === fn) throw new Error('Falha ao montar mutante 5.');
         await sql(mut);
@@ -317,14 +315,106 @@ async function main() {
       '10) apagar_caixa_pedido_v2 sem checar o dono',
       async () => {
         const fn = extrairFuncao(texto068, 'apagar_caixa_pedido_v2');
-        const alvo = `  if v_caixa.dono <> auth.uid() then
-    raise exception 'Só o dono apaga esta caixa.' using errcode = '42501';
+        const alvo = `  if not found or v_caixa.dono <> auth.uid() then
+    raise exception 'Caixa do pedido não encontrada.' using errcode = 'P0002';
   end if;`;
         const mut = fn.replace(alvo, '');
         if (mut === fn) throw new Error('Falha ao montar mutante 10.');
         await sql(mut);
       },
       'deveria falhar',
+    );
+
+    await esperarFalhaTest068(
+      '11) salvar_caixa_pedido_v2 sem o advisory lock por dono',
+      async () => {
+        const fn = extrairFuncao(texto068, 'salvar_caixa_pedido_v2');
+        const alvo = `    perform pg_advisory_xact_lock(hashtextextended('caixas_pedido:' || v_dono::text, 0));
+`;
+        const mut = fn.replace(alvo, '');
+        if (mut === fn) throw new Error('Falha ao montar mutante 11.');
+        await sql(mut);
+      },
+      'salvar_caixa_pedido_v2 sem pg_advisory_xact_lock',
+    );
+
+    await esperarFalhaTest068(
+      '12) colocar_na_caixa_v2 sem o advisory lock por dono',
+      async () => {
+        const fn = extrairFuncao(texto068, 'colocar_na_caixa_v2');
+        const alvo = `  perform pg_advisory_xact_lock(hashtextextended('caixas_pedido:' || v_caixa.dono::text, 0));
+`;
+        const mut = fn.replace(alvo, '');
+        if (mut === fn) throw new Error('Falha ao montar mutante 12.');
+        await sql(mut);
+      },
+      'colocar_na_caixa_v2 sem pg_advisory_xact_lock',
+    );
+
+    await esperarFalhaTest068(
+      '13) caixas_pedido sem trg_bloqueia_automacao',
+      async () => {
+        await sql('drop trigger trg_bloqueia_automacao on public.caixas_pedido;');
+      },
+      'trg_bloqueia_automacao ausente ou incorreto',
+    );
+
+    await esperarFalhaTest068(
+      '14) caixas_pedido sem PK',
+      async () => {
+        await sql('alter table public.caixas_pedido drop constraint caixas_pedido_pkey cascade;');
+      },
+      'PK de caixas_pedido ausente ou errada',
+    );
+
+    await esperarFalhaTest068(
+      '15) FK de caixa_pedido_itens apontando para outra tabela',
+      async () => {
+        await sql(`
+          alter table public.caixa_pedido_itens
+            drop constraint caixa_pedido_itens_holder_id_fkey;
+          alter table public.caixa_pedido_itens
+            add constraint caixa_pedido_itens_holder_id_fkey
+            foreign key (holder_id) references public.projects(id) on delete cascade;
+        `);
+      },
+      'caixa_pedido_itens_holder_id_fkey ausente, alvo/colunas errados',
+    );
+
+    await esperarFalhaTest068(
+      '16) colocar_na_caixa_v2 sem levar valor e nota ao mover',
+      async () => {
+        const fn = extrairFuncao(texto068, 'colocar_na_caixa_v2');
+        const alvo = `    insert into public.caixa_pedido_itens (caixa_id, holder_id, valor_mensal, nota, criado_em)
+    values (p_caixa_id, p_holder_id, v_origem.valor_mensal, v_origem.nota, now());`;
+        const mut = fn.replace(
+          alvo,
+          `    insert into public.caixa_pedido_itens (caixa_id, holder_id, valor_mensal, nota, criado_em)
+    values (p_caixa_id, p_holder_id, null, null, now());`,
+        );
+        if (mut === fn) throw new Error('Falha ao montar mutante 16.');
+        await sql(mut);
+      },
+      'Bruno deveria levar 4500 para a caixa 2',
+    );
+
+    await esperarFalhaTest068(
+      '17) editar_item_caixa_v2 sem recusar a automação',
+      async () => {
+        const fn = extrairFuncao(texto068, 'editar_item_caixa_v2');
+        const alvo = `  if public.is_agente() or public.is_automacao(null) then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
+  end if;`;
+        const mut = fn.replace(
+          alvo,
+          `  if public.is_agente() then
+    raise exception 'O agente e a automação não leem nem gravam o pedido de bolsas.' using errcode = '42501';
+  end if;`,
+        );
+        if (mut === fn) throw new Error('Falha ao montar mutante 17.');
+        await sql(mut);
+      },
+      'esperado SQLSTATE 42501',
     );
 
     console.log('8. Conferência final depois dos mutantes...');
@@ -336,7 +426,7 @@ async function main() {
       throw new Error('Mutantes deixaram helper protegido alterado!');
     }
 
-    console.log('068 OK em PGlite: base real + 064/stub-064 + test_068 falhando antes + test_068 + idempotência + barreira 051 + helpers intactos + 10 mutantes + roteiro final.');
+    console.log('068 OK em PGlite: base real + 064/stub-064 + test_068 falhando antes + test_068 + idempotência + barreira 051 + helpers intactos + 17 mutantes + roteiro final.');
   } catch (e) {
     console.error('ERRO:', e.message, e.detail || '', e.where || '');
     process.exitCode = 1;

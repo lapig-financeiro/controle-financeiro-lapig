@@ -27,6 +27,9 @@
 }
 
 .bolsistas__filtros {
+  position: sticky;
+  top: calc(var(--altura-topo) + var(--esp-3));
+  z-index: var(--z-topo);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--esp-4);
@@ -98,24 +101,26 @@
 .bolsistas__pessoas {
   display: flex;
   flex-direction: column;
-  gap: var(--esp-3);
+  gap: var(--esp-2);
 }
 
 .bolsistas__pessoa {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.9fr) minmax(0, 1.4fr) minmax(10rem, 1fr) auto;
   gap: var(--esp-3);
-  padding: var(--esp-4);
+  align-items: center;
+  padding: var(--esp-3) var(--esp-4);
   background-color: var(--cor-superficie);
   border: var(--borda);
   border-radius: var(--raio-2);
 }
 
-.bolsistas__pessoa-topo {
+.bolsistas__pessoa-identidade {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--esp-3);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2);
+  min-width: 0;
 }
 
 .bolsistas__pessoa-nome {
@@ -177,12 +182,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--esp-2);
+  min-width: 0;
 }
 
 .bolsistas__bolsa {
   padding: var(--esp-1) var(--esp-2);
   color: var(--cor-texto-2);
-  font-size: var(--fs-2);
+  font-size: var(--fs-1);
   background-color: var(--cor-afundado);
   border: var(--borda);
   border-radius: var(--raio-1);
@@ -192,28 +198,44 @@
   opacity: 0.55;
 }
 
-.bolsistas__pessoa-rodape {
+.bolsistas__pessoa-soma {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--esp-3);
+  flex-direction: column;
+  gap: var(--esp-1);
+  min-width: 0;
 }
 
 .bolsistas__pessoa-valor {
   color: var(--cor-texto-2);
-  font-size: var(--fs-2);
+  font-size: var(--fs-1);
+}
+
+.bolsistas__pessoa-aviso-centro {
+  color: var(--cor-atencao);
+  font-size: var(--fs-1);
 }
 
 .bolsistas__pessoa-acoes {
   display: flex;
   flex-wrap: wrap;
   gap: var(--esp-2);
+  justify-content: flex-end;
 }
 
 .bolsistas__sem-caixa {
   color: var(--cor-texto-3);
-  font-size: var(--fs-2);
+  font-size: var(--fs-1);
+}
+
+.bolsistas__marcador {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--esp-1) var(--esp-2);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-1);
+  background-color: var(--cor-afundado);
+  border: var(--borda);
+  border-radius: var(--raio-1);
 }
 
 .bolsistas__caixas-topo {
@@ -255,9 +277,23 @@
   border-radius: var(--raio-2);
 }
 
+.bolsistas__caixa-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-2);
+}
+
+.bolsistas__caixa-nome-titulo {
+  color: var(--cor-texto);
+  font-size: var(--fs-3);
+  font-weight: var(--fw-semi);
+  overflow-wrap: anywhere;
+}
+
 .bolsistas__caixa-edicao {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 6rem auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: var(--esp-2);
   align-items: end;
 }
@@ -267,11 +303,19 @@
 }
 
 .bolsistas__caixa-resumo {
+  padding: var(--esp-3);
   color: var(--cor-texto);
   font-size: var(--fs-2);
+  background-color: var(--cor-afundado);
+  border-left: var(--esp-1) solid var(--cor-acento);
+  border-radius: var(--raio-1);
 }
 
 .bolsistas__caixa-ocultos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2);
   color: var(--cor-atencao);
   font-size: var(--fs-1);
 }
@@ -279,7 +323,7 @@
 .bolsistas__caixa-itens {
   display: flex;
   flex-direction: column;
-  gap: var(--esp-3);
+  gap: var(--esp-1);
 }
 
 .bolsistas__caixa-vazia {
@@ -291,7 +335,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--esp-2);
-  padding-top: var(--esp-3);
+  padding: var(--esp-2) 0;
   border-top: var(--borda);
 }
 
@@ -300,27 +344,59 @@
   border-top: 0;
 }
 
-.bolsistas__item-topo {
+.bolsistas__item-linha {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--esp-2);
+  min-width: 0;
 }
 
 .bolsistas__item-nome {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--cor-texto);
   font-weight: var(--fw-medio);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bolsistas__item-usado {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esp-1);
+  flex-shrink: 0;
   color: var(--cor-texto-2);
-  font-size: var(--fs-2);
+  font-size: var(--fs-1);
 }
 
-.bolsistas__item-campos {
+.bolsistas__item-editado {
+  padding: 0 var(--esp-1);
+  color: var(--cor-acento);
+  font-size: var(--fs-1);
+  border: var(--borda);
+  border-radius: var(--raio-1);
+}
+
+.bolsistas__item-nota {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--cor-texto-3);
+}
+
+.bolsistas__item-acoes {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--esp-1);
+}
+
+.bolsistas__item-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto;
   gap: var(--esp-2);
+  padding: var(--esp-3);
+  background-color: var(--cor-afundado);
+  border-radius: var(--raio-1);
   align-items: end;
 }
 
@@ -350,25 +426,59 @@
   color: var(--cor-texto-2);
 }
 
+.bolsistas__aviso {
+  padding: var(--esp-3) var(--esp-4);
+  color: var(--cor-texto);
+  font-size: var(--fs-2);
+  background-color: var(--cor-afundado);
+  border-left: var(--esp-1) solid var(--cor-acento);
+  border-radius: var(--raio-1);
+}
+
 @media (max-width: 1024px) {
   .bolsistas__layout,
   .bolsistas__carregando {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bolsistas__filtros {
+    position: static;
   }
 }
 
 @media (max-width: 640px) {
   .bolsistas__filtros,
   .bolsistas__caixa-edicao,
-  .bolsistas__item-campos {
+  .bolsistas__item-editor {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .bolsistas__pessoa-topo {
-    flex-direction: column;
+  .bolsistas__pessoa {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bolsistas__pessoa-acoes {
+    justify-content: flex-start;
+  }
+
+  .bolsistas__pessoa-identidade {
+    align-items: flex-start;
   }
 
   .bolsistas__equipe {
     align-self: flex-start;
+  }
+
+  .bolsistas__item-linha {
+    flex-wrap: wrap;
+  }
+
+  .bolsistas__item-nome {
+    flex-basis: 100%;
+    white-space: normal;
+  }
+
+  .bolsistas__item-acoes {
+    margin-left: auto;
   }
 }

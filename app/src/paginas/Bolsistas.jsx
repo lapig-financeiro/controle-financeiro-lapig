@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { Check, Plus, Trash2 } from 'lucide-preact';
+import { Check, Plus, StickyNote, Trash2 } from 'lucide-preact';
 import {
   AvisoFalha,
   Botao,
@@ -14,12 +14,15 @@ import {
 import {
   apagarCaixaPedido,
   colocarNaCaixa,
+  editarItemCaixa,
+  limparOcultosDaCaixa,
   pedidoBolsas,
   salvarCaixaPedido,
   salvarEquipeBolsista,
   tirarDaCaixa,
 } from '../servicos/dados.js';
 import { dataCompacta, dinheiro, hojeISO } from '../util/formato.js';
+import { parseValorBR } from '../util/moeda.js';
 import './Bolsistas.css';
 
 const EQUIPES = [
@@ -30,7 +33,8 @@ const EQUIPES = [
 ];
 
 const FILTROS_PADRAO = {
-  centros: null,
+  centrosDesmarcados: [],
+  legadoCentrosMarcados: null,
   equipes: ['pastagem', 'sem'],
   situacao: 'vigente',
   data: '',
@@ -50,7 +54,13 @@ function lerFiltros(usuarioId) {
       ? bruto.equipes.filter((e) => EQUIPES.some((item) => item.valor === e))
       : FILTROS_PADRAO.equipes;
     return {
-      centros: Array.isArray(bruto.centros) ? bruto.centros.filter((id) => typeof id === 'string') : null,
+      centrosDesmarcados: Array.isArray(bruto.centrosDesmarcados)
+        ? bruto.centrosDesmarcados.filter((id) => typeof id === 'string')
+        : [],
+      // Formato antigo (lista de marcados): convertido quando os centros chegam.
+      legadoCentrosMarcados: Array.isArray(bruto.centros)
+        ? bruto.centros.filter((id) => typeof id === 'string')
+        : null,
       equipes,
       situacao: bruto.situacao === 'termina' ? 'termina' : 'vigente',
       data: typeof bruto.data === 'string' ? bruto.data : '',
@@ -90,7 +100,9 @@ function CaixaPedido({
   onApagarCaixa,
   onTirar,
   onSalvarItem,
+  onLimparOcultos,
 }) {
+  const [editandoCaixa, setEditandoCaixa] = useState(false);
   const [nome, setNome] = useState(caixa.nome);
   const [meses, setMeses] = useState(String(caixa.meses));
   const [confirmando, setConfirmando] = useState(false);
@@ -104,47 +116,80 @@ function CaixaPedido({
   const mesesValidos = Number.isInteger(mesesNumero) && mesesNumero >= 1 && mesesNumero <= 60;
   const podeSalvar = nome.trim().length > 0 && nome.trim().length <= 80 && mesesValidos;
 
+  const salvarCaixa = async (evento) => {
+    evento.preventDefault();
+    if (!podeSalvar) return;
+    const res = await onSalvarCaixa(caixa.id, nome, mesesNumero);
+    if (res?.ok) setEditandoCaixa(false);
+  };
+
   return (
     <section class="bolsistas__caixa" data-caixa-id={caixa.id} aria-label={`Caixa ${caixa.nome}`}>
-      <div class="bolsistas__caixa-edicao">
-        <Campo
-          rotulo="Nome da caixa"
-          valor={nome}
-          aoMudar={setNome}
-          desabilitado={emAcao}
-          className="bolsistas__caixa-nome"
-        />
-        <Campo
-          rotulo="Meses"
-          tipo="number"
-          valor={meses}
-          aoMudar={setMeses}
-          min={1}
-          max={60}
-          desabilitado={emAcao}
-          className="bolsistas__caixa-meses"
-        />
+      <div class="bolsistas__caixa-topo">
+        <h3 class="bolsistas__caixa-nome-titulo">{caixa.nome}</h3>
         <Botao
-          variante="secundario"
+          variante="fantasma"
           tamanho="compacto"
-          onClick={() => onSalvarCaixa(caixa.id, nome, mesesNumero)}
-          desabilitado={emAcao || !podeSalvar}
+          onClick={() => setEditandoCaixa((v) => !v)}
+          desabilitado={emAcao}
         >
-          Salvar
+          Editar caixa
         </Botao>
       </div>
 
       <p class="bolsistas__caixa-resumo">
         <strong>{caixa.pessoas}</strong> {caixa.pessoas === 1 ? 'pessoa' : 'pessoas'} ·{' '}
-        {dinheiro(caixa.total_mensal, { centavos: false })} por mês ·{' '}
+        {dinheiro(caixa.total_mensal, { centavos: false })}/mês ·{' '}
         {dinheiro(caixa.total_periodo, { centavos: false })} em {caixa.meses} meses
       </p>
+
+      {editandoCaixa && (
+        <form class="bolsistas__caixa-edicao" onSubmit={salvarCaixa}>
+          <Campo
+            rotulo="Nome da caixa"
+            valor={nome}
+            aoMudar={setNome}
+            desabilitado={emAcao}
+            maxLength={80}
+            className="bolsistas__caixa-nome"
+          />
+          <Campo
+            rotulo="Meses"
+            tipo="number"
+            valor={meses}
+            aoMudar={setMeses}
+            min={1}
+            max={60}
+            desabilitado={emAcao}
+            className="bolsistas__caixa-meses"
+          />
+          <Botao
+            variante="secundario"
+            tamanho="compacto"
+            tipo="submit"
+            desabilitado={emAcao || !podeSalvar}
+          >
+            Salvar caixa
+          </Botao>
+        </form>
+      )}
+
       {caixa.itens_ocultos > 0 && (
-        <p class="bolsistas__caixa-ocultos">
-          {caixa.itens_ocultos}{' '}
-          {caixa.itens_ocultos === 1 ? 'pessoa saiu da lista' : 'pessoas saíram da lista'} e não
-          entra{caixa.itens_ocultos === 1 ? '' : 'm'} nesta conta.
-        </p>
+        <div class="bolsistas__caixa-ocultos">
+          <span>
+            {caixa.itens_ocultos}{' '}
+            {caixa.itens_ocultos === 1 ? 'pessoa saiu da lista' : 'pessoas saíram da lista'} e não
+            entra{caixa.itens_ocultos === 1 ? '' : 'm'} nesta conta.
+          </span>
+          <Botao
+            variante="fantasma"
+            tamanho="compacto"
+            onClick={() => onLimparOcultos(caixa.id)}
+            desabilitado={emAcao}
+          >
+            Tirar quem saiu da lista
+          </Botao>
+        </div>
       )}
 
       <div class="bolsistas__caixa-itens">
@@ -206,6 +251,7 @@ function CaixaPedido({
 }
 
 function ItemDaCaixa({ caixaId, item, nome, emAcao, onTirar, onSalvarItem }) {
+  const [editando, setEditando] = useState(false);
   const [valor, setValor] = useState(item.valor_mensal === null ? '' : String(item.valor_mensal));
   const [nota, setNota] = useState(item.nota || '');
   const [erro, setErro] = useState('');
@@ -215,62 +261,89 @@ function ItemDaCaixa({ caixaId, item, nome, emAcao, onTirar, onSalvarItem }) {
     setNota(item.nota || '');
   }, [item.valor_mensal, item.nota]);
 
-  const salvar = () => {
+  const salvar = async () => {
     const texto = valor.trim();
-    const numero = texto === ''
-      ? null
-      : Number(texto.includes(',') ? texto.replace(/\./g, '').replace(',', '.') : texto);
-    if (numero !== null && (!Number.isFinite(numero) || numero <= 0)) {
+    const numero = texto === '' ? null : parseValorBR(texto);
+    if (texto !== '' && (numero === null || numero <= 0)) {
       setErro('Informe um valor positivo ou deixe vazio para usar o atual.');
       return;
     }
     setErro('');
-    onSalvarItem(caixaId, item.holder_id, numero, nota);
+    const res = await onSalvarItem(caixaId, item.holder_id, numero, nota);
+    if (res?.ok) setEditando(false);
   };
+
+  const editado = item.valor_mensal !== null && item.valor_mensal !== undefined;
 
   return (
     <div class="bolsistas__item" data-holder-id={item.holder_id}>
-      <div class="bolsistas__item-topo">
-        <span class="bolsistas__item-nome">{nome}</span>
-        <span class="bolsistas__item-usado">
-          usa {dinheiro(item.valor_usado, { centavos: false })}/mês
+      <div class="bolsistas__item-linha">
+        <span class="bolsistas__item-nome" title={nome}>
+          {nome}
         </span>
-        <Botao
-          variante="fantasma"
-          tamanho="compacto"
-          onClick={() => onTirar(caixaId, item.holder_id)}
-          desabilitado={emAcao}
-          aria-label={`Tirar ${nome} da caixa`}
-        >
-          Tirar
-        </Botao>
+        <span class="bolsistas__item-usado">
+          {dinheiro(item.valor_usado, { centavos: false })}/mês
+          {editado && <span class="bolsistas__item-editado">editado</span>}
+        </span>
+        {item.nota && (
+          <span
+            class="bolsistas__item-nota"
+            title={item.nota}
+            aria-label={`Nota: ${item.nota}`}
+          >
+            <StickyNote size={15} strokeWidth={1.75} aria-hidden="true" />
+          </span>
+        )}
+        <div class="bolsistas__item-acoes">
+          <Botao
+            variante="fantasma"
+            tamanho="compacto"
+            onClick={() => setEditando((v) => !v)}
+            desabilitado={emAcao}
+            aria-label={`Editar ${nome} na caixa`}
+          >
+            Editar
+          </Botao>
+          <Botao
+            variante="fantasma"
+            tamanho="compacto"
+            onClick={() => onTirar(caixaId, item.holder_id)}
+            desabilitado={emAcao}
+            aria-label={`Tirar ${nome} da caixa`}
+          >
+            Tirar
+          </Botao>
+        </div>
       </div>
-      <div class="bolsistas__item-campos">
-        <Campo
-          rotulo="Valor no pedido"
-          valor={valor}
-          aoMudar={setValor}
-          placeholder={dinheiro(item.valor_usado, { centavos: false })}
-          ajuda="Vazio = valor atual"
-          desabilitado={emAcao}
-          inputMode="decimal"
-        />
-        <Campo
-          rotulo="Nota curta"
-          valor={nota}
-          aoMudar={setNota}
-          maxLength={300}
-          desabilitado={emAcao}
-        />
-        <Botao
-          variante="secundario"
-          tamanho="compacto"
-          onClick={salvar}
-          desabilitado={emAcao}
-        >
-          Salvar pessoa
-        </Botao>
-      </div>
+
+      {editando && (
+        <div class="bolsistas__item-editor">
+          <Campo
+            rotulo="Valor no pedido"
+            valor={valor}
+            aoMudar={setValor}
+            placeholder={dinheiro(item.valor_usado, { centavos: false })}
+            ajuda="Vazio = valor atual"
+            desabilitado={emAcao}
+            inputMode="decimal"
+          />
+          <Campo
+            rotulo="Nota curta"
+            valor={nota}
+            aoMudar={setNota}
+            maxLength={300}
+            desabilitado={emAcao}
+          />
+          <Botao
+            variante="secundario"
+            tamanho="compacto"
+            onClick={salvar}
+            desabilitado={emAcao}
+          >
+            Salvar pessoa
+          </Botao>
+        </div>
+      )}
       {erro && <p class="bolsistas__item-erro">{erro}</p>}
     </div>
   );
@@ -279,6 +352,7 @@ function ItemDaCaixa({ caixaId, item, nome, emAcao, onTirar, onSalvarItem }) {
 export function Bolsistas({ usuarioId = null }) {
   const [st, setSt] = useState({ carregando: true, dados: null, erro: null });
   const [erroAcao, setErroAcao] = useState(null);
+  const [aviso, setAviso] = useState(null);
   const [filtros, setFiltros] = useState(() => lerFiltros(usuarioId));
   const [mostrarNovaCaixa, setMostrarNovaCaixa] = useState(false);
   const [novaCaixa, setNovaCaixa] = useState({ nome: '', meses: '12' });
@@ -299,12 +373,13 @@ export function Bolsistas({ usuarioId = null }) {
     const geracao = ++geracaoRef.current;
     setSt((anterior) => ({ ...anterior, carregando: true, erro: null }));
     const res = await pedidoBolsas();
-    if (!montadoRef.current || geracao !== geracaoRef.current) return;
+    if (!montadoRef.current || geracao !== geracaoRef.current) return false;
     if (res.erro) {
       setSt((anterior) => ({ carregando: false, dados: anterior.dados, erro: res.erro }));
-      return;
+      return false;
     }
     setSt({ carregando: false, dados: res.dados, erro: null });
+    return true;
   };
 
   useEffect(() => {
@@ -313,42 +388,55 @@ export function Bolsistas({ usuarioId = null }) {
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.localStorage) return;
+    if (!st.dados || filtros.legadoCentrosMarcados) return;
     try {
-      window.localStorage.setItem(chaveFiltros(usuarioId), JSON.stringify(filtros));
+      window.localStorage.setItem(
+        chaveFiltros(usuarioId),
+        JSON.stringify({
+          centrosDesmarcados: filtros.centrosDesmarcados,
+          equipes: filtros.equipes,
+          situacao: filtros.situacao,
+          data: filtros.data,
+          busca: filtros.busca,
+        })
+      );
     } catch {
       /* localStorage pode estar indisponível; o filtro continua valendo na sessão */
     }
   }, [filtros, usuarioId]);
 
-  const executar = async (acao) => {
-    if (acaoRef.current) return false;
-    acaoRef.current = true;
-    setEmAcao(true);
-    setErroAcao(null);
-    try {
-      const res = await acao();
-      if (res?.erro) {
-        setErroAcao(res.erro);
-        return false;
-      }
-      await carregar();
-      return true;
-    } catch {
-      setErroAcao('Não foi possível concluir a ação.');
-      return false;
-    } finally {
-      acaoRef.current = false;
-      if (montadoRef.current) setEmAcao(false);
-    }
-  };
-
   const dados = st.dados;
   const centros = dados?.centros || [];
+
+  useEffect(() => {
+    if (!dados || !filtros.legadoCentrosMarcados) return;
+    const ids = dados.centros.map((c) => c.id);
+    const legado = filtros.legadoCentrosMarcados.filter((id) => ids.includes(id));
+    // Se a lista antiga de marcados só tinha centros que não existem mais,
+    // voltar para todos em vez de começar com a lista vazia.
+    const desmarcados =
+      filtros.legadoCentrosMarcados.length > 0 && legado.length === 0
+        ? []
+        : ids.filter((id) => !legado.includes(id));
+    setFiltros((anterior) => ({
+      ...anterior,
+      centrosDesmarcados: desmarcados,
+      legadoCentrosMarcados: null,
+    }));
+  }, [dados, filtros.legadoCentrosMarcados]);
+
   const marcados = useMemo(() => {
     const ids = centros.map((c) => c.id);
-    if (filtros.centros === null) return new Set(ids);
-    return new Set(filtros.centros.filter((id) => ids.includes(id)));
-  }, [centros, filtros.centros]);
+    if (filtros.legadoCentrosMarcados) {
+      const legado = filtros.legadoCentrosMarcados.filter((id) => ids.includes(id));
+      if (filtros.legadoCentrosMarcados.length > 0 && legado.length === 0) {
+        return new Set(ids);
+      }
+      return new Set(legado);
+    }
+    const ocultos = new Set(filtros.centrosDesmarcados);
+    return new Set(ids.filter((id) => !ocultos.has(id)));
+  }, [centros, filtros.centrosDesmarcados, filtros.legadoCentrosMarcados]);
 
   const equipesSelecionadas = useMemo(() => new Set(filtros.equipes), [filtros.equipes]);
   const hoje = hojeISO();
@@ -385,11 +473,36 @@ export function Bolsistas({ usuarioId = null }) {
       caixa.itens.some((item) => item.holder_id === holderId)
     ) || null;
 
+  const executar = async (acao) => {
+    if (acaoRef.current) return { ok: false, dados: null };
+    acaoRef.current = true;
+    setEmAcao(true);
+    setErroAcao(null);
+    setAviso(null);
+    try {
+      const res = await acao();
+      if (res?.erro) {
+        setErroAcao(res.erro);
+        return { ok: false, dados: null };
+      }
+      await carregar();
+      return { ok: true, dados: res?.dados ?? null };
+    } catch {
+      setErroAcao('Não foi possível concluir a ação.');
+      return { ok: false, dados: null };
+    } finally {
+      acaoRef.current = false;
+      if (montadoRef.current) setEmAcao(false);
+    }
+  };
+
   const alternarCentro = (centroId) => {
-    const proximos = new Set(marcados);
-    if (proximos.has(centroId)) proximos.delete(centroId);
-    else proximos.add(centroId);
-    setFiltros((anterior) => ({ ...anterior, centros: Array.from(proximos) }));
+    setFiltros((anterior) => {
+      const ocultos = new Set(anterior.centrosDesmarcados);
+      if (marcados.has(centroId)) ocultos.add(centroId);
+      else ocultos.delete(centroId);
+      return { ...anterior, centrosDesmarcados: Array.from(ocultos) };
+    });
   };
 
   const alternarEquipe = (equipe) => {
@@ -401,29 +514,53 @@ export function Bolsistas({ usuarioId = null }) {
     });
   };
 
-  const escolherEquipe = (pessoa, equipe) => {
+  const escolherEquipe = async (pessoa, equipe) => {
     const alvo = equipe === 'sem' ? null : equipe;
     if (equipeDaPessoa(pessoa) === equipe) return;
-    executar(() => salvarEquipeBolsista(pessoa.holder_id, alvo));
+    const res = await executar(() => salvarEquipeBolsista(pessoa.holder_id, alvo));
+    if (res.ok && !equipesSelecionadas.has(equipe)) {
+      setAviso(`${pessoa.nome} agora está em ${rotuloEquipe(alvo)} (fora do filtro).`);
+    }
   };
 
-  const salvarCaixa = (id, nome, meses) => {
+  const colocarPessoaNaCaixa = async (pessoa, caixa) => {
+    const res = await executar(() => colocarNaCaixa(caixa.id, pessoa.holder_id));
+    const saiuDe = res.dados?.saiu_de;
+    if (res.ok && Array.isArray(saiuDe) && saiuDe.length > 0) {
+      const nomes = saiuDe.map((c) => c.nome).join(', ');
+      setAviso(`${pessoa.nome} saiu de ${nomes}.`);
+    }
+  };
+
+  const salvarCaixa = (id, nome, meses) =>
     executar(() => salvarCaixaPedido({ id, nome, meses }));
-  };
 
-  const criarCaixa = (evento) => {
+  const criarCaixa = async (evento) => {
     evento.preventDefault();
-    const meses = Number(novaCaixa.meses);
     if (!novaCaixa.nome.trim()) {
       setErroAcao('Informe o nome da caixa.');
       return;
     }
-    executar(() => salvarCaixaPedido({ nome: novaCaixa.nome, meses })).then((ok) => {
-      if (ok) {
-        setNovaCaixa({ nome: '', meses: '12' });
-        setMostrarNovaCaixa(false);
-      }
-    });
+    const meses = novaCaixa.meses === '' ? undefined : Number(novaCaixa.meses);
+    const payload = { nome: novaCaixa.nome };
+    if (meses !== undefined) payload.meses = meses;
+    const res = await executar(() => salvarCaixaPedido(payload));
+    if (res.ok) {
+      setNovaCaixa({ nome: '', meses: '12' });
+      setMostrarNovaCaixa(false);
+    }
+  };
+
+  const limparOcultos = async (caixaId) => {
+    const res = await executar(() => limparOcultosDaCaixa(caixaId));
+    if (res.ok) {
+      const removidos = res.dados?.removidos ?? 0;
+      setAviso(
+        removidos === 1
+          ? '1 pessoa que saiu da lista foi tirada da caixa.'
+          : `${removidos} pessoas que saíram da lista foram tiradas da caixa.`
+      );
+    }
   };
 
   const contexto = dados
@@ -442,6 +579,11 @@ export function Bolsistas({ usuarioId = null }) {
 
       {st.erro && <AvisoFalha mensagem={st.erro} aoTentarNovamente={carregar} />}
       {erroAcao && <AvisoFalha mensagem={erroAcao} />}
+      {aviso && (
+        <p class="bolsistas__aviso" role="status">
+          {aviso}
+        </p>
+      )}
 
       {!dados && st.carregando && (
         <div class="bolsistas__carregando">
@@ -547,13 +689,16 @@ export function Bolsistas({ usuarioId = null }) {
                   const equipe = equipeDaPessoa(pessoa);
                   const caixaAtual = caixaDaPessoa(pessoa.holder_id);
                   const bolsasVisiveis = pessoa.bolsas.filter((b) => marcados.has(b.project_id));
+                  const temCentroDesmarcado = pessoa.bolsas.some(
+                    (b) => b.vigente_hoje && !marcados.has(b.project_id)
+                  );
                   return (
                     <li
                       key={pessoa.holder_id}
                       class="bolsistas__pessoa"
                       data-holder-id={pessoa.holder_id}
                     >
-                      <div class="bolsistas__pessoa-topo">
+                      <div class="bolsistas__pessoa-identidade">
                         <span class="bolsistas__pessoa-nome">{pessoa.nome}</span>
                         <details class="bolsistas__equipe">
                           <summary
@@ -579,7 +724,9 @@ export function Bolsistas({ usuarioId = null }) {
                                   escolherEquipe(pessoa, opcao.valor);
                                 }}
                               >
-                                {equipe === opcao.valor && <Check size={16} strokeWidth={1.75} aria-hidden="true" />}
+                                {equipe === opcao.valor && (
+                                  <Check size={16} strokeWidth={1.75} aria-hidden="true" />
+                                )}
                                 {opcao.rotulo}
                               </button>
                             ))}
@@ -601,37 +748,50 @@ export function Bolsistas({ usuarioId = null }) {
                         ))}
                       </div>
 
-                      <div class="bolsistas__pessoa-rodape">
+                      <div class="bolsistas__pessoa-soma">
                         <span class="bolsistas__pessoa-valor">
-                          vigente hoje: <strong>{dinheiro(pessoa.valor_vigente, { centavos: false })}</strong>/mês
+                          soma vigente hoje (todos os seus centros):{' '}
+                          <strong>{dinheiro(pessoa.valor_vigente, { centavos: false })}</strong>/mês
                         </span>
-                        <div class="bolsistas__pessoa-acoes">
-                          {dados.caixas.length === 0 ? (
-                            <span class="bolsistas__sem-caixa">Crie uma caixa para colocar as pessoas.</span>
-                          ) : (
-                            dados.caixas.map((caixa) => {
-                              const esta = caixaAtual?.id === caixa.id;
-                              return (
-                                <Botao
-                                  key={caixa.id}
-                                  variante={esta ? 'primario' : 'secundario'}
-                                  tamanho="compacto"
-                                  className="bolsistas__botao-colocar"
-                                  data-caixa-id={caixa.id}
-                                  data-holder-id={pessoa.holder_id}
-                                  onClick={() =>
-                                    executar(() =>
-                                      colocarNaCaixa(caixa.id, pessoa.holder_id, null, null)
-                                    )
-                                  }
-                                  desabilitado={emAcao}
-                                >
-                                  {esta ? `Em ${caixa.nome}` : `Pôr em ${caixa.nome}`}
-                                </Botao>
-                              );
-                            })
-                          )}
-                        </div>
+                        {temCentroDesmarcado && (
+                          <span class="bolsistas__pessoa-aviso-centro">
+                            inclui bolsa de centro desmarcado
+                          </span>
+                        )}
+                      </div>
+
+                      <div class="bolsistas__pessoa-acoes">
+                        {dados.caixas.length === 0 ? (
+                          <span class="bolsistas__sem-caixa">Crie uma caixa para colocar as pessoas.</span>
+                        ) : (
+                          dados.caixas.map((caixa) => {
+                            const esta = caixaAtual?.id === caixa.id;
+                            return esta ? (
+                              <span
+                                key={caixa.id}
+                                class="bolsistas__marcador"
+                                data-caixa-id={caixa.id}
+                                data-holder-id={pessoa.holder_id}
+                                aria-label={`${pessoa.nome} está na caixa ${caixa.nome}`}
+                              >
+                                Na caixa {caixa.nome}
+                              </span>
+                            ) : (
+                              <Botao
+                                key={caixa.id}
+                                variante="secundario"
+                                tamanho="compacto"
+                                className="bolsistas__botao-colocar"
+                                data-caixa-id={caixa.id}
+                                data-holder-id={pessoa.holder_id}
+                                onClick={() => colocarPessoaNaCaixa(pessoa, caixa)}
+                                desabilitado={emAcao}
+                              >
+                                Pôr em {caixa.nome}
+                              </Botao>
+                            );
+                          })
+                        )}
                       </div>
                     </li>
                   );
@@ -700,8 +860,9 @@ export function Bolsistas({ usuarioId = null }) {
                   onApagarCaixa={(id) => executar(() => apagarCaixaPedido(id))}
                   onTirar={(caixaId, holderId) => executar(() => tirarDaCaixa(caixaId, holderId))}
                   onSalvarItem={(caixaId, holderId, valor, nota) =>
-                    executar(() => colocarNaCaixa(caixaId, holderId, valor, nota))
+                    executar(() => editarItemCaixa(caixaId, holderId, valor, nota))
                   }
+                  onLimparOcultos={limparOcultos}
                 />
               ))
             )}
