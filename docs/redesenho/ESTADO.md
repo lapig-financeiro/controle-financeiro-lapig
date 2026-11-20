@@ -5,7 +5,12 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 19/11/2026, tarde.
+Última atualização: 20/11/2026, noite (depois da 069 e do acesso da Mariana).
+
+> **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
+> motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
+> Daqui em diante as frentes levam nome descritivo (ex.: "Projeção por rubrica"), sem letra de fase, e a tarefa
+> fica em `tarefas/<nome-curto>.md`.
 
 ## Combinados com o Victor (não rediscutir)
 - Menu: Projetos → página do projeto; Análise (área de trabalho com IA, não chatbot); Admin mínimo.
@@ -19,12 +24,13 @@
 - Minutas no Drive: não se preocupar por agora.
 - Vigia de e-mails: **encerrado** (19/11). O que funciona é o "Como estamos" diário com o Buriti; o Victor vai
   resumir o AGENTS.md e as pendências do Buriti depois.
-- Modo de trabalho: executor = **Orchestrator (Neon)** no agy (`--model gemini-pro-orchestrator-neon`; nunca o
-  `gemini-pro-orchestrator-g1-pro`, que é o Argon), desde 18/11 no lugar do Hydrogen (até dois em paralelo, sem arquivo em comum);
-  o Claude acompanha e confere; fim de cada etapa = revisão de dois DeepSeek V4.1 Flash **max** (`#max`, pedido de 18/11; sempre, inclusive revisão de SQL para o cofre). Gemini e Ollama
-  têm cota sobrando; a do Claude está apertada.
-- **Desde 19/11:** executores = até 2 DeepSeek V4.1 Flash max; testes e revisões = MiniMax 3.1 Flash max (sempre) e
-  GLM 5.3, além do DeepSeek max; no máximo 2 processos do Ollama ao mesmo tempo (cota do Ollama folgada). Neon só a pedido.
+- Modo de trabalho (vale desde 19/11; o histórico está no README §7): executores = até 2 DeepSeek V4.1 Flash
+  **max** pelo opencode, cada um no seu worktree em `C:/Users/amara/dev/`; testes e revisões = **MiniMax 3.1 Flash
+  max** (sempre) e DeepSeek max (um com o projeto, outro cego); **GLM 5.3 evitar** (cota); no máximo 2 processos do
+  Ollama ao mesmo tempo; Neon (agy) só a pedido do Victor. O Claude escreve a tarefa, acompanha, confere cada
+  achado antes de virar correção, roda os testes e confere a tela no navegador.
+- Banco de produção: simular e gravar em turnos separados, com o "pode gravar" do Victor; nunca mudar
+  `projects.end_date` direto (é o botão da tela de termos).
 - Migração: só pelo cofre, com ok do Victor no chat para publicar e de novo para aplicar; manutenção ligada
   em toda aplicação.
 
@@ -41,45 +47,63 @@
 
 | F2 | **1ª leva pronta e juntada ao master local (19/11, merges e173316 e 55de075; sem push)**. F2-A: migração 064 (88,8 KB; `documentos`, `documento_versoes`, `fatos` com alvo estável, `registrar_documento_v2`, `get_origem_v2`, `explicar_livre_v2`, achados da 063), três rodadas (a 3ª pelo DeepSeek max, porque a cota do Gemini acabou); revisão final DeepSeek max sem achado alto; pglite verde com 8 mutantes. F2-C: "De onde vem" em árvore + Documento com pdf.js/mammoth sob demanda no /v2/, duas rodadas, 81 testes; conferida pelo Claude no modo exemplo (1280/390) e o pdf.js testado sob a CSP do build. Até a F2-B, toda folha real sai "legado" (documento aberto e linha procurada na hora). **064 aplicada em produção em 19/11** (run 44539521651, "Tudo bate"; raiz da árvore = livre ao centavo nos 19 centros, todos os nós fecham, ~0,1 s por centro; 280 folhas legado, 128 digitado, 0 documento até a F2-B; sem login 401) e telas publicadas no /v2/ (6265999). Falta o Victor ver com o login dele. 2ª leva: F2-B (backfill; o script tem de testar `_tem_cpf` por fato e deixar de fora os falsos positivos, senão um só derruba o documento inteiro) e F2-D (projeção por rubrica; definir com o Victor). Anotado para depois: `get_saldo_livre` (048) ignora rubrica só com previsto negativo ou só com estorno. Um teste do app falhou uma vez logo após `npm ci` no OneDrive e passou nas 9 execuções seguintes (provável tempo de disco frio). |
 
-| F3-A | **Pronta no worktree `redesenho/f3-a-termos` em 19/11, sem push e sem aplicar**: migração 067 (`termos_contrato` só insert, 4 RPCs, roteiro PGlite com 8 mutantes) e a tela do `/v2/` (cabeçalho "do contrato"/"contrato diz"/"não está no cadastro", `taxa_total` × divisão sem correção, painel "Do contrato" com trecho, documento do Drive ou "Abrir o plano", nota do admin, conferir e usar a data). 2ª rodada incluiu `taxa_total` e `documento_id`; 3ª fechou o SELECT direto; 4ª aplicou `_tem_cpf` no gatilho, máscara de documento para não-admin, `vigencia_situacao`/`start_date` e as asserções fortes. `npx vitest run` 699 passou (5 pulados), `npm test --prefix app` 115 passou, `npm run lint` e `npm run build --prefix app` verdes. Falta: revisão do Victor e ok para ensaiar/aplicar a 067; depois publicar a tela. |
+| F3-A | **No ar desde 19/11: 067 aplicada** (run 44602502209) e 26 termos gravados em 10 centros (ver Registro). Datas de contrato de 30.099, 30.113 e 30.116 aplicadas pelo Victor no botão (19/11). Histórico da execução: migração 067 (`termos_contrato` só insert, 4 RPCs, roteiro PGlite com 8 mutantes) e a tela do `/v2/` (cabeçalho "do contrato"/"contrato diz"/"não está no cadastro", `taxa_total` × divisão sem correção, painel "Do contrato" com trecho, documento do Drive ou "Abrir o plano", nota do admin, conferir e usar a data). 2ª rodada incluiu `taxa_total` e `documento_id`; 3ª fechou o SELECT direto; 4ª aplicou `_tem_cpf` no gatilho, máscara de documento para não-admin, `vigencia_situacao`/`start_date` e as asserções fortes. `npx vitest run` 699 passou (5 pulados), `npm test --prefix app` 115 passou, `npm run lint` e `npm run build --prefix app` verdes. |
+| Admin mínimo | **Pronto no worktree `C:/Users/amara/dev/cf-admin`, branch `redesenho/admin-minimo` (7c34031 + db69d7b), sem push.** Tela `#/admin`: lista de logins (sem centro primeiro; Buriti e automação só leitura), painel com papel e centros, resumo "passa a ver / deixa de ver", confirmação em dois passos ao tirar centro ou rebaixar admin, o próprio admin não se rebaixa. Sem migração (lê `app_users`/`user_projects`/`projects`, grava por `save_user_assignments`). Executor: agy Orchestrator **Argon** (pedido do Victor, 20/11), 2 rodadas; revisões MiniMax max e DeepSeek max. App 190 testes, lint e build verdes; 2 mutantes conferidos pelo Claude; tela vista em 1400 e 390 px no modo exemplo. Aberto: dois admins ao mesmo tempo podem se sobrescrever; clicar na linha não abre o painel; medidas `rem` no CSS. Falta: ok do Victor para juntar ao master e publicar. |
+| Uso real | **20/11: a Mariana recebeu o acesso** ao `/v2/` (papel professor, 7 centros: 30.099, 30.109, 30.111, 30.113, 30.116, 30.117, 30.118). É a primeira pessoa de fora usando o site novo: o retorno dela orienta as próximas telas. Telas que ela vê: Projetos, página do projeto (dinheiro, rubricas com motivo do selo, "De onde vem", termos do contrato, pendências) e Bolsistas. Análise e Admin ainda dizem "em construção". |
 | F3-B | **No ar em 20/11: 068 aplicada** (run 44649574063): tela "Bolsistas" do `/v2/` (montar pedido de bolsas: filtros de centro, equipe Pastagem/Alertas/Solos e situação; caixas com totais vindos da RPC; passo a passo no topo) e migração 068 (`bolsista_equipes`, `caixas_pedido`, `caixa_pedido_itens`, 8 RPCs, sem policy nem grant; lock por dono; agente e automação barrados). 3 rodadas; revisões MiniMax max e DeepSeek max resolvidas; PGlite com 17 mutantes. Login da Mariana criado e com os 7 centros (20/11). Ajustes da revisão final na 069. |
 | F3-C | **No ar em 20/11: 069 aplicada** (run 44748685655): motivo nos selos de situação (balão no hover, foco e toque, na lista e nas rubricas), tarifa bancária sem previsão vira atenção com o motivo escrito (ILPF 30.116), `situacao_centro_v2` e ajustes da revisão da 068 (só põe na caixa quem está na lista, confirmação no "Tirar quem saiu da lista", dono no `for update`, lock ao apagar). 2 rodadas + ajustes do Claude; revisões MiniMax max (2) e DeepSeek max cego; PGlite com 10 mutantes. |
 
-## Próximos passos
-1. (feito) 062 aplicada e manutenção desligada em 18/11.
-2. (feito) F0-B publicada em /v2/ (18/11).
-   Era: commit de `app/`, workflows, eslint,
-   `.gitignore`, `package.json` e `.claude/launch.json` (entrada `app-v2`).
-3. (feito) Commit de `app/` + workflows com o ok do Victor.
-4. (em curso) F1 delegada ao Neon (ver tabela). Era: escrever as tarefas da F1 (README §6 + §7b): pendências + `v_balancete_vigente`, página Projetos e do
-   projeto, filtro de visão do admin; executores em worktrees fora do OneDrive.
+## Próximos passos (proposta de 20/11; a ordem é decisão do Victor)
+O que já está no ar: F0, F1, F2 (menos a F2-D), F3-A/B/C. O que falta do plano (README §6): F2-D, Admin, a F3
+de verdade (leitura automática), F4 (o resto dos contratos), F5 (Análise) e o corte do site antigo.
 
-## Para uma 064 (antes da F3, quando o Buriti passar a gravar pendências)
-Revisão DeepSeek max da 063 final (18/11, sem achado alto). Médios: `contem_cpf` não pega CPF com espaço/traço
-entre os grupos nem partido entre campos (fazer um invólucro local, sem tocar `contem_cpf`); `criar_pendencia_v2`
-recusa centro inativo antes do upsert (quebra a idempotência de pendência já aberta); `project_id: ""` vira
-pendência geral (devia ser erro); a asserção final não pega uma 2ª policy SELECT nem gatilho desligado/`WHEN`.
-Baixos: gatilho de CPF revalida campos não alterados no UPDATE; índice em `resolvida_por`; `detalhe` NULL;
-`btrim` sem `
-`; erro de `p_id` nulo em `resolver_pendencia_v2`. Relatório completo no scratchpad da sessão
-de 18/11 (`rev-063-max.jsonl`); refazer a revisão se ele sumir.
+1. **Ouvir a Mariana (contínuo).** Anotar aqui, na seção "Retorno de uso", o que ela estranhar ou pedir; defeito
+   de tela vai na frente de tudo. Falta também conferir o `/v2/` com um login de professor de verdade (pendente
+   desde a F0-A e a F1).
+2. **Rotina de novembro** (`docs/rotina-mensal.md`, skill `rotina-do-mes`): quando a pasta "11 - Novembro 2026"
+   aparecer no Drive. Esperando os balancetes do 30.106 e o do 30.110 depois de 03/11.
+3. **Projeção por rubrica** (a F2-D do plano). É a pergunta que a tela ainda não responde: "até quando as bolsas
+   deste centro cabem?". A `calc_project_monthly` soma caixa sem olhar rubrica, por isso a tela não usa. Precisa
+   do Victor antes da tarefa: o que conta como entrada (parcela do cronograma × balancete, como em
+   `planejamento-dinheiro.js`) e como a resposta aparece na página do projeto.
+4. **Admin mínimo** (README §2.4) — **feito em 20/11, esperando publicar** (ver tabela). Hoje o acesso da Mariana foi dado pelo Claude via `save_user_assignments`. A tela
+   Admin dá ao Victor quem vê qual centro e o filtro da própria visão (o banco já tem `filtro_visao` e `centros_visiveis()` desde a 063), sem
+   precisar de nós. Pequena e independente de 3: dá para correr em paralelo.
+5. **Leitura automática** (a F3 do plano): Apps Script no Drive → Storage + `ingest_jobs` → repositório
+   privado com os parsers → `aplicar_documento` ou pendência. É a frente maior; com ela a rotina do mês deixa de
+   ser manual. Antes: decidir o repositório privado e o login `automacao`.
+6. **Análise** (a F5 do plano): Worker + ferramentas + blocos com origem.
+7. **Corte**: quando o `/v2/` cobrir o uso diário, o novo vai para `/` e o antigo sai.
 
-## Para uma 065 (antes do backfill da F2-B)
-Revisões da 064 final (19/11: DeepSeek max e MiniMax 3.1 Flash max, nenhum achado alto). Médios: `_tem_cpf`/`_mascarar_cpf`
-não pegam CPF com 5+ separadores fora da classe fixa (colapsar qualquer sequência de não dígitos entre dígitos antes do
-`contem_cpf`, nas duas funções); `caminho` legado sai sem máscara junto com o `arquivo_nome` mascarado; a 1ª passada da
-máscara troca qualquer 11 dígitos sem conferir o DV (atrapalha o `acharAlvo` no legado); `criar_pendencia_v2` recusa limpar
-pendência legada com CPF (recusar só CPF novo, como o gatilho). Baixos: chave estável de `plano_rubricas` muda ao editar a
-descrição (a folha volta a legado em silêncio); asserção "exatamente 1 policy" deve listar as que sobram; `explicar_livre_v2`
-resolve origem folha a folha (lote por tabela); `max(versao)+1` sem trava; unificar mensagens de alvo inválido.
-Pré-existente: `get_saldo_livre` (048) ignora rubrica só com previsto negativo ou só com estorno.
+## Dívidas técnicas conhecidas
+Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeçalho de cada `.sql`). Ficam:
+- `get_saldo_livre` (048) ignora rubrica só com previsto negativo ou só com estorno (pré-existente).
+- Chave estável de `plano_rubricas` muda quando a descrição é editada: a folha da árvore volta a "legado" em
+  silêncio.
+- Nenhum centro tem `drive_folder_url` cadastrado: o botão do Drive na página do projeto não aparece.
+- O que o backfill deixou "legado": contas redutoras (banco negativo, PDF positivo), linha repetida na quebra de
+  página e o plano do 30.068 (não é DOCX). Documento registrado não aceita fato novo até existir
+  `aplicar_documento`.
+- Regra da tarifa bancária sem teto de valor (decisão aberta abaixo).
 
 ## Pendências com o Victor
-- Nenhuma no momento.
+- Ordem dos próximos passos (acima) e o desenho da projeção por rubrica.
+- Equipe (Pastagem/Alertas/Solos) de quem ficou sem: inspeção, estatístico e VANT (4), as duas gestoras de
+  R$ 5.200 e 5 pessoas fora do plano do 30.111.
+- Teto opcional para a tarifa bancária virar "atenção" (hoje vale qualquer valor, desde que o negativo caiba nela).
+- Possível duplicidade 30.XXX × 30.121 "TJGO" (Kalungas).
+- Contratos que não estão na pasta do Drive: 30.068, 30.088, 30.100, 30.110, 30.117 e 78.215 (pendências abertas).
+
+## Retorno de uso
+| Data | Quem | O que disse / o que fizemos |
+|---|---|---|
+| 20/11 | Victor (testando com o login da Mariana) | Filtro compacto e não fixo; botão "Montar caixas Alertas e Solos"; nomes em "Primeira maiúscula"; nome comprido não pode desalinhar a caixa — tudo feito no mesmo dia |
 
 ## Registro
 | Data | O que aconteceu |
 |---|---|
+| 20/11 | Admin mínimo feito pelo agy Orchestrator (Argon), a pedido do Victor: 1ª rodada 7c34031; revisões MiniMax max e DeepSeek max acharam centro sem código derrubando a tela (alto), rebaixar admin sem confirmação, "Marcar todos" pegando encerrados escondidos, reabrir durante a recarga e foco da confirmação; 2ª rodada db69d7b corrigiu tudo com teste. Dados reais conferidos só leitura: 5 logins, 21 centros, todos com código |
+| 20/11 | Victor enviou o acesso do `/v2/` à Mariana. ESTADO revisto: linhas velhas (F3-A, próximos passos, notas da 064/065) trocadas por "Próximos passos", "Dívidas técnicas" e "Pendências com o Victor" atuais |
 | 20/11 | **069 aplicada** com o ok do Victor (F3-C; master 7db4edb, ensaio 44746974367, aplicar 44748685655, aprovação cbf79c0860667bed, manutenção ligada e desligada). Conferida pela API: resumo 200 com `motivos` nos 11 centros; 30.116 em atenção pela tarifa (R$ 14,34); 30.088 e 30.095 seguem em problema (CIP/DAO acima do previsto) com a tarifa deles separada; `situacao_centro_v2` 200; anon 401; `_situacao_centro` 403; `get_pedido_bolsas_v2` 200 (137 bolsistas) |
 | 20/11 | F3-C revisão final (MiniMax max): 14 itens da 2ª rodada corrigidos, nada impede aplicar; o Claude corrigiu os 3 achados de app (um balão por vez, ordem da regra antiga sem a RPC nova, textos do exemplo) com teste que falha sem a correção (`afbb2ca`, app 173 testes). Datas de contrato: conferido pela API que o Victor já aplicou pelo botão em 19/11 as de 30.099 (11/02/2027), 30.113 (30/04/2027) e 30.116 (01/04/2027); deixam de ser pendência. Falta: publicar no master, ensaiar e aplicar a 069 com o ok do Victor |
 | 20/11 | F3-C 2ª rodada (revisões MiniMax max e DeepSeek max cegas de `4c7dbc4`, conferidas pelo Claude): saldo negativo agora separa gasto de compromisso, motivo da tarifa leva `valor` (o negativo) e `tarifa` (Y), helper usa o `balancete_id` da 066, `grupos` malformado vira `sem dado`/`falha`, falha só do helper mantém `livre`/situação com motivo literal, asserções ancoradas em `position()` e lock completo antes do `delete`; no app, clique/toque no selo alterna sem navegar, balão com atraso de 150 ms e hover, aviso de falha da RPC nova e motivo inválido descartado. PGlite 10 mutantes, app 171 testes, raiz 699, lint/build verdes; Chrome em 1400 (mouse) e 390 (toque). Sem push, sem aplicar |

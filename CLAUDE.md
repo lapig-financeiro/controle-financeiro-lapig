@@ -27,9 +27,9 @@ CI runs on GitHub Actions (`.github/workflows/ci.yml`) on push/PR to main/master
 
 ## Database Setup
 
-Execute SQL scripts in `database/` **in numerical order** (001 → 058). Utility scripts are in `database/utils/` and test SQL in `tests/sql/`. Script `000_reset_completo.sql` is destructive — drops all tables and data. Never run it unless intentionally resetting.
+Execute SQL scripts in `database/` **in numerical order** (001 → 069 em 20/11/2026; a lista viva e o que já está em produção ficam em `docs/migracoes.md`). Utility scripts are in `database/utils/` and test SQL in `tests/sql/`. Script `000_reset_completo.sql` is destructive — drops all tables and data. Never run it unless intentionally resetting.
 
-Antes de mexer em qualquer área coberta por uma migração, leia a linha dela em **[docs/migracoes.md](docs/migracoes.md)** (025–053: tabelas, RPCs e o gotcha operacional de cada uma) e o cabeçalho do próprio `.sql`. Regras que valem para toda migração nova, aprendidas nelas:
+Antes de mexer em qualquer área coberta por uma migração, leia a linha dela em **[docs/migracoes.md](docs/migracoes.md)** (025 em diante: tabelas, RPCs e o gotcha operacional de cada uma) e o cabeçalho do próprio `.sql`. Regras que valem para toda migração nova, aprendidas nelas:
 - `create or replace` reescreve os atributos da função: repita `security definer`/`invoker`, `set search_path = public, pg_temp` e o guard (lição da 036).
 - `drop` + `create` leva a ACL junto: restaure os grants da 035 explicitamente.
 - Tabela nova não ganha sozinha o gatilho que barra o agente (051): rode o BLOCO 1 de `tests/sql/test_051_buriti_propostas.sql`.
@@ -52,7 +52,7 @@ Detailed reference docs are in `docs/` — índice completo em **[docs/README.md
 - **[Database](docs/database.md)** — Core tables, schema details, RPC functions, views
 - **[Globals](docs/globals.md)** — Global utilities from pure-fns.js and supabase-config.js
 - **[Planos fora do padrão](docs/planos-fora-do-padrao.md)** — Leitura do PROAD em PDF, modelos-exceção (FAPEG, Prefeitura/emenda impositiva), detecção de modelo, roteamento por conteúdo e preenchimento manual
-- **[Migrações](docs/migracoes.md)** — uma linha por migração 025–053: o que cria, a semântica e o gotcha. Leia antes de mexer na área.
+- **[Migrações](docs/migracoes.md)** — uma linha por migração, da 025 à mais recente: o que cria, a semântica e o gotcha. Leia antes de mexer na área.
 - **[Convenções](docs/convencoes.md)** — o detalhe (porquê, incidente, teste) de cada item de "Key Conventions" abaixo.
 - **[Aplicar migração](docs/aplicar-migracao.md)** — **Leia ANTES de aplicar qualquer migração.** O caminho pelo cofre, com o ok do Victor no chat: comandos, relatório, erros, backup e recuperação.
 - **[Acesso ao banco](docs/acesso-ao-banco.md)** — **Leia ANTES de qualquer escrita no banco de produção.** As credenciais e o alcance de cada uma, regras duras (nunca PATCH/DELETE sem filtro; simular e aplicar em turnos separados), protocolo de escrita, login de automação e recuperação
@@ -91,3 +91,4 @@ Uma linha por regra; o porquê e os incidentes de cada uma estão em **[docs/con
 - **A projeção mensal vem da RPC** (`calc_project_monthly`); o `SimulationEngine` só responde dentro da simulação.
 - **Valores monetários** em `numeric`; exibição com `formatBRL()`.
 - **Página inicial** é `projetos` (também na re-inicialização).
+- **Site novo `/v2/`** (`app/`, Vite + Preact, build no `deploy.yml`): redesenho em curso desde 18/11/2026, já usado por professores (Mariana, 20/11). **Antes de mexer em `app/` ou em migração `*_v2`, leia [docs/redesenho/ESTADO.md](docs/redesenho/ESTADO.md)** (onde está, combinados, próximos passos) e [docs/redesenho/README.md](docs/redesenho/README.md) (plano). Atualize o ESTADO no mesmo commit de cada passo.
