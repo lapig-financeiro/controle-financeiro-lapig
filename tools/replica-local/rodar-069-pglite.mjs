@@ -130,6 +130,53 @@ async function main() {
     console.log(`  [MUTANTE OK] ${rotulo} -> ${msg}`);
   }
 
+  async function conferirFallbackHelperQuebrado(resumoBase) {
+    await sql(`
+      create or replace function public._situacao_centro(
+        p_project_id uuid, p_sl jsonb, p_pend_abertas integer
+      )
+      returns jsonb
+      language plpgsql
+      security definer
+      set search_path = public, pg_temp
+      as $$
+      begin
+        raise exception 'helper quebrado 069';
+      end;
+      $$;
+    `);
+
+    try {
+      await sql(`select set_config('request.jwt.claim.sub', '${ADMIN}', false);`);
+      const resumo = (await q('select public.resumo_projetos_v2() as r')).rows[0].r;
+      const base = resumoBase.centros.find((centro) => centro.code === '51.X');
+      const atual = resumo.centros.find((centro) => centro.code === '51.X');
+      if (!base || !atual) throw new Error('51.X desapareceu do resumo com o helper quebrado.');
+
+      deepStrictEqual(atual.livre, base.livre);
+      deepStrictEqual(atual.data_referencia, base.data_referencia);
+      if (atual.situacao !== base.situacao) {
+        throw new Error(
+          `Helper quebrado mudou a situação do 51.X: ${atual.situacao} (esperado ${base.situacao}).`
+        );
+      }
+      if (!Array.isArray(atual.motivos) || atual.motivos.length !== 1) {
+        throw new Error('Helper quebrado não devolveu um único motivo de falha.');
+      }
+      if (atual.motivos[0].codigo !== 'falha'
+          || atual.motivos[0].nivel !== 'info'
+          || atual.motivos[0].texto !== 'Não foi possível calcular o saldo deste centro.') {
+        throw new Error(`Motivo de falha inesperado: ${JSON.stringify(atual.motivos[0])}`);
+      }
+      console.log(
+        '  [MUTANTE OK] 10) helper quebrado -> resumo manteve livre, data e situação, com motivo falha'
+      );
+    } finally {
+      await limparSessao();
+      await arquivo(sql069, { quiet: true });
+    }
+  }
+
   try {
     console.log('1. Montando base real (025 + 026 + 051/052/054/053/056/062 + 038/048 + 063 + 064/stub-064 + 065..068)...');
     await montarBase064(db, { quiet: true });
@@ -325,30 +372,76 @@ async function main() {
         if (mut === fn) throw new Error('Falha ao montar mutante 4.');
         await sql(mut);
       },
-      'deveria filtrar dono = auth.uid() no for update',
+      'deveria filtrar dono = auth.uid() no select',
     );
 
     await esperarFalhaTest069(
-      '5) apagar_caixa_pedido_v2 sem o lock por dono',
+      '5) colocar_na_caixa_v2 sem dono = auth.uid() no for update',
+      async () => {
+        const fn = extrairFuncao(texto069, 'colocar_na_caixa_v2');
+        const alvo = `   where c.id = p_caixa_id
+     and c.dono = auth.uid()
+     for update;`;
+        const mut = fn.replace(alvo, `   where c.id = p_caixa_id
+     for update;`);
+        if (mut === fn) throw new Error('Falha ao montar mutante 5.');
+        await sql(mut);
+      },
+      'colocar_na_caixa_v2(uuid, uuid) deveria filtrar dono = auth.uid() no select',
+    );
+
+    await esperarFalhaTest069(
+      '6) saiu_de de volta para c.nome, c.id',
+      async () => {
+        const fn = extrairFuncao(texto069, 'colocar_na_caixa_v2');
+        const alvo = `               jsonb_build_object('caixa_id', c.id, 'nome', c.nome)
+               order by c.criado_em, c.id`;
+        const mut = fn.replace(
+          alvo,
+          `               jsonb_build_object('caixa_id', c.id, 'nome', c.nome)
+               order by c.nome, c.id`,
+        );
+        if (mut === fn) throw new Error('Falha ao montar mutante 6.');
+        await sql(mut);
+      },
+      'saiu_de deveria começar pela caixa antiga',
+    );
+
+    await esperarFalhaTest069(
+      '7) helper tratando grupos não-array como lista vazia',
+      async () => {
+        const fn = extrairFuncao(texto069, '_situacao_centro');
+        const alvo = "  if jsonb_typeof(p_sl -> 'grupos') is distinct from 'array' then";
+        const mut = fn.replace(alvo, '  if false then');
+        if (mut === fn) throw new Error('Falha ao montar mutante 7.');
+        await sql(mut);
+      },
+      'grupos malformado deveria dar sem dado',
+    );
+
+    await esperarFalhaTest069(
+      '8) apagar_caixa_pedido_v2 sem o lock por dono',
       async () => {
         const fn = extrairFuncao(texto069, 'apagar_caixa_pedido_v2');
         const mut = fn.replace(
           /  perform pg_advisory_xact_lock\(hashtextextended\('caixas_pedido:' \|\| v_caixa\.dono::text, 0\)\);\r?\n/,
           '',
         );
-        if (mut === fn) throw new Error('Falha ao montar mutante 5.');
+        if (mut === fn) throw new Error('Falha ao montar mutante 8.');
         await sql(mut);
       },
-      'apagar_caixa_pedido_v2 deveria tomar o lock por dono',
+      'apagar_caixa_pedido_v2 deveria tomar o lock por dono antes do delete',
     );
 
     await esperarFalhaTest069(
-      '6) helper com EXECUTE para authenticated',
+      '9) helper com EXECUTE para authenticated',
       async () => {
         await sql('grant execute on function public._situacao_centro(uuid, jsonb, integer) to authenticated;');
       },
       'o helper _situacao_centro não pode ter EXECUTE para anon/authenticated',
     );
+
+    await conferirFallbackHelperQuebrado(resumoAntes);
 
     console.log('11. Conferência final depois dos mutantes...');
     await arquivo(sql069, { quiet: true });
@@ -361,7 +454,7 @@ async function main() {
     }
 
     console.log(
-      '069 OK em PGlite: base 063..068 + defeito antes (problema/42883) + cofre + test_069 + idempotência + test_068 + barreira 051 + helpers intactos + resumo antes/depois + 6 mutantes + roteiro final.'
+      '069 OK em PGlite: base 063..068 + defeito antes (problema/42883) + cofre + test_069 + idempotência + test_068 + barreira 051 + helpers intactos + resumo antes/depois + 10 mutantes (9 pelo roteiro + helper quebrado) + roteiro final.'
     );
   } catch (e) {
     console.error('ERRO:', e.message, e.detail || '', e.where || '');

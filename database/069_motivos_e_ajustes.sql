@@ -58,6 +58,12 @@ declare
   v_livre         numeric;
   v_abs           numeric;
   v_tarifa        numeric;
+  v_previsto      numeric;
+  v_realizado     numeric;
+  v_compromissos  numeric;
+  v_excesso       numeric;
+  v_comp_neg      numeric;
+  v_texto         text;
   v_tem_negativo  boolean := false;
   v_tem_tarifa    boolean := false;
   v_situacao      text;
@@ -120,13 +126,24 @@ begin
     );
   end if;
 
-  -- Mesma escolha de get_saldo_livre: o balancete mais recente do centro.
-  select b.id
-    into v_balancete_id
-    from public.balancetes b
-   where b.project_id = p_project_id
-   order by b.data_referencia desc
-   limit 1;
+  -- Com plano e balancete, grupos malformado é falha de cálculo, não
+  -- "em dia": sem a lista não há como afirmar que nenhuma rubrica passou.
+  if jsonb_typeof(p_sl -> 'grupos') is distinct from 'array' then
+    return jsonb_build_object(
+      'situacao', 'sem dado',
+      'motivos', jsonb_build_array(jsonb_build_object(
+        'codigo',     'falha',
+        'nivel',      'info',
+        'texto',      'Não foi possível calcular o saldo deste centro.',
+        'grupo_code', null,
+        'valor',      null
+      ))
+    );
+  end if;
+
+  -- O balancete é o que o get_saldo_livre já usou (066). Não refazer a
+  -- escolha do "mais recente": sem o campo, a tarifa não é aplicada.
+  v_balancete_id := nullif(p_sl ->> 'balancete_id', '')::uuid;
 
   for v_g in select value from jsonb_array_elements(v_grupos) loop
     v_livre := (v_g ->> 'saldo_livre')::numeric;
@@ -135,65 +152,84 @@ begin
       continue;
     end if;
 
-    v_g_code := v_g ->> 'grupo_code';
-    v_g_name := coalesce(nullif(v_g ->> 'grupo_name', ''), v_g_code);
-    v_abs    := abs(v_livre);
-    v_tarifa := 0;
+    v_g_code       := v_g ->> 'grupo_code';
+    v_g_name       := coalesce(nullif(v_g ->> 'grupo_name', ''), v_g_code);
+    v_abs          := abs(v_livre);
+    v_previsto     := coalesce((v_g ->> 'previsto')::numeric, 0);
+    v_realizado    := coalesce((v_g ->> 'realizado')::numeric, 0);
+    v_compromissos := coalesce((v_g ->> 'compromissos')::numeric, 0);
+    v_excesso      := greatest(v_realizado - v_previsto, 0);
+    v_comp_neg     := least(greatest(v_compromissos, 0), greatest(v_abs - v_excesso, 0));
+    v_tarifa       := 0;
 
     -- Rubrica da linha (balancete_lancamentos.rubrica_code) e grupo da
     -- rubrica (coalesce(parent_code, code)), como a 066. Tarifa é a
     -- conta fixa ou a descrição sem acento, em maiúsculas.
-    select coalesce(sum(bl.saldo_atual), 0)
-      into v_tarifa
-      from public.balancete_lancamentos bl
-      join public.rubricas r on r.code = bl.rubrica_code
-     where bl.balancete_id = v_balancete_id
-       and coalesce(r.parent_code, r.code) = v_g_code
-       and (
-         bl.conta_codigo = '7.1.3.05.01.00054'
-         or upper(translate(coalesce(bl.conta_descricao, ''),
-              'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ',
-              'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC'))
-            like '%SERVICOS BANCARIOS%'
-         or upper(translate(coalesce(bl.conta_descricao, ''),
-              'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ',
-              'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC'))
-            like '%TARIFA BANCARIA%'
-       );
+    if v_balancete_id is not null then
+      select coalesce(sum(bl.saldo_atual), 0)
+        into v_tarifa
+        from public.balancete_lancamentos bl
+        join public.rubricas r on r.code = bl.rubrica_code
+       where bl.balancete_id = v_balancete_id
+         and coalesce(r.parent_code, r.code) = v_g_code
+         and (
+           bl.conta_codigo = '7.1.3.05.01.00054'
+           or upper(translate(coalesce(bl.conta_descricao, ''),
+                'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ',
+                'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC'))
+              like '%SERVICOS BANCARIOS%'
+           or upper(translate(coalesce(bl.conta_descricao, ''),
+                'áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ',
+                'aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC'))
+              like '%TARIFA BANCARIA%'
+         );
+    end if;
 
     if v_abs <= v_tarifa then
-      -- O negativo cabe inteiro na tarifa: atenção, com o valor escrito.
+      -- O negativo cabe inteiro na tarifa: atenção, com o valor do saldo
+      -- e o valor da tarifa separados (o `valor` é o negativo).
       v_tem_tarifa := true;
       v_atencoes := v_atencoes || jsonb_build_array(jsonb_build_object(
         'codigo',     'tarifa_bancaria',
         'nivel',      'atenção',
         'texto',      format(
-          'Rubrica %s — %s: R$ %s de tarifa bancária sem previsão no plano. É cobrança comum da FUNAPE; vale prever no próximo remanejamento.',
-          v_g_code, v_g_name, public._fmt_brl_num(v_tarifa)
+          'Rubrica %s — %s: saldo livre R$ −%s por causa de R$ %s de tarifa bancária sem previsão no plano; sem ela, ficaria dentro do previsto. É cobrança comum da FUNAPE; vale prever no próximo remanejamento.',
+          v_g_code, v_g_name, public._fmt_brl_num(v_abs), public._fmt_brl_num(v_tarifa)
         ),
         'grupo_code', v_g_code,
-        'valor',      v_tarifa
+        'valor',      v_abs,
+        'tarifa',     v_tarifa
       ));
     else
-      -- O negativo passa da tarifa: continua problema; o texto diz as
-      -- duas coisas quando há tarifa no grupo.
+      -- O negativo passa da tarifa: continua problema. O texto monta só
+      -- as frases que se aplicam: gasto acima do previsto + parcela de
+      -- compromissos (bolsas/taxas) que não cabe + tarifa, quando houver.
       v_tem_negativo := true;
-      v_problemas := v_problemas || jsonb_build_array(jsonb_build_object(
-        'codigo',     'saldo_negativo',
-        'nivel',      'problema',
-        'texto',      format(
-          'Rubrica %s — %s: gasto R$ %s acima do previsto.%s',
-          v_g_code, v_g_name, public._fmt_brl_num(v_abs),
-          case
-            when v_tarifa > 0
-              then format(' R$ %s disso é tarifa bancária sem previsão no plano.',
-                          public._fmt_brl_num(v_tarifa))
-            else ''
-          end
-        ),
-        'grupo_code', v_g_code,
-        'valor',      v_abs
-      ));
+      v_texto := format('Rubrica %s — %s: saldo livre R$ −%s.',
+                        v_g_code, v_g_name, public._fmt_brl_num(v_abs));
+      if v_excesso > 0 then
+        v_texto := v_texto || format(' Gasto R$ %s acima do previsto.',
+                                     public._fmt_brl_num(v_excesso));
+      end if;
+      if v_comp_neg > 0 then
+        v_texto := v_texto || format(' R$ %s de bolsas/taxas já comprometidas até o fim não cabem no previsto.',
+                                     public._fmt_brl_num(v_comp_neg));
+      end if;
+      if v_tarifa > 0 then
+        v_texto := v_texto || format(' R$ %s disso é tarifa bancária sem previsão no plano.',
+                                     public._fmt_brl_num(v_tarifa));
+      end if;
+
+      v_problemas := v_problemas || jsonb_build_array(
+        jsonb_strip_nulls(jsonb_build_object(
+          'codigo',     'saldo_negativo',
+          'nivel',      'problema',
+          'texto',      v_texto,
+          'grupo_code', v_g_code,
+          'valor',      v_abs,
+          'tarifa',     case when v_tarifa > 0 then v_tarifa end
+        ))
+      );
     end if;
   end loop;
 
@@ -297,7 +333,9 @@ declare
   v_defasagem     integer;
   v_livre         numeric;
   v_pend_abertas  integer;
+  v_tem_negativo  boolean;
   v_situacao      text;
+  v_situacao_antiga text;
   v_motivos       jsonb := '[]'::jsonb;
 begin
   select coalesce(array_agg(cv), '{}'::uuid[])
@@ -339,15 +377,17 @@ begin
      where p.id = any(v_visiveis)
      order by lower(p.name), p.name, p.code nulls last, p.id
   loop
-    v_sl           := null;
-    v_sit          := null;
-    v_erro         := null;
-    v_livre        := null;
-    v_data_ref     := null;
-    v_defasagem    := null;
-    v_situacao     := 'sem dado';
-    v_motivos      := '[]'::jsonb;
-    v_pend_abertas := coalesce((v_pend_map ->> v_proj.id::text)::integer, 0);
+    v_sl              := null;
+    v_sit             := null;
+    v_erro            := null;
+    v_livre           := null;
+    v_data_ref        := null;
+    v_defasagem       := null;
+    v_tem_negativo    := false;
+    v_situacao        := 'sem dado';
+    v_situacao_antiga := 'sem dado';
+    v_motivos         := '[]'::jsonb;
+    v_pend_abertas    := coalesce((v_pend_map ->> v_proj.id::text)::integer, 0);
 
     begin
       v_sl := public.get_saldo_livre(v_proj.id);
@@ -362,27 +402,61 @@ begin
       v_defasagem     := nullif(v_sl ->> 'balancete_defasagem_meses', '')::integer;
 
       if v_has_plano and v_has_balancete and jsonb_typeof(v_sl -> 'grupos') = 'array' then
-        select sum((g ->> 'saldo_livre')::numeric)
-          into v_livre
+        select sum((g ->> 'saldo_livre')::numeric),
+               coalesce(bool_or((g ->> 'saldo_livre')::numeric < 0), false)
+          into v_livre, v_tem_negativo
           from jsonb_array_elements(v_sl -> 'grupos') as g
          where g ->> 'saldo_livre' is not null;
       end if;
 
+      -- Regra antiga (063): é o fallback se só o helper falhar.
       if not v_has_plano then
-        v_livre := null;
+        v_livre           := null;
+        v_situacao_antiga := 'sem plano';
       elsif not v_has_balancete then
-        v_livre := null;
+        v_livre           := null;
+        v_situacao_antiga := 'sem balancete';
+      elsif v_tem_negativo then
+        v_situacao_antiga := 'problema';
+      elsif coalesce(v_defasagem, 0) >= 2 or v_pend_abertas > 0 then
+        v_situacao_antiga := 'atenção';
+      else
+        v_situacao_antiga := 'em dia';
       end if;
 
-      v_sit      := public._situacao_centro(v_proj.id, v_sl, v_pend_abertas);
-      v_situacao := coalesce(v_sit ->> 'situacao', 'sem dado');
-      v_motivos  := coalesce(v_sit -> 'motivos', '[]'::jsonb);
+      v_situacao := v_situacao_antiga;
+
+      -- O helper pode falhar sozinho (dado inesperado no p_sl). Nesse
+      -- caso o saldo e a situação antiga continuam valendo; o motivo
+      -- literal avisa a falha, sem chamar o helper de novo.
+      begin
+        v_sit      := public._situacao_centro(v_proj.id, v_sl, v_pend_abertas);
+        v_situacao := coalesce(v_sit ->> 'situacao', v_situacao_antiga);
+        v_motivos  := coalesce(v_sit -> 'motivos', '[]'::jsonb);
+      exception when others then
+        v_situacao := v_situacao_antiga;
+        v_motivos  := jsonb_build_array(jsonb_build_object(
+          'codigo',     'falha',
+          'nivel',      'info',
+          'texto',      'Não foi possível calcular o saldo deste centro.',
+          'grupo_code', null,
+          'valor',      null
+        ));
+        raise warning 'resumo_projetos_v2: falha ao calcular os motivos do centro % [%]: %',
+          v_proj.id, sqlstate, sqlerrm;
+      end;
     exception when others then
       v_erro     := 'falha_saldo_livre';
       v_situacao := 'sem dado';
       v_livre    := null;
       v_data_ref := null;
-      v_motivos  := public._situacao_centro(v_proj.id, null, 0) -> 'motivos';
+      v_motivos  := jsonb_build_array(jsonb_build_object(
+        'codigo',     'falha',
+        'nivel',      'info',
+        'texto',      'Não foi possível calcular o saldo deste centro.',
+        'grupo_code', null,
+        'valor',      null
+      ));
       raise warning 'resumo_projetos_v2: falha ao calcular centro % [%]: %',
         v_proj.id, sqlstate, sqlerrm;
     end;
@@ -469,7 +543,16 @@ begin
   begin
     v_sl := public.get_saldo_livre(p_project_id);
   exception when others then
-    return public._situacao_centro(p_project_id, null, 0);
+    return jsonb_build_object(
+      'situacao', 'sem dado',
+      'motivos', jsonb_build_array(jsonb_build_object(
+        'codigo',     'falha',
+        'nivel',      'info',
+        'texto',      'Não foi possível calcular o saldo deste centro.',
+        'grupo_code', null,
+        'valor',      null
+      ))
+    );
   end;
 
   select count(*)::integer
@@ -1045,9 +1128,15 @@ grant execute on function public.limpar_ocultos_da_caixa_v2(uuid) to authenticat
 -- ------------------------------------------------------------
 do $asserts$
 declare
-  v_sig text;
-  v_fn  oid;
-  v_def text;
+  v_sig  text;
+  v_fn   oid;
+  v_def  text;
+  v_ini  integer;
+  v_from integer;
+  v_dono integer;
+  v_fu   integer;
+  v_lock integer;
+  v_del  integer;
 begin
   -- Atributos e ACL das funções tocadas.
   foreach v_sig in array array[
@@ -1111,15 +1200,26 @@ begin
     end if;
   end loop;
 
-  -- resumo usa o helper; colocar usa a mesma lista do pedido.
-  if position('_situacao_centro' in pg_get_functiondef('public.resumo_projetos_v2()'::regprocedure)) = 0 then
+  -- resumo usa o helper; colocar usa a mesma lista do pedido; o helper
+  -- não relê o balancete (usa o balancete_id que a 066 já devolve).
+  v_def := pg_get_functiondef('public.resumo_projetos_v2()'::regprocedure);
+  if position('_situacao_centro' in v_def) = 0 then
     raise exception '069: resumo_projetos_v2 não usa _situacao_centro';
   end if;
-  if position('_bolsista_no_pedido' in pg_get_functiondef('public.colocar_na_caixa_v2(uuid, uuid)'::regprocedure)) = 0 then
+
+  v_def := pg_get_functiondef('public.colocar_na_caixa_v2(uuid, uuid)'::regprocedure);
+  if position('_bolsista_no_pedido' in v_def) = 0 then
     raise exception '069: colocar_na_caixa_v2 não exige _bolsista_no_pedido';
   end if;
 
-  -- As seis RPCs de caixa filtram o dono no próprio for update.
+  v_def := pg_get_functiondef('public._situacao_centro(uuid, jsonb, integer)'::regprocedure);
+  if position('balancete_id' in v_def) = 0
+     or position('from public.balancetes' in v_def) > 0 then
+    raise exception '069: _situacao_centro deveria usar o balancete_id do p_sl, sem reler balancetes';
+  end if;
+
+  -- As seis RPCs de caixa filtram o dono no próprio select ... from
+  -- public.caixas_pedido ... for update (âncora no trecho, não regex).
   foreach v_sig in array array[
     'public.salvar_caixa_pedido_v2(jsonb)',
     'public.apagar_caixa_pedido_v2(uuid)',
@@ -1128,15 +1228,33 @@ begin
     'public.tirar_da_caixa_v2(uuid, uuid)',
     'public.limpar_ocultos_da_caixa_v2(uuid)'
   ] loop
-    v_def := pg_get_functiondef(v_sig::regprocedure);
-    if v_def !~* 'dono\s*=\s*auth\.uid\(\)\s+for update' then
+    v_def  := pg_get_functiondef(v_sig::regprocedure);
+    v_ini  := position('select * into v_caixa' in v_def);
+    if v_ini = 0 then
+      raise exception '069: % sem dono = auth.uid() na caixa em for update', v_sig;
+    end if;
+
+    v_from := v_ini + position('from public.caixas_pedido' in substring(v_def from v_ini)) - 1;
+    if v_from < v_ini then
+      raise exception '069: % sem dono = auth.uid() na caixa em for update', v_sig;
+    end if;
+
+    v_dono := v_from + position('dono = auth.uid()' in substring(v_def from v_from)) - 1;
+    if v_dono < v_from then
+      raise exception '069: % sem dono = auth.uid() na caixa em for update', v_sig;
+    end if;
+
+    v_fu := v_dono + position('for update' in substring(v_def from v_dono)) - 1;
+    if v_fu < v_dono then
       raise exception '069: % sem dono = auth.uid() na caixa em for update', v_sig;
     end if;
   end loop;
 
-  if pg_get_functiondef('public.apagar_caixa_pedido_v2(uuid)'::regprocedure)
-       not like '%pg_advisory_xact_lock%' then
-    raise exception '069: apagar_caixa_pedido_v2 sem pg_advisory_xact_lock';
+  v_def  := pg_get_functiondef('public.apagar_caixa_pedido_v2(uuid)'::regprocedure);
+  v_lock := position('pg_advisory_xact_lock(hashtextextended(''caixas_pedido:'' ||' in v_def);
+  v_del  := position('delete from ' || 'public.' || 'caixas_pedido' in v_def);
+  if v_lock = 0 or v_del = 0 or v_lock > v_del then
+    raise exception '069: apagar_caixa_pedido_v2 deveria tomar o lock por dono antes do delete';
   end if;
 end
 $asserts$;

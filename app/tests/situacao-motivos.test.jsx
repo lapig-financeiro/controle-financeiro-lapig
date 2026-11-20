@@ -23,6 +23,7 @@ const MOTIVOS = [
 ];
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function abrirComMouse(selo) {
   selo.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -67,7 +68,7 @@ describe('Situacao com motivos', () => {
     expect(document.body.contains(balao)).toBe(true);
 
     selo.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
-    await tick();
+    await esperar(180);
     expect(balao.getAttribute('data-aberto')).toBe('false');
 
     selo.focus();
@@ -76,6 +77,38 @@ describe('Situacao com motivos', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await tick();
+    expect(balao.getAttribute('data-aberto')).toBe('false');
+  });
+
+  it('mantém o balão aberto enquanto o ponteiro está no selo ou no balão', async () => {
+    render(
+      <Lista ariaLabel="Centros de custo">
+        <LinhaDeLista href="#/projeto">
+          <Situacao estado="atenção" motivos={MOTIVOS} />
+        </LinhaDeLista>
+      </Lista>,
+      document.body
+    );
+
+    const selo = document.querySelector('.situacao');
+    abrirComMouse(selo);
+    await tick();
+    const balao = document.querySelector('.situacao__balao');
+    expect(balao.getAttribute('data-aberto')).toBe('true');
+
+    // Sai do selo direto para o balão: não pode fechar antes de dar tempo.
+    selo.dispatchEvent(
+      new MouseEvent('mouseout', { bubbles: true, relatedTarget: balao })
+    );
+    balao.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    await esperar(200);
+    expect(balao.getAttribute('data-aberto')).toBe('true');
+
+    // Saiu do balão: fecha com o atraso.
+    balao.dispatchEvent(
+      new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })
+    );
+    await esperar(200);
     expect(balao.getAttribute('data-aberto')).toBe('false');
   });
 

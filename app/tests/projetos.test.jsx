@@ -170,4 +170,53 @@ describe('página Projetos', () => {
     );
     expect(document.querySelector('.vazio')).not.toBeNull();
   });
+
+  it('clique no selo com motivos não navega e alterna o balão; clique fora fecha; a linha continua abrindo', async () => {
+    const navegar = vi.fn();
+    const resumo = {
+      ocultos: 0,
+      centros: [
+        {
+          id: '1',
+          code: '30.901',
+          name: 'Atlas Hídrico',
+          end_date: '2027-08-31',
+          livre: 100,
+          situacao: 'atenção',
+          erro: null,
+          motivos: [
+            {
+              codigo: 'tarifa_bancaria',
+              nivel: 'atenção',
+              texto: 'Rubrica b — Serviços: R$ 14,34 de tarifa bancária sem previsão no plano.',
+              grupo_code: 'b',
+              valor: 14.34,
+              tarifa: 14.34,
+            },
+          ],
+        },
+      ],
+    };
+    render(<Projetos resumo={resumo} onNavegar={navegar} />, document.body);
+
+    const selo = document.querySelector('.situacao--com-motivos');
+    const evSelo = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    selo.dispatchEvent(evSelo);
+    await tick();
+
+    expect(evSelo.defaultPrevented).toBe(true);
+    expect(navegar).not.toHaveBeenCalled();
+    const balao = document.querySelector('.situacao__balao');
+    expect(balao.getAttribute('data-aberto')).toBe('true');
+
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await tick();
+    expect(balao.getAttribute('data-aberto')).toBe('false');
+
+    const link = document.querySelector('.linha-de-lista');
+    const evLinha = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    link.dispatchEvent(evLinha);
+    expect(evLinha.defaultPrevented).toBe(true);
+    expect(navegar).toHaveBeenCalledWith('#/projeto/1');
+  });
 });

@@ -67,7 +67,7 @@
   line-height: var(--lh-2);
   white-space: normal;
   overflow-wrap: anywhere;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .situacao__balao[data-aberto='true'] {

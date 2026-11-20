@@ -301,3 +301,144 @@ tabela, porque o `::after` do botão que estica a linha clicável cobria o selo 
   site continua funcionando pela regra de hoje.
 - Conferir em produção, depois de aplicar, um centro com tarifa (o ILPF) e um com problema real; a tela do
   `/v2/` fica atrás do login.
+
+## 2ª rodada
+
+Esta seção é a verificação final da tarefa. Os números e o texto da 1ª rodada acima ficam como histórico do
+commit `4c7dbc4`; o que mudou nesta rodada está descrito abaixo.
+
+### Revisões que originaram a rodada
+
+Duas revisões cegas do commit `4c7dbc4` (MiniMax max e DeepSeek max), conferidas pelo Claude, apontaram os
+achados que esta rodada fecha:
+
+- **alto** — o texto do grupo negativo dizia "gasto" mesmo quando o negativo vinha de compromissos de
+  bolsas/taxas, não de despesa acima do previsto;
+- **médio** — o `valor` do motivo da tarifa era a tarifa (Y), mas o saldo ao lado era o negativo (X), e o
+  objeto não guardava os dois;
+- **médio** — o helper refazia a escolha do "balancete mais recente" em vez de usar o `balancete_id` que o
+  `get_saldo_livre` já devolve na 066;
+- **médio** — `grupos` ausente/malformado virava "em dia", escondendo uma falha de cálculo;
+- **médio** — uma falha só do helper apagava `livre`/`data_referencia` e chamava o helper de novo no
+  `exception`, podendo derrubar o resumo inteiro;
+- **médio** — as asserções do lock e do `for update` eram frouxas (regex solta, `like` com `_`);
+- **médio/baixo** — no app: toque no selo dentro da linha-link, balão fechando antes de dar para ler, falha da
+  RPC nova engolida, um motivo inválido derrubando a lista e `situacaoCentro` do modo exemplo ignorando os
+  centros ocultos.
+
+### Banco: `database/069_motivos_e_ajustes.sql`
+
+1. **Texto do `saldo_negativo`** — a primeira frase é sempre
+   `"Rubrica b — Nome: saldo livre R$ −X."` e só entram as frases que se aplicam:
+   - `excesso_gasto = greatest(realizado − previsto, 0)` → `"Gasto R$ A acima do previsto."`;
+   - o resto do negativo (`−saldo_livre − excesso_gasto`, se > 0) → `"R$ C de bolsas/taxas já comprometidas
+     até o fim não cabem no previsto."`;
+   - a frase da tarifa, quando houver.
+   `valor` é o negativo (`−saldo_livre`, positivo). O caso de bolsa comprometida (previsto 1.000, realizado
+   800, compromissos 300 → saldo −100) diz só a frase de compromisso; o caso com os dois (previsto 1.000,
+   realizado 1.200, compromissos 300 → saldo −500) diz "Gasto R$ 200,00" e "R$ 300,00 de bolsas/taxas…".
+2. **Tarifa** — quando o negativo cabe na tarifa, o texto é
+   `"Rubrica b — Nome: saldo livre R$ −X por causa de R$ Y de tarifa bancária sem previsão no plano; sem ela,
+   ficaria dentro do previsto. É cobrança comum da FUNAPE; vale prever no próximo remanejamento."`
+   `valor` = X (o negativo) e o objeto ganha `tarifa` = Y. Quando passa da tarifa, continua `problema`, a
+   frase `"R$ Y disso é tarifa bancária sem previsão"` continua e o objeto também leva `valor` = X e
+   `tarifa` = Y. A classificação (`−saldo_livre <= soma da tarifa`) não mudou.
+3. **Balancete** — o helper usa `nullif(p_sl ->> 'balancete_id', '')::uuid`; não consulta mais
+   `public.balancetes`. Sem o campo, `v_tarifa` fica 0 e a exceção não se aplica (o grupo fica `problema`).
+4. **`grupos` malformado** — com plano e balancete, se `p_sl -> 'grupos'` não for array (inclusive ausente),
+   o helper devolve `sem dado` com o motivo `falha`, em vez de "em dia".
+5. **Falha só do helper** — `resumo_projetos_v2` calcula antes a regra antiga (063) de `situacao` e chama o
+   helper num `begin … exception` próprio, dentro do bloco do centro. Se só o helper falhar, `livre`,
+   `data_referencia` e a situação antiga ficam; `motivos` vira o literal `[{"codigo":"falha",…}]`, sem chamar
+   o helper de novo. O handler externo (falha do `get_saldo_livre`) também usa o literal. O
+   `situacao_centro_v2` faz o mesmo no `exception` do `get_saldo_livre`.
+6. **Asserções** — o `for update` agora é conferido por âncoras de `position()` na ordem
+   `select * into v_caixa` → `from public.caixas_pedido` → `dono = auth.uid()` → `for update`; o lock do
+   `apagar` casa a chave inteira `pg_advisory_xact_lock(hashtextextended('caixas_pedido:' || …` e é exigido
+   **antes** do `delete`; o helper é conferido usando `balancete_id` e **sem** `from public.balancetes`. O
+   texto da asserção do `delete` é montado por concatenação para não disparar a leitura estática do cofre
+   (que barra `delete from public.` fora de função).
+
+### Teste SQL e runner
+
+- **BLOCO 0 antes da 069** — cria o centro mínimo só com tarifa, roda o `resumo_projetos_v2` antigo e assere
+  `situacao = 'problema'` (o defeito que o Victor viu) e a ausência de `motivos`; depois levanta `42883` para o
+  runner provar que o roteiro falha antes da migração. Depois da 069 o mesmo bloco só confere a existência.
+- **BLOCO 2b (helper direto, como dono)** — testa o texto de só compromisso e o de gasto + compromisso, a
+  tarifa coberta com `valor`/`tarifa`, a tarifa que passa, a ausência de `balancete_id` (volta a `problema`) e
+  `grupos` malformado/ausente (sem dado + `falha`).
+- **BLOCO 3** — roda o resumo como professor (b1): não vê o `69.TARIFA`, vê o `51.X` em dia com `motivos`; a
+  caixa real do b1 (`…b01`) não muda de nome nem de meses depois da tentativa do b2 de salvá-la como
+  "Tentativa alheia"/6 meses.
+- **BLOCO 5** — repete as âncoras de `position()` e a ordem lock → delete no texto das funções.
+- **Mutantes** — agora **10**: os 6 da 1ª rodada (tarifa sem exceção, `>=` trocado, `_bolsista_no_pedido`,
+  `salvar` sem dono, `apagar` sem lock, helper com EXECUTE) e os 4 novos: `colocar` sem dono, `saiu_de` de
+  volta para `c.nome, c.id` (as caixas foram renomeadas para `Zeta origem (mais antiga)` e
+  `Alfa origem (mais nova)`, então a ordem alfabética é o inverso da cronológica), `grupos` não-array virando
+  lista vazia e helper quebrado. O helper quebrado tem uma checagem própria: o resumo continua devolvendo o
+  `51.X` com o mesmo `livre`, a mesma `data_referencia` e a situação antiga, e `motivos` = `falha`.
+
+### App
+
+- **Toque/clique no selo (`Situacao.jsx`)** — com motivos, o `onClick` faz `preventDefault` +
+  `stopPropagation` e alterna o balão; o resto da linha do `LinhaDeLista` continua navegando. Um
+  `onPointerDown`/`onTouchStart` registra o tipo do ponteiro; o foco de toque não abre sozinho (o clique
+  decide) e os eventos `mouseover`/`mouseout` sintetizados pelo toque são ignorados (`sourceCapabilities` ou
+  janela de 800 ms), para o tap não abrir e fechar no mesmo gesto. Clicar fora fecha (listener no `document`).
+- **Leitura do balão** — o fechamento é agendado com ~150 ms e cancelado ao entrar no balão; o balão tem
+  `pointer-events: auto` e `onMouseDown` com `preventDefault` para não perder o foco ao selecionar o texto.
+  O selo e o balão continuam sendo montados no `body` (portal) e medidos depois do render para ficar inteiros
+  na tela.
+- **Falha da RPC nova** — `situacaoCentro` só é silencioso para `42883`/`PGRST202`; qualquer outra falha
+  devolve `erro: "Não foi possível carregar o motivo dos selos."`. `Projeto.jsx` mostra um `AvisoFalha`
+  discreto no topo com "Tentar de novo" e mantém os selos pela regra antiga: o topo volta à regra da 063
+  (`situacaoCentroAntiga`, sem aplicar a exceção da tarifa) e as rubricas ficam sem motivos. O teste cobre o
+  caminho silencioso e o caminho de erro + retry.
+- **Motivo inválido** — `sanitizarMotivos` descarta só os itens inválidos e registra `console.warn`; o payload
+  é aceito. O resumo e o `situacaoCentro` usam `validar` + `sanitizar`; um motivo ruim não derruba a lista.
+- **Modo exemplo** — `situacaoCentro` devolve `{ dados: null, erro: null }` para centro oculto, como o
+  `resumoProjetos` não o lista. O teste esconde o `30.909` pelo filtro, confere o nulo e restaura.
+
+### Arquivos desta rodada
+
+| Arquivo | Mudança |
+|---|---|
+| `database/069_motivos_e_ajustes.sql` | Texto de gasto/compromisso, `valor`/`tarifa`, `balancete_id`, grupos malformado, fallback do helper e asserções fortes |
+| `tests/sql/test_069_motivos_e_ajustes.sql` | BLOCO 0 com o resumo antigo, helper direto, caixa `…b01` intacta, âncoras de `position()` |
+| `tools/replica-local/rodar-069-pglite.mjs` | 4 mutantes novos + checagem do helper quebrado |
+| `app/src/componentes/Situacao.jsx` / `.css` | Clique/toque alterna, atraso de 150 ms, balão hover, `pointer-events: auto`, fora fecha |
+| `app/src/servicos/dados.js` | Sanitização de motivos com aviso, erro da RPC nova só silencioso em 42883/PGRST202 |
+| `app/src/paginas/Projeto.jsx` | `AvisoFalha` do motivo e regra antiga sem motivos em caso de erro |
+| `app/src/servicos/dadosExemplo.js` | `situacaoCentro` respeita centros ocultos |
+| `app/tests/situacao-motivos.test.jsx` | Atraso do fechamento e balão hover |
+| `app/tests/situacao-centro.test.js` | Motivo inválido descartado, aviso/erro da RPC, resumo sanitizado e centro oculto no exemplo |
+| `app/tests/projetos.test.jsx` | Clique no selo não navega/abre, clique fora fecha e a linha navega |
+| `app/tests/projeto.test.jsx` | Erro da RPC nova mostra aviso, mantém a regra antiga e o retry volta aos motivos |
+
+### Verificação final
+
+| Comando | Resultado |
+|---|---|
+| `npx vitest run` (raiz) | **44 arquivos, 699 passaram, 5 pulados (704)** |
+| `npm test --prefix app` | **21 arquivos, 171 passaram** |
+| `npm run lint` | **limpo** |
+| `npm run build --prefix app` | guarda de estilo, Vite e verificação do bundle **verdes** |
+| `node tools/replica-local/rodar-069-pglite.mjs` | **verde**: 10 mutantes (9 pelo roteiro + helper quebrado), `test_068` depois da 069, resumo antes/depois e helpers intactos |
+| `node tools/replica-local/rodar-068-pglite.mjs` | **verde**: 17 mutantes, sem regressão |
+
+### Conferência na tela (`npm run dev:exemplo`)
+
+Chrome headless via DevTools Protocol, em **1400 × 900** e **390 × 844**, na lista de centros e na tabela de
+rubricas do `30.909`:
+
+- **1400, mouse**: o hover abre; clicar no selo com o balão aberto fecha e com o balão fechado abre (alterna),
+  sem mudar a rota (`#/projetos` continua); clicar fora fecha; entrar no balão mantém aberto por mais de
+  350 ms e sair fecha com o atraso; clicar no nome da linha abre o centro.
+- **390, toque**: o tap no selo abre o balão e ele permanece aberto (não fecha no mesmo gesto); o tap fora
+  fecha; o tap no selo da tabela de rubricas também abre; o balão fica inteiro na janela em todos os casos.
+- As capturas desta rodada ficaram fora do repositório, em
+  `C:/Users/amara/AppData/Local/Temp/opencode/069b-lista-1400.png`, `069b-lista-390.png` e
+  `069b-tabela-390.png`.
+
+Nenhum push, nenhuma aplicação, nenhuma outra IA chamada, nenhum `CF_*` real e nenhum dado real. Os `.sql` de
+060–068 continuam com LF e `skip-worktree`, sem edição.

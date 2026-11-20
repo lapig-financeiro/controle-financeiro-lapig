@@ -40,8 +40,34 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
   const temMotivos = lista.length > 0;
   const idBalao = useId();
   const gatilhoRef = useRef(null);
+  const balaoRef = useRef(null);
+  const fecharTimerRef = useRef(null);
+  const ultimoPonteiroRef = useRef(null);
+  const ultimoToqueEmRef = useRef(null);
+
+  const eventoDeToque = (evento) => {
+    if (evento?.sourceCapabilities?.firesTouchEvents) return true;
+    if (ultimoPonteiroRef.current !== 'touch') return false;
+    return Boolean(ultimoToqueEmRef.current) && Date.now() - ultimoToqueEmRef.current < 800;
+  };
   const [aberto, setAberto] = useState(false);
   const [posicao, setPosicao] = useState(null);
+
+  const cancelarFechamento = () => {
+    if (fecharTimerRef.current) {
+      clearTimeout(fecharTimerRef.current);
+      fecharTimerRef.current = null;
+    }
+  };
+
+  const agendarFechamento = () => {
+    cancelarFechamento();
+    if (typeof window === 'undefined') return;
+    fecharTimerRef.current = window.setTimeout(() => {
+      fecharTimerRef.current = null;
+      setAberto(false);
+    }, 150);
+  };
 
   const posicionar = () => {
     const elemento = gatilhoRef.current;
@@ -56,7 +82,7 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
       )
     );
     // Estimativa suficiente para decidir entre abrir abaixo ou acima;
-    // o balão cresce para baixo e nunca fica cortado pela borda.
+    // a medição depois da montagem corrige o lado e a borda.
     const alturaEstimada = 24 + lista.length * 44;
     const cabeAbaixo =
       retangulo.bottom + MARGEM + alturaEstimada <= window.innerHeight ||
@@ -71,17 +97,22 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
 
   const abrir = () => {
     if (!temMotivos) return;
+    cancelarFechamento();
     posicionar();
     setAberto(true);
   };
 
   const fechar = () => {
+    cancelarFechamento();
     if (temMotivos) setAberto(false);
   };
 
   useEffect(() => {
     if (!temMotivos || !aberto) return undefined;
-    const desempilhar = empilharEsc(idBalao, () => setAberto(false));
+    const desempilhar = empilharEsc(idBalao, () => {
+      cancelarFechamento();
+      setAberto(false);
+    });
     const atualizar = () => posicionar();
     window.addEventListener('resize', atualizar);
     window.addEventListener('scroll', atualizar, true);
@@ -91,6 +122,23 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
       window.removeEventListener('scroll', atualizar, true);
     };
   }, [temMotivos, aberto, idBalao, lista.length]);
+
+  // Toque/clique fora fecha; o clique no selo e no balão não chega aqui.
+  useEffect(() => {
+    if (!aberto || typeof document === 'undefined') return undefined;
+    const aoClicarFora = (evento) => {
+      if (gatilhoRef.current?.contains(evento.target)) return;
+      if (balaoRef.current?.contains(evento.target)) return;
+      cancelarFechamento();
+      setAberto(false);
+    };
+    document.addEventListener('click', aoClicarFora);
+    return () => document.removeEventListener('click', aoClicarFora);
+  }, [aberto]);
+
+  useEffect(() => () => {
+    if (fecharTimerRef.current) clearTimeout(fecharTimerRef.current);
+  }, []);
 
   // A estimativa decide o lado; depois de montar, mede o balão de
   // verdade e escolhe o lado em que ele inteiro cabe, subindo ou
@@ -134,14 +182,49 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
     ? {
         tabIndex: 0,
         'aria-describedby': idBalao,
-        onMouseOver: abrir,
-        onMouseOut: (evento) => {
-          const relacionado = evento.relatedTarget;
-          if (relacionado && evento.currentTarget.contains(relacionado)) return;
-          fechar();
+        onPointerDown: (evento) => {
+          ultimoPonteiroRef.current = evento.pointerType || 'mouse';
+          if (ultimoPonteiroRef.current === 'touch') {
+            ultimoToqueEmRef.current = Date.now();
+          }
         },
-        onFocus: abrir,
-        onBlur: fechar,
+        onTouchStart: () => {
+          ultimoPonteiroRef.current = 'touch';
+          ultimoToqueEmRef.current = Date.now();
+        },
+        onMouseOver: (evento) => {
+          if (eventoDeToque(evento)) return;
+          cancelarFechamento();
+          abrir();
+        },
+        onMouseOut: (evento) => {
+          if (eventoDeToque(evento)) return;
+          const relacionado = evento.relatedTarget;
+          if (
+            relacionado &&
+            (evento.currentTarget.contains(relacionado) ||
+              balaoRef.current?.contains(relacionado))
+          ) {
+            cancelarFechamento();
+            return;
+          }
+          agendarFechamento();
+        },
+        onFocus: () => {
+          cancelarFechamento();
+          // Foco de ponteiro (toque) deixa o clique decidir; teclado abre.
+          if (!ultimoPonteiroRef.current) abrir();
+        },
+        onBlur: () => {
+          ultimoPonteiroRef.current = null;
+          agendarFechamento();
+        },
+        onClick: (evento) => {
+          evento.preventDefault();
+          evento.stopPropagation();
+          if (aberto) fechar();
+          else abrir();
+        },
       }
     : {};
 
@@ -149,12 +232,28 @@ export function Situacao({ estado = 'sem dado', className = '', motivos = null }
     temMotivos && typeof document !== 'undefined'
       ? createPortal(
           <div
+            ref={balaoRef}
             id={idBalao}
             class={`situacao__balao${
               posicao?.acima ? ' situacao__balao--acima' : ''
             }`}
             data-aberto={aberto && posicao ? 'true' : 'false'}
             role="tooltip"
+            onMouseOver={cancelarFechamento}
+            onMouseOut={(evento) => {
+              if (eventoDeToque(evento)) return;
+              const relacionado = evento.relatedTarget;
+              if (relacionado && balaoRef.current?.contains(relacionado)) {
+                cancelarFechamento();
+                return;
+              }
+              agendarFechamento();
+            }}
+            onMouseDown={(evento) => {
+              evento.preventDefault();
+              cancelarFechamento();
+            }}
+            onClick={(evento) => evento.stopPropagation()}
             style={{
               '--balao-top': posicao ? `${posicao.top}px` : '0px',
               '--balao-left': posicao ? `${posicao.left}px` : '0px',

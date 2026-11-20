@@ -1316,6 +1316,9 @@ export async function resumoProjetos() {
 }
 
 export async function situacaoCentro(projectId) {
+  if (ocultosAtuais.has(projectId)) {
+    return { dados: null, erro: null };
+  }
   const centro = CENTROS_BASE.find((c) => c.id === projectId);
   if (!centro) {
     return { dados: null, erro: 'Centro de custo não encontrado.' };

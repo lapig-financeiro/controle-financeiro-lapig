@@ -1767,4 +1767,93 @@ describe('destaque Dinheiro em conta', () => {
     expect(seloAntigo.hasAttribute('tabindex')).toBe(false);
     expect(document.querySelector('.situacao__balao')).toBeNull();
   });
+
+  it('erro da RPC nova mostra o aviso discreto e mantém a regra antiga; o retry volta aos motivos', async () => {
+    const grupos = [
+      {
+        grupo_code: 'a',
+        grupo_name: 'Pessoal',
+        previsto: 60000,
+        realizado: 30000,
+        compromissos: 0,
+        saldo_livre: 30000,
+        compromissos_cobertura: 'nenhuma',
+      },
+      {
+        grupo_code: 'b',
+        grupo_name: 'Serviços de Terceiros P. Jurídica',
+        previsto: 0,
+        realizado: 14.34,
+        compromissos: 0,
+        saldo_livre: -14.34,
+        compromissos_cobertura: 'nenhuma',
+      },
+    ];
+    const motivoTarifa = {
+      codigo: 'tarifa_bancaria',
+      nivel: 'atenção',
+      texto: 'Rubrica b — Serviços: R$ 14,34 de tarifa bancária sem previsão no plano.',
+      grupo_code: 'b',
+      valor: 14.34,
+      tarifa: 14.34,
+    };
+    configurarPadrao({ grupos });
+    situacaoCentroMock.mockResolvedValueOnce({
+      dados: null,
+      erro: 'Não foi possível carregar o motivo dos selos.',
+    });
+    situacaoCentroMock.mockResolvedValueOnce({
+      dados: { situacao: 'atenção', motivos: [motivoTarifa] },
+      erro: null,
+    });
+
+    render(
+      <Projeto
+        projectId="p-1"
+        hoje="2026-11-18"
+        resumoCentro={{
+          ...resumoCentro,
+          livre: 29985.66,
+          situacao: 'atenção',
+          motivos: [motivoTarifa],
+        }}
+      />,
+      document.body
+    );
+    await tick();
+    await tick();
+
+    const aviso = Array.from(document.querySelectorAll('.aviso-falha')).find((a) =>
+      a.textContent.includes('Não foi possível carregar o motivo dos selos.')
+    );
+    expect(aviso).toBeTruthy();
+
+    const seloTopo = document.querySelector('.cabecalho-pagina__acoes .situacao');
+    expect(seloTopo.textContent).toContain('problema');
+
+    const linhaServicos = () =>
+      Array.from(document.querySelectorAll('.tabela__linha')).find((tr) =>
+        tr.textContent.includes('Serviços de Terceiros P. Jurídica')
+      );
+    let selo = linhaServicos().querySelector('.situacao');
+    expect(selo.textContent).toContain('problema');
+    expect(selo.hasAttribute('aria-describedby')).toBe(false);
+    expect(document.querySelector('.situacao__balao')).toBeNull();
+
+    aviso.querySelector('button').click();
+    await tick();
+    await tick();
+
+    expect(
+      Array.from(document.querySelectorAll('.aviso-falha')).some((a) =>
+        a.textContent.includes('Não foi possível carregar o motivo dos selos.')
+      )
+    ).toBe(false);
+    selo = linhaServicos().querySelector('.situacao');
+    expect(selo.textContent).toContain('atenção');
+    expect(selo.getAttribute('aria-describedby')).toBeTruthy();
+    expect(document.querySelector('.cabecalho-pagina__acoes .situacao').textContent).toContain(
+      'atenção'
+    );
+  });
 });

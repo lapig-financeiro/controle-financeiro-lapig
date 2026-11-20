@@ -26,14 +26,44 @@ export function validarMotivos(motivos, { ausenteOk = true } = {}) {
   return motivos.every(ehMotivoValido);
 }
 
+export function sanitizarMotivos(motivos, contexto = 'motivos') {
+  if (motivos === undefined || motivos === null) return [];
+  if (!Array.isArray(motivos)) {
+    console.warn(`[cf] ${contexto}: motivos não é uma lista; usando lista vazia.`);
+    return [];
+  }
+  const validos = [];
+  motivos.forEach((motivo, indice) => {
+    if (ehMotivoValido(motivo)) {
+      validos.push(motivo);
+    } else {
+      console.warn(`[cf] ${contexto}: motivo ${indice} inválido; descartado.`);
+    }
+  });
+  return validos;
+}
+
 export function validarResumoProjetos(d) {
   return Boolean(
     d &&
       typeof d === 'object' &&
       Array.isArray(d.centros) &&
       Array.isArray(d.todos) &&
-      d.centros.every((centro) => Boolean(centro) && validarMotivos(centro.motivos))
+      d.centros.every((centro) => Boolean(centro) && typeof centro === 'object')
   );
+}
+
+export function sanitizarResumoProjetos(d) {
+  return {
+    ...d,
+    centros: d.centros.map((centro) => ({
+      ...centro,
+      motivos: sanitizarMotivos(
+        centro.motivos,
+        `centro ${centro?.code || centro?.id || '?'}`
+      ),
+    })),
+  };
 }
 
 export function validarSituacaoCentro(d) {
@@ -41,9 +71,15 @@ export function validarSituacaoCentro(d) {
     d &&
       typeof d === 'object' &&
       typeof d.situacao === 'string' &&
-      d.situacao.trim() !== '' &&
-      validarMotivos(d.motivos, { ausenteOk: false })
+      d.situacao.trim() !== ''
   );
+}
+
+export function sanitizarSituacaoCentro(d) {
+  return {
+    ...d,
+    motivos: sanitizarMotivos(d.motivos, 'situação do centro'),
+  };
 }
 
 let exemploPromise = null;
@@ -67,7 +103,7 @@ async function carregarExemplo() {
   }
 }
 
-function validarPayload(data, mensagemErro, { lista = false, validar = null } = {}) {
+function validarPayload(data, mensagemErro, { lista = false, validar = null, sanitizar = null } = {}) {
   if (lista) {
     if (!Array.isArray(data)) {
       return { dados: null, erro: mensagemErro };
@@ -83,7 +119,7 @@ function validarPayload(data, mensagemErro, { lista = false, validar = null } = 
     return { dados: null, erro: mensagemErro };
   }
 
-  return { dados: data, erro: null };
+  return { dados: sanitizar ? sanitizar(data) : data, erro: null };
 }
 
 async function responderExemplo(chamada, mensagemErro, opcoes = {}) {
@@ -91,6 +127,9 @@ async function responderExemplo(chamada, mensagemErro, opcoes = {}) {
     const res = await chamada();
     if (!res || res.erro) {
       return { dados: null, erro: res?.erro || mensagemErro };
+    }
+    if (opcoes.nuloOk && (res.dados === null || res.dados === undefined)) {
+      return { dados: null, erro: null };
     }
     return validarPayload(res.dados, mensagemErro, opcoes);
   } catch {
@@ -132,6 +171,7 @@ async function chamarRpc(nome, params, mensagemErro, opcoes = {}) {
 export async function resumoProjetos() {
   const opcoes = {
     validar: validarResumoProjetos,
+    sanitizar: sanitizarResumoProjetos,
   };
   const ex = await carregarExemplo();
   if (ex) {
@@ -160,7 +200,7 @@ export async function situacaoCentro(projectId) {
   if (typeof projectId !== 'string' || !projectId.trim()) {
     return { dados: null, erro: 'Centro é obrigatório.' };
   }
-  const mensagem = 'Não foi possível carregar a situação do centro.';
+  const mensagem = 'Não foi possível carregar o motivo dos selos.';
   const ex = await carregarExemplo();
   if (ex) {
     return ex.erro
@@ -168,7 +208,7 @@ export async function situacaoCentro(projectId) {
       : responderExemplo(
           () => ex.modulo.situacaoCentro(projectId),
           mensagem,
-          { validar: validarSituacaoCentro }
+          { validar: validarSituacaoCentro, sanitizar: sanitizarSituacaoCentro, nuloOk: true }
         );
   }
   try {
@@ -178,9 +218,10 @@ export async function situacaoCentro(projectId) {
     if (error) {
       const codigo = String(error.code || '');
       if (codigo === '42883' || codigo === 'PGRST202') {
+        // RPC ainda não aplicada: fallback silencioso para a regra de hoje.
         return { dados: null, erro: null };
       }
-      return { dados: null, erro: mensagemDaRpc(error) || mensagem };
+      return { dados: null, erro: mensagem };
     }
     if (data === null || data === undefined) {
       return { dados: null, erro: null };
@@ -188,7 +229,7 @@ export async function situacaoCentro(projectId) {
     if (!validarSituacaoCentro(data)) {
       return { dados: null, erro: mensagem };
     }
-    return { dados: data, erro: null };
+    return { dados: sanitizarSituacaoCentro(data), erro: null };
   } catch {
     return { dados: null, erro: mensagem };
   }

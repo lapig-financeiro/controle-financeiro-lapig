@@ -55,6 +55,14 @@ language sql immutable as $$
    limit 1
 $$;
 
+create or replace function pg_temp.caixa069(p_pedido jsonb, p_id uuid) returns jsonb
+language sql immutable as $$
+  select value
+    from jsonb_array_elements(coalesce(p_pedido -> 'caixas', '[]'::jsonb))
+   where (value ->> 'id')::uuid = p_id
+   limit 1
+$$;
+
 create or replace function pg_temp.motivo069(p_sit jsonb, p_codigo text) returns jsonb
 language sql immutable as $$
   select value
@@ -90,13 +98,48 @@ $$;
 begin;
 
 -- ------------------------------------------------------------
--- BLOCO 0 — a migração existe (antes dela, 42883)
+-- BLOCO 0 — antes da 069: centro só com tarifa sai problema; a RPC
+-- nova não existe (42883). Depois da 069, confere que as duas existem.
 -- ------------------------------------------------------------
 do $$
+declare
+  v_r jsonb;
+  v_c jsonb;
 begin
   if to_regprocedure('public.situacao_centro_v2(uuid)') is null then
+    insert into public.projects (id, name, code, start_date, end_date, active) values
+      ('00000000-0000-4000-8000-000000069001', 'Teste 069 Tarifa', '69.TARIFA',
+       current_date - 30, current_date + 365, true);
+    insert into public.planos_trabalho (id, project_id, versao, tipo, ativo, valor_total_plano)
+    values ('00000000-0000-4000-8000-000000069101',
+            '00000000-0000-4000-8000-000000069001', 0, 'original', true, 0);
+    insert into public.balancetes (id, project_id, data_referencia)
+    values ('00000000-0000-4000-8000-000000069201',
+            '00000000-0000-4000-8000-000000069001', current_date);
+    insert into public.balancete_lancamentos
+      (id, balancete_id, conta_codigo, conta_descricao, saldo_atual, rubrica_code)
+    values ('00000000-0000-4000-8000-000000069301',
+            '00000000-0000-4000-8000-000000069201',
+            '7.1.3.05.01.00054', 'DESPESA SERVIÇOS BANCÁRIOS', 14.34, 'b');
+
+    perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
+    v_r := public.resumo_projetos_v2();
+    select value into v_c
+      from jsonb_array_elements(coalesce(v_r -> 'centros', '[]'::jsonb))
+     where value ->> 'code' = '69.TARIFA'
+     limit 1;
+
+    perform pg_temp.ok069(v_c is not null,
+      'o centro 69.TARIFA deveria aparecer no resumo antes da 069');
+    perform pg_temp.ok069(v_c ->> 'situacao' = 'problema',
+      format('antes da 069 o centro só com tarifa deveria sair problema, veio %s',
+             v_c ->> 'situacao'));
+    perform pg_temp.ok069(not (v_c ? 'motivos'),
+      'antes da 069 o resumo não deveria ter a chave motivos');
+
     raise exception '069 FALHOU: situacao_centro_v2 ausente' using errcode = '42883';
   end if;
+
   if to_regprocedure('public._situacao_centro(uuid, jsonb, integer)') is null then
     raise exception '069 FALHOU: _situacao_centro ausente' using errcode = '42883';
   end if;
@@ -171,8 +214,8 @@ insert into public.scholarships (id, holder_id, project_id, amount, start_date, 
 -- Duas caixas de origem do b1, com a pessoa repetida (dado montado pelo
 -- dono da tabela, fora das RPCs), e uma caixa de destino.
 insert into public.caixas_pedido (id, nome, meses, dono, criado_em) values
-  ('00000000-0000-4000-8000-000000069b01', 'Origem antiga 069', 12, '00000000-0000-0000-0000-0000000000b1', now() - interval '2 days'),
-  ('00000000-0000-4000-8000-000000069b02', 'Origem nova 069',   12, '00000000-0000-0000-0000-0000000000b1', now() - interval '1 day'),
+  ('00000000-0000-4000-8000-000000069b01', 'Zeta origem (mais antiga)', 12, '00000000-0000-0000-0000-0000000000b1', now() - interval '2 days'),
+  ('00000000-0000-4000-8000-000000069b02', 'Alfa origem (mais nova)',   12, '00000000-0000-0000-0000-0000000000b1', now() - interval '1 day'),
   ('00000000-0000-4000-8000-000000069b03', 'Destino 069',       12, '00000000-0000-0000-0000-0000000000b1', now());
 
 insert into public.caixa_pedido_itens (caixa_id, holder_id, valor_mensal, nota) values
@@ -222,8 +265,14 @@ begin
   perform pg_temp.ok069(m ->> 'grupo_code' = 'b', 'tarifa_bancaria deveria apontar o grupo b');
   perform pg_temp.ok069((m ->> 'valor')::numeric = 14.34,
     format('tarifa_bancaria deveria valer 14,34, veio %s', m ->> 'valor'));
-  perform pg_temp.ok069(m ->> 'texto' like '%R$ 14,34 de tarifa bancária%',
-    format('o texto da tarifa deveria citar R$ 14,34: %s', m ->> 'texto'));
+  perform pg_temp.ok069((m ->> 'tarifa')::numeric = 14.34,
+    format('tarifa_bancaria deveria guardar a tarifa 14,34, veio %s', m ->> 'tarifa'));
+  perform pg_temp.ok069(
+    m ->> 'texto' like '%saldo livre R$ −14,34 por causa de R$ 14,34 de tarifa bancária%',
+    format('o texto da tarifa deveria ligar saldo e tarifa: %s', m ->> 'texto')
+  );
+  perform pg_temp.ok069(m ->> 'texto' like '%sem ela, ficaria dentro do previsto%',
+    'o texto da tarifa deveria dizer que sem ela ficaria dentro do previsto');
   perform pg_temp.ok069(m ->> 'texto' like '%FUNAPE%',
     'o texto da tarifa deveria explicar a cobrança da FUNAPE');
 
@@ -235,10 +284,16 @@ begin
     '69.MISTO deveria ter um único motivo (o problema já diz a tarifa)');
   m := pg_temp.motivo069(c, 'saldo_negativo');
   perform pg_temp.ok069(m is not null, '69.MISTO deveria ter saldo_negativo');
-  perform pg_temp.ok069(m ->> 'texto' like '%gasto R$ 64,34 acima do previsto%',
-    format('o problema do 69.MISTO deveria citar 64,34: %s', m ->> 'texto'));
+  perform pg_temp.ok069(m ->> 'texto' like '%saldo livre R$ −64,34.%',
+    format('o problema do 69.MISTO deveria abrir com o saldo −64,34: %s', m ->> 'texto'));
+  perform pg_temp.ok069(m ->> 'texto' like '%Gasto R$ 64,34 acima do previsto.%',
+    format('o problema do 69.MISTO deveria citar o gasto 64,34: %s', m ->> 'texto'));
   perform pg_temp.ok069(m ->> 'texto' like '%R$ 14,34 disso é tarifa bancária%',
     format('o problema do 69.MISTO deveria citar a tarifa: %s', m ->> 'texto'));
+  perform pg_temp.ok069((m ->> 'valor')::numeric = 64.34,
+    format('o valor do problema do 69.MISTO deveria ser o negativo 64,34, veio %s', m ->> 'valor'));
+  perform pg_temp.ok069((m ->> 'tarifa')::numeric = 14.34,
+    format('o problema do 69.MISTO deveria guardar a tarifa 14,34, veio %s', m ->> 'tarifa'));
 
   -- Tarifa reconhecida pela descrição, com código diferente.
   c := pg_temp.centro069(r, '69.DESC');
@@ -247,11 +302,15 @@ begin
   perform pg_temp.ok069(pg_temp.tem_motivo069(c, 'tarifa_bancaria'),
     '69.DESC deveria ter o motivo tarifa_bancaria');
   perform pg_temp.ok069(
-    pg_temp.texto_motivo069(c, 'tarifa_bancaria') like '%R$ 14,34%',
-    'o motivo do 69.DESC deveria citar R$ 14,34'
+    pg_temp.texto_motivo069(c, 'tarifa_bancaria') like '%saldo livre R$ −14,34 por causa de R$ 14,34 de tarifa%',
+    'o motivo do 69.DESC deveria ligar o saldo à tarifa'
+  );
+  perform pg_temp.ok069(
+    (pg_temp.motivo069(c, 'tarifa_bancaria') ->> 'valor')::numeric = 14.34,
+    'o valor do 69.DESC deveria ser o negativo 14,34'
   );
 
-  -- Despesa comum sem previsão: continua problema.
+  -- Despesa comum sem previsão: continua problema, sem frase de tarifa.
   c := pg_temp.centro069(r, '69.COMUM');
   perform pg_temp.ok069(c ->> 'situacao' = 'problema',
     format('69.COMUM deveria continuar problema, veio %s', c ->> 'situacao'));
@@ -260,8 +319,13 @@ begin
   perform pg_temp.ok069(not pg_temp.tem_motivo069(c, 'tarifa_bancaria'),
     'despesa comum não pode virar tarifa');
   perform pg_temp.ok069(
-    pg_temp.texto_motivo069(c, 'saldo_negativo') like '%gasto R$ 100,00 acima do previsto%',
-    'o problema do 69.COMUM deveria citar 100,00'
+    pg_temp.texto_motivo069(c, 'saldo_negativo')
+      like '%saldo livre R$ −100,00. Gasto R$ 100,00 acima do previsto.%',
+    'o problema do 69.COMUM deveria citar o saldo e o gasto 100,00'
+  );
+  perform pg_temp.ok069(
+    not (pg_temp.motivo069(c, 'saldo_negativo') ? 'tarifa'),
+    'despesa comum sem tarifa não deveria guardar o campo tarifa'
   );
 
   -- Balancete atrasado.
@@ -297,11 +361,14 @@ begin
     'o problema do 69.ORDEM deveria ser do grupo f'
   );
 
-  -- Todos os motivos têm exatamente as cinco chaves e nível válido.
+  -- Todos os motivos têm as cinco chaves, mais `tarifa` quando houver.
   for m in select value from jsonb_array_elements(c -> 'motivos') loop
     select array_agg(k order by k) into v_keys from jsonb_object_keys(m) k;
     perform pg_temp.ok069(
-      v_keys = array['codigo', 'grupo_code', 'nivel', 'texto', 'valor'],
+      v_keys in (
+        array['codigo', 'grupo_code', 'nivel', 'texto', 'valor'],
+        array['codigo', 'grupo_code', 'nivel', 'tarifa', 'texto', 'valor']
+      ),
       format('chaves de motivo inesperadas: %s', v_keys)
     );
     perform pg_temp.ok069(m ->> 'nivel' in ('problema', 'atenção', 'info'),
@@ -348,6 +415,154 @@ begin
 end $$;
 
 -- ------------------------------------------------------------
+-- BLOCO 2b — helper direto (dono): texto de gasto x compromisso,
+-- valor da tarifa, balancete_id ausente e grupos malformado
+-- ------------------------------------------------------------
+reset role;
+do $$
+declare
+  v_sl  jsonb;
+  v_sit jsonb;
+  m     jsonb;
+  v_grupo jsonb;
+begin
+  -- Só compromisso: previsto 1.000, realizado 800, compromissos 300.
+  v_grupo := jsonb_build_object(
+    'grupo_code', 'a', 'grupo_name', 'Pessoal',
+    'previsto', 1000, 'realizado', 800, 'compromissos', 300, 'saldo_livre', -100
+  );
+  v_sl := jsonb_build_object(
+    'has_plano', true, 'has_balancete', true,
+    'data_referencia', current_date,
+    'balancete_cobre_ate', date_trunc('month', current_date)::date,
+    'balancete_defasagem_meses', 0,
+    'grupos', jsonb_build_array(v_grupo)
+  );
+  v_sit := public._situacao_centro(gen_random_uuid(), v_sl, 0);
+  perform pg_temp.ok069(v_sit ->> 'situacao' = 'problema',
+    format('só compromisso deveria ser problema, veio %s', v_sit ->> 'situacao'));
+  m := pg_temp.motivo069(v_sit, 'saldo_negativo');
+  perform pg_temp.ok069(m is not null, 'só compromisso deveria ter saldo_negativo');
+  perform pg_temp.ok069(m ->> 'texto' like '%saldo livre R$ −100,00.%',
+    format('só compromisso deveria abrir com o saldo −100: %s', m ->> 'texto'));
+  perform pg_temp.ok069(
+    m ->> 'texto' like '%R$ 100,00 de bolsas/taxas já comprometidas até o fim não cabem no previsto.%',
+    format('só compromisso deveria citar a parcela comprometida: %s', m ->> 'texto')
+  );
+  perform pg_temp.ok069(m ->> 'texto' not like '%Gasto R$%',
+    format('só compromisso não pode falar em gasto acima do previsto: %s', m ->> 'texto'));
+  perform pg_temp.ok069((m ->> 'valor')::numeric = 100,
+    format('o valor de só compromisso deveria ser 100, veio %s', m ->> 'valor'));
+
+  -- Gasto + compromisso: previsto 1.000, realizado 1.200, compromissos 300.
+  v_grupo := jsonb_build_object(
+    'grupo_code', 'a', 'grupo_name', 'Pessoal',
+    'previsto', 1000, 'realizado', 1200, 'compromissos', 300, 'saldo_livre', -500
+  );
+  v_sl := jsonb_set(v_sl, '{grupos}', jsonb_build_array(v_grupo));
+  v_sit := public._situacao_centro(gen_random_uuid(), v_sl, 0);
+  m := pg_temp.motivo069(v_sit, 'saldo_negativo');
+  perform pg_temp.ok069(m is not null, 'gasto + compromisso deveria ter saldo_negativo');
+  perform pg_temp.ok069(m ->> 'texto' like '%saldo livre R$ −500,00.%',
+    format('gasto + compromisso deveria abrir com o saldo −500: %s', m ->> 'texto'));
+  perform pg_temp.ok069(m ->> 'texto' like '%Gasto R$ 200,00 acima do previsto.%',
+    format('gasto + compromisso deveria citar o gasto 200: %s', m ->> 'texto'));
+  perform pg_temp.ok069(
+    m ->> 'texto' like '%R$ 300,00 de bolsas/taxas já comprometidas até o fim não cabem no previsto.%',
+    format('gasto + compromisso deveria citar a parcela comprometida 300: %s', m ->> 'texto')
+  );
+  perform pg_temp.ok069((m ->> 'valor')::numeric = 500,
+    format('o valor de gasto + compromisso deveria ser 500, veio %s', m ->> 'valor'));
+
+  -- Tarifa coberta: valor do motivo é o negativo; tarifa é Y.
+  v_grupo := jsonb_build_object(
+    'grupo_code', 'b', 'grupo_name', 'Serviços de Terceiros P. Jurídica',
+    'previsto', 0, 'realizado', 14.34, 'compromissos', 0, 'saldo_livre', -14.34
+  );
+  v_sl := jsonb_build_object(
+    'has_plano', true, 'has_balancete', true,
+    'data_referencia', current_date,
+    'balancete_cobre_ate', date_trunc('month', current_date)::date,
+    'balancete_defasagem_meses', 0,
+    'balancete_id', '00000000-0000-4000-8000-000000069201',
+    'grupos', jsonb_build_array(v_grupo)
+  );
+  v_sit := public._situacao_centro(gen_random_uuid(), v_sl, 0);
+  perform pg_temp.ok069(v_sit ->> 'situacao' = 'atenção',
+    format('tarifa coberta deveria ser atenção, veio %s', v_sit ->> 'situacao'));
+  m := pg_temp.motivo069(v_sit, 'tarifa_bancaria');
+  perform pg_temp.ok069(m is not null, 'tarifa coberta deveria ter tarifa_bancaria');
+  perform pg_temp.ok069(
+    m ->> 'texto' like '%saldo livre R$ −14,34 por causa de R$ 14,34 de tarifa bancária%',
+    format('tarifa coberta deveria ligar saldo e tarifa: %s', m ->> 'texto')
+  );
+  perform pg_temp.ok069((m ->> 'valor')::numeric = 14.34,
+    format('o valor da tarifa coberta deveria ser o negativo 14,34, veio %s', m ->> 'valor'));
+  perform pg_temp.ok069((m ->> 'tarifa')::numeric = 14.34,
+    format('o campo tarifa deveria ser 14,34, veio %s', m ->> 'tarifa'));
+
+  -- Tarifa que passa: continua problema, com as duas frases.
+  v_grupo := jsonb_build_object(
+    'grupo_code', 'b', 'grupo_name', 'Serviços de Terceiros P. Jurídica',
+    'previsto', 50, 'realizado', 114.34, 'compromissos', 0, 'saldo_livre', -64.34
+  );
+  v_sl := jsonb_set(v_sl, '{grupos}', jsonb_build_array(v_grupo));
+  v_sl := jsonb_set(v_sl, '{balancete_id}', '"00000000-0000-4000-8000-000000069202"'::jsonb);
+  v_sit := public._situacao_centro(gen_random_uuid(), v_sl, 0);
+  perform pg_temp.ok069(v_sit ->> 'situacao' = 'problema',
+    format('tarifa que passa deveria ser problema, veio %s', v_sit ->> 'situacao'));
+  m := pg_temp.motivo069(v_sit, 'saldo_negativo');
+  perform pg_temp.ok069(m is not null, 'tarifa que passa deveria ter saldo_negativo');
+  perform pg_temp.ok069(
+    m ->> 'texto' like '%saldo livre R$ −64,34.%'
+      and m ->> 'texto' like '%Gasto R$ 64,34 acima do previsto.%'
+      and m ->> 'texto' like '%R$ 14,34 disso é tarifa bancária%',
+    format('tarifa que passa deveria dizer saldo, gasto e tarifa: %s', m ->> 'texto')
+  );
+  perform pg_temp.ok069((m ->> 'valor')::numeric = 64.34,
+    format('o valor da tarifa que passa deveria ser 64,34, veio %s', m ->> 'valor'));
+  perform pg_temp.ok069((m ->> 'tarifa')::numeric = 14.34,
+    format('o campo tarifa da tarifa que passa deveria ser 14,34, veio %s', m ->> 'tarifa'));
+
+  -- Sem balancete_id, a exceção da tarifa não se aplica: problema.
+  v_sl := jsonb_build_object(
+    'has_plano', true, 'has_balancete', true,
+    'data_referencia', current_date,
+    'balancete_cobre_ate', date_trunc('month', current_date)::date,
+    'balancete_defasagem_meses', 0,
+    'grupos', jsonb_build_array(v_grupo)
+  );
+  v_sit := public._situacao_centro(gen_random_uuid(), v_sl, 0);
+  perform pg_temp.ok069(v_sit ->> 'situacao' = 'problema',
+    format('sem balancete_id a tarifa não pode virar atenção, veio %s', v_sit ->> 'situacao'));
+  perform pg_temp.ok069(not pg_temp.tem_motivo069(v_sit, 'tarifa_bancaria'),
+    'sem balancete_id não pode nascer motivo de tarifa');
+
+  -- Grupos ausente ou malformado: sem dado + falha, nunca em dia.
+  v_sl := jsonb_build_object(
+    'has_plano', true, 'has_balancete', true,
+    'balancete_id', '00000000-0000-4000-8000-000000069201',
+    'grupos', 'nao-e-array'
+  );
+  v_sit := public._situacao_centro(gen_random_uuid(), v_sl, 0);
+  perform pg_temp.ok069(v_sit ->> 'situacao' = 'sem dado',
+    format('grupos malformado deveria dar sem dado, veio %s', v_sit ->> 'situacao'));
+  perform pg_temp.ok069(pg_temp.tem_motivo069(v_sit, 'falha'),
+    'grupos malformado deveria ter o motivo falha');
+
+  v_sl := jsonb_build_object(
+    'has_plano', true, 'has_balancete', true,
+    'balancete_id', '00000000-0000-4000-8000-000000069201'
+  );
+  v_sit := public._situacao_centro(gen_random_uuid(), v_sl, 0);
+  perform pg_temp.ok069(v_sit ->> 'situacao' = 'sem dado',
+    format('grupos ausente deveria dar sem dado, veio %s', v_sit ->> 'situacao'));
+  perform pg_temp.ok069(pg_temp.tem_motivo069(v_sit, 'falha'),
+    'grupos ausente deveria ter o motivo falha');
+end $$;
+set local role authenticated;
+
+-- ------------------------------------------------------------
 -- BLOCO 3 — situacao_centro_v2: mesma resposta, escopo e anon
 -- ------------------------------------------------------------
 do $$
@@ -355,6 +570,8 @@ declare
   r jsonb;
   c jsonb;
   s jsonb;
+  v_pedido jsonb;
+  v_box jsonb;
 begin
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
   r := public.resumo_projetos_v2();
@@ -397,13 +614,38 @@ begin
   perform pg_temp.ok069(s ->> 'situacao' = 'em dia',
     format('b1 deveria ler o 51.X em dia, veio %s', s ->> 'situacao'));
 
-  -- Caixa alheia: b2 recebe P0002 em todas as seis RPCs.
+  -- Resumo como professor: só o escopo, com motivos.
+  r := public.resumo_projetos_v2();
+  perform pg_temp.ok069(pg_temp.centro069(r, '69.TARIFA') is null,
+    'b1 não deveria ver o 69.TARIFA no resumo');
+  c := pg_temp.centro069(r, '51.X');
+  perform pg_temp.ok069(c is not null and c ->> 'situacao' = 'em dia',
+    format('b1 deveria ver o 51.X em dia no resumo, veio %s', c ->> 'situacao'));
+  perform pg_temp.ok069(
+    jsonb_typeof(c -> 'motivos') = 'array' and pg_temp.tem_motivo069(c, 'em_dia'),
+    'b1 deveria receber os motivos do 51.X'
+  );
+
+  -- Caixa alheia: b2 recebe P0002 em todas as seis RPCs, e a caixa real
+  -- do b1 (b01) não muda de nome nem de meses.
   perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b2', true);
   perform pg_temp.falha_com069(
-    format($q$select public.salvar_caixa_pedido_v2(jsonb_build_object('id', %L, 'nome', 'x'))$q$,
-      current_setting('test069.x')),
+    $q$select public.salvar_caixa_pedido_v2(jsonb_build_object(
+         'id', '00000000-0000-4000-8000-000000069b01'::uuid,
+         'nome', 'Tentativa alheia', 'meses', 6))$q$,
     'P0002'
   );
+
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);
+  v_pedido := public.get_pedido_bolsas_v2();
+  v_box := pg_temp.caixa069(v_pedido, '00000000-0000-4000-8000-000000069b01'::uuid);
+  perform pg_temp.ok069(v_box is not null, 'a caixa b01 deveria existir para o b1');
+  perform pg_temp.ok069(v_box ->> 'nome' = 'Zeta origem (mais antiga)',
+    format('a caixa b01 não podia ser renomeada pelo b2: %s', v_box ->> 'nome'));
+  perform pg_temp.ok069((v_box ->> 'meses')::integer = 12,
+    format('a caixa b01 não podia mudar de meses pelo b2: %s', v_box ->> 'meses'));
+
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b2', true);
   perform pg_temp.falha_com069(
     $q$select public.apagar_caixa_pedido_v2('00000000-0000-4000-8000-000000069b01'::uuid)$q$,
     'P0002'
@@ -513,8 +755,14 @@ end $$;
 -- ------------------------------------------------------------
 do $$
 declare
-  v_sig text;
-  v_def text;
+  v_sig  text;
+  v_def  text;
+  v_ini  integer;
+  v_from integer;
+  v_dono integer;
+  v_fu   integer;
+  v_lock integer;
+  v_del  integer;
 begin
   foreach v_sig in array array[
     'public.salvar_caixa_pedido_v2(jsonb)',
@@ -524,20 +772,39 @@ begin
     'public.tirar_da_caixa_v2(uuid, uuid)',
     'public.limpar_ocultos_da_caixa_v2(uuid)'
   ] loop
-    v_def := pg_get_functiondef(v_sig::regprocedure);
+    v_def  := pg_get_functiondef(v_sig::regprocedure);
+    v_ini  := position('select * into v_caixa' in v_def);
+    v_from := v_ini + position(
+      'from public.caixas_pedido' in substring(v_def from greatest(v_ini, 1))
+    ) - 1;
+    v_dono := v_from + position(
+      'dono = auth.uid()' in substring(v_def from greatest(v_from, 1))
+    ) - 1;
+    v_fu   := v_dono + position(
+      'for update' in substring(v_def from greatest(v_dono, 1))
+    ) - 1;
     perform pg_temp.ok069(
-      v_def ~* 'dono\s*=\s*auth\.uid\(\)\s+for update',
-      format('%s deveria filtrar dono = auth.uid() no for update', v_sig)
+      v_ini > 0 and v_from >= v_ini and v_dono >= v_from and v_fu >= v_dono,
+      format('%s deveria filtrar dono = auth.uid() no select ... from public.caixas_pedido ... for update', v_sig)
     );
   end loop;
 
-  v_def := pg_get_functiondef('public.apagar_caixa_pedido_v2(uuid)'::regprocedure);
-  perform pg_temp.ok069(v_def like '%pg_advisory_xact_lock%',
-    'apagar_caixa_pedido_v2 deveria tomar o lock por dono');
+  v_def  := pg_get_functiondef('public.apagar_caixa_pedido_v2(uuid)'::regprocedure);
+  v_lock := position('pg_advisory_xact_lock(hashtextextended(''caixas_pedido:'' ||' in v_def);
+  v_del  := position('delete from public.caixas_pedido' in v_def);
+  perform pg_temp.ok069(v_lock > 0 and v_del > 0 and v_lock < v_del,
+    'apagar_caixa_pedido_v2 deveria tomar o lock por dono antes do delete');
 
   v_def := pg_get_functiondef('public.colocar_na_caixa_v2(uuid, uuid)'::regprocedure);
-  perform pg_temp.ok069(v_def like '%_bolsista_no_pedido%',
+  perform pg_temp.ok069(position('_bolsista_no_pedido' in v_def) > 0,
     'colocar_na_caixa_v2 deveria exigir _bolsista_no_pedido');
+
+  v_def := pg_get_functiondef('public._situacao_centro(uuid, jsonb, integer)'::regprocedure);
+  perform pg_temp.ok069(
+    position('balancete_id' in v_def) > 0
+      and position('from public.balancetes' in v_def) = 0,
+    '_situacao_centro deveria usar o balancete_id do p_sl, sem reler balancetes'
+  );
 end $$;
 
 -- ------------------------------------------------------------

@@ -10,6 +10,10 @@ vi.mock('../src/servicos/supabase.js', () => ({
 
 import {
   editarItemCaixa,
+  resumoProjetos,
+  sanitizarMotivos,
+  sanitizarResumoProjetos,
+  sanitizarSituacaoCentro,
   situacaoCentro,
   validarMotivos,
   validarResumoProjetos,
@@ -27,7 +31,8 @@ afterEach(() => {
 });
 
 describe('motivos e situação do centro', () => {
-  it('aceita motivos ausentes (produção antes da 069) e recusa nível inválido', () => {
+  it('aceita motivos ausentes, descarta só o motivo inválido e avisa no console', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(validarMotivos(undefined)).toBe(true);
     expect(validarMotivos(null)).toBe(true);
     expect(validarMotivos([])).toBe(true);
@@ -39,15 +44,36 @@ describe('motivos e situação do centro', () => {
     expect(validarMotivos([{ codigo: 'x', nivel: 'info', texto: '   ' }])).toBe(false);
     expect(validarMotivos('x')).toBe(false);
 
+    const comInvalido = {
+      centros: [
+        {
+          id: 'c1',
+          motivos: [
+            { codigo: 'tarifa_bancaria', nivel: 'atenção', texto: 'R$ 14,34' },
+            { codigo: 'x', nivel: 'grave', texto: 'x' },
+          ],
+        },
+      ],
+      todos: [],
+    };
+    expect(validarResumoProjetos(comInvalido)).toBe(true);
+    const sanitizado = sanitizarResumoProjetos(comInvalido);
+    expect(sanitizado.centros[0].motivos).toHaveLength(1);
+    expect(sanitizado.centros[0].motivos[0].codigo).toBe('tarifa_bancaria');
+    expect(warn).toHaveBeenCalled();
+
     expect(
-      validarResumoProjetos({ centros: [{ id: 'c1', situacao: 'em dia' }], todos: [] })
-    ).toBe(true);
+      sanitizarMotivos(['nao-e-lista'], 'teste')
+    ).toEqual([]);
     expect(
-      validarResumoProjetos({
-        centros: [{ id: 'c1', motivos: [{ codigo: 'x', nivel: 'grave', texto: 'x' }] }],
-        todos: [],
-      })
-    ).toBe(false);
+      sanitizarSituacaoCentro({
+        situacao: 'atenção',
+        motivos: [{ codigo: 'x', nivel: 'grave', texto: 'x' }],
+      }).motivos
+    ).toEqual([]);
+    expect(validarSituacaoCentro({ situacao: 'em dia' })).toBe(true);
+    expect(validarSituacaoCentro({ situacao: '  ' })).toBe(false);
+    warn.mockRestore();
   });
 
   it('situacaoCentro sem a RPC nova devolve dados nulos sem erro', async () => {
@@ -78,15 +104,57 @@ describe('motivos e situação do centro', () => {
     expect(comDados.erro).toBeNull();
     expect(comDados.dados.situacao).toBe('atenção');
     expect(validarSituacaoCentro(comDados.dados)).toBe(true);
-    expect(validarSituacaoCentro({ situacao: 'em dia' })).toBe(false);
 
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     rpcMock.mockResolvedValueOnce({
       data: { situacao: 'atenção', motivos: [{ codigo: 'x', nivel: 'grave', texto: 'x' }] },
       error: null,
     });
     const invalido = await situacaoCentro('p-1');
-    expect(invalido.dados).toBeNull();
-    expect(invalido.erro).toContain('Não foi possível');
+    expect(invalido.erro).toBeNull();
+    expect(invalido.dados).not.toBeNull();
+    expect(invalido.dados.motivos).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: '500', message: 'boom' },
+    });
+    const falha = await situacaoCentro('p-1');
+    expect(falha).toEqual({
+      dados: null,
+      erro: 'Não foi possível carregar o motivo dos selos.',
+    });
+  });
+
+  it('resumoProjetos descarta só o motivo inválido, sem derrubar a lista', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rpcMock.mockResolvedValueOnce({
+      data: {
+        centros: [
+          {
+            id: 'c1',
+            code: '30.901',
+            name: 'Centro',
+            motivos: [
+              { codigo: 'tarifa_bancaria', nivel: 'atenção', texto: 'R$ 14,34' },
+              { codigo: 'x', nivel: 'grave', texto: 'x' },
+            ],
+          },
+        ],
+        todos: [],
+      },
+      error: null,
+    });
+
+    const res = await resumoProjetos();
+    expect(res.erro).toBeNull();
+    expect(res.dados.centros).toHaveLength(1);
+    expect(res.dados.centros[0].motivos).toHaveLength(1);
+    expect(res.dados.centros[0].motivos[0].codigo).toBe('tarifa_bancaria');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('editarItemCaixa("4.500") manda 4500 e número continua número', async () => {
@@ -140,5 +208,17 @@ describe('motivos e situação do centro', () => {
     const editado = await dadosExemplo.editarItemCaixa(caixa.id, item.holder_id, '4.500');
     expect(editado.erro).toBeNull();
     expect(editado.dados.valor_mensal).toBe(4500);
+
+    // Centro oculto pelo filtro de visão não devolve situação, como no resumo.
+    const filtroOriginal = (await dadosExemplo.filtroVisao()).dados.centros_ocultos;
+    try {
+      await dadosExemplo.salvarFiltroVisao([...filtroOriginal, tarifa.id]);
+      const oculto = await dadosExemplo.situacaoCentro(tarifa.id);
+      expect(oculto).toEqual({ dados: null, erro: null });
+      const ocultoServico = await situacaoCentro(tarifa.id);
+      expect(ocultoServico).toEqual({ dados: null, erro: null });
+    } finally {
+      await dadosExemplo.salvarFiltroVisao(filtroOriginal);
+    }
   });
 });

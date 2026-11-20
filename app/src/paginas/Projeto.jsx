@@ -202,6 +202,37 @@ export function situacaoGrupo(grupo, hasBalancete, defasagemMeses, motivos = nul
   return 'em dia';
 }
 
+// Regra da 063 para o selo do topo quando a RPC de motivos falha: não
+// aplica a exceção da tarifa e não recalcula nada além do que já veio
+// no resumo/grupos.
+function situacaoCentroAntiga(resumo, grupos, hasBalancete, defasagemMeses) {
+  if (resumo?.erro === 'falha_saldo_livre') return 'sem dado';
+  const bruta = String(resumo?.situacao || '').trim().toLowerCase();
+  if (bruta === 'sem plano' || bruta === 'sem balancete' || bruta === 'sem dado') {
+    return bruta === 'atencao' ? 'atenção' : bruta;
+  }
+  if (!hasBalancete) return 'sem balancete';
+
+  const defasagem = numeroFinito(defasagemMeses);
+  const temPendencia = Number(resumo?.pendencias_abertas || 0) > 0;
+  const temAtraso = defasagem !== null && defasagem >= 2;
+
+  if (bruta === 'problema') return 'problema';
+  if (bruta === 'atenção' || bruta === 'atencao') {
+    // Na 063, atenção só vem de atraso/pendência; na 069, também da
+    // tarifa. Sem atraso/pendência, a regra antiga seria problema.
+    return temPendencia || temAtraso ? 'atenção' : 'problema';
+  }
+
+  const temNegativo = grupos.some((grupo) => {
+    const livre = numeroFinito(grupo?.saldo_livre);
+    return livre !== null && livre < 0;
+  });
+  if (temNegativo) return 'problema';
+  if (temPendencia || temAtraso) return 'atenção';
+  return 'em dia';
+}
+
 function resumirRepasses(repassesDados, hasPlano, hoje) {
   if (!repassesDados) {
     return {
@@ -929,10 +960,10 @@ export function Projeto({
   // Selo do topo: a RPC nova manda situação e motivos; sem ela, fica a
   // regra de hoje (resumo_projetos_v2).
   const situacaoDados = situacaoSt.dados;
-  const situacaoTopo = situacaoDados?.situacao || resumoCentro?.situacao || 'sem dado';
-  const motivosTopo = situacaoDados
-    ? situacaoDados.motivos
-    : (Array.isArray(resumoCentro?.motivos) ? resumoCentro.motivos : null);
+  const situacaoTopo = situacaoSt.erro
+    ? situacaoCentroAntiga(resumoCentro, grupos, hasBalancete, defasagemMeses)
+    : (situacaoDados?.situacao || resumoCentro?.situacao || 'sem dado');
+  const motivosTopo = situacaoDados ? situacaoDados.motivos : null;
   const temSituacaoTopo = Boolean(situacaoDados || resumoCentro);
   const motivosDoGrupo = (grupoCode) =>
     Array.isArray(motivosTopo)
@@ -2210,6 +2241,10 @@ export function Projeto({
 
       {erroResumo && (
         <AvisoFalha mensagem={erroResumo} aoTentarNovamente={onRecarregarResumo} />
+      )}
+
+      {situacaoSt.erro && (
+        <AvisoFalha mensagem={situacaoSt.erro} aoTentarNovamente={carregarSituacao} />
       )}
 
       {docsDoCentro.erroBalancetes &&
