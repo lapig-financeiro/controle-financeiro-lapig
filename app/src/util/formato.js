@@ -119,6 +119,25 @@ export function dataCompleta(data) {
   return `${dia}/${mes}/${partes.ano}`;
 }
 
+const PARTICULAS_NOME = new Set(['da', 'das', 'de', 'di', 'do', 'dos', 'du', 'e']);
+
+/**
+ * Padroniza um nome de pessoa: primeira letra maiúscula e o resto minúsculo em cada palavra
+ * ("AGATHA AGUIAR PEREIRA" → "Agatha Aguiar Pereira"). As partículas (de, da, do, dos, das, e)
+ * ficam minúsculas, menos no começo; nomes com hífen ou apóstrofo sobem a letra de cada parte.
+ * Só exibição: o nome guardado no banco não muda.
+ */
+export function nomeProprio(nome) {
+  if (nome === null || nome === undefined) return '';
+  const palavras = String(nome).trim().toLocaleLowerCase('pt-BR').split(/\s+/).filter(Boolean);
+  return palavras
+    .map((palavra, i) => {
+      if (i > 0 && PARTICULAS_NOME.has(palavra)) return palavra;
+      return palavra.replace(/(^|[-'’])(\p{L})/gu, (_, sep, letra) => sep + letra.toLocaleUpperCase('pt-BR'));
+    })
+    .join(' ');
+}
+
 /**
  * Extrai até duas iniciais para o avatar do usuário.
  */

@@ -21,7 +21,7 @@ import {
   salvarEquipeBolsista,
   tirarDaCaixa,
 } from '../servicos/dados.js';
-import { dataCompacta, dinheiro, hojeISO } from '../util/formato.js';
+import { dataCompacta, dinheiro, hojeISO, nomeProprio } from '../util/formato.js';
 import { parseValorBR } from '../util/moeda.js';
 import './Bolsistas.css';
 
@@ -297,19 +297,21 @@ function ItemDaCaixa({ caixaId, item, nome, emAcao, onTirar, onSalvarItem }) {
         <span class="bolsistas__item-nome" title={nome}>
           {nome}
         </span>
-        <span class="bolsistas__item-usado">
-          {dinheiro(item.valor_usado, { centavos: false })}/mês
-          {editado && <span class="bolsistas__item-editado">editado</span>}
-        </span>
-        {item.nota && (
-          <span
-            class="bolsistas__item-nota"
-            title={item.nota}
-            aria-label={`Nota: ${item.nota}`}
-          >
-            <StickyNote size={15} strokeWidth={1.75} aria-hidden="true" />
+        <span class="bolsistas__item-valor">
+          <span class="bolsistas__item-usado">
+            {dinheiro(item.valor_usado, { centavos: false })}/mês
+            {editado && <span class="bolsistas__item-editado">editado</span>}
           </span>
-        )}
+          {item.nota && (
+            <span
+              class="bolsistas__item-nota"
+              title={item.nota}
+              aria-label={`Nota: ${item.nota}`}
+            >
+              <StickyNote size={15} strokeWidth={1.75} aria-hidden="true" />
+            </span>
+          )}
+        </span>
         <div class="bolsistas__item-acoes">
           <Botao
             variante="fantasma"
@@ -396,7 +398,11 @@ export function Bolsistas({ usuarioId = null }) {
       setSt((anterior) => ({ carregando: false, dados: anterior.dados, erro: res.erro }));
       return false;
     }
-    setSt({ carregando: false, dados: res.dados, erro: null });
+    const dados = {
+      ...res.dados,
+      bolsistas: res.dados.bolsistas.map((p) => ({ ...p, nome: nomeProprio(p.nome) })),
+    };
+    setSt({ carregando: false, dados, erro: null });
     return true;
   };
 

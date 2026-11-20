@@ -70,7 +70,8 @@ function bolsa(id, projectId, valor, status = 'active', vigente = true, fim = '2
 const BOLSISTAS = [
   {
     holder_id: 'h-ana',
-    nome: 'Ana Teste',
+    // Vem em caixa alta, como em parte do cadastro real: a tela mostra padronizado.
+    nome: 'ANA TESTE',
     equipe: 'pastagem',
     valor_vigente: 4000,
     bolsas: [bolsa('s-ana', 'c1', 4000), bolsa('s-ana-2', 'c2', 1200)],
@@ -579,6 +580,13 @@ describe('página Bolsistas — layout e orientação', () => {
     expect(blocoCss('.bolsistas__bolsa')).toMatch(/white-space\s*:\s*nowrap/);
   });
 
+  it('a pessoa na caixa fica numa grade fixa (nome e valor | ações), igual para nome comprido', () => {
+    const regraLinha = blocoCss('.bolsistas__item-linha');
+    expect(regraLinha).toMatch(/display\s*:\s*grid/);
+    expect(regraLinha).toMatch(/grid-template-areas\s*:\s*'nome acoes'\s*'valor acoes'/);
+    expect(regraLinha).not.toMatch(/flex-wrap/);
+  });
+
   it('o filtro não fica fixo no topo ao rolar a lista', () => {
     expect(css).not.toMatch(/\.bolsistas__filtros\s*\{[^}]*position\s*:\s*sticky/);
   });
@@ -591,6 +599,9 @@ describe('página Bolsistas — layout e orientação', () => {
       '[data-caixa-id="k1"] .bolsistas__item[data-holder-id="h-ana"] .bolsistas__item-nome'
     );
     expect(nome.textContent).toBe('Ana Teste');
+    expect(document.querySelector('[data-holder-id="h-ana"] .bolsistas__pessoa-nome').textContent).toBe(
+      'Ana Teste'
+    );
     const regraNome = blocoCss('.bolsistas__item-nome');
     expect(regraNome).toMatch(/overflow-wrap\s*:\s*anywhere/);
     expect(regraNome).toMatch(/white-space\s*:\s*normal/);

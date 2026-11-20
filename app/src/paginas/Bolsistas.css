@@ -462,16 +462,31 @@ fieldset.bolsistas__filtro > .bolsistas__filtro-titulo {
   border-top: 0;
 }
 
+/* Grade fixa, igual para todas as pessoas da caixa: o nome em cima (quebra dentro da própria coluna),
+   o valor logo abaixo dele e as ações à direita, ocupando as duas linhas. Nome comprido não empurra
+   o valor nem os botões para outro lugar. */
 .bolsistas__item-linha {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'nome acoes'
+    'valor acoes';
   align-items: center;
-  gap: var(--esp-2);
+  column-gap: var(--esp-2);
+  row-gap: 0;
+  min-width: 0;
+}
+
+.bolsistas__item-valor {
+  grid-area: valor;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esp-1);
   min-width: 0;
 }
 
 .bolsistas__item-nome {
-  flex: 1 0 8rem;
+  grid-area: nome;
   min-width: 0;
   color: var(--cor-texto);
   font-weight: var(--fw-medio);
@@ -504,6 +519,7 @@ fieldset.bolsistas__filtro > .bolsistas__filtro-titulo {
 }
 
 .bolsistas__item-acoes {
+  grid-area: acoes;
   display: flex;
   flex-shrink: 0;
   gap: var(--esp-1);
@@ -665,18 +681,6 @@ fieldset.bolsistas__filtro > .bolsistas__filtro-titulo {
     align-self: flex-start;
   }
 
-  .bolsistas__item-linha {
-    flex-wrap: wrap;
-  }
-
-  .bolsistas__item-nome {
-    flex-basis: 100%;
-    white-space: normal;
-  }
-
-  .bolsistas__item-acoes {
-    margin-left: auto;
-  }
 }
 
 .bolsistas__caixas-equipes {

@@ -5,6 +5,7 @@ import {
   dinheiro,
   dinheiroCompacto,
   iniciaisUsuario,
+  nomeProprio,
 } from '../src/util/formato.js';
 
 describe('dinheiro', () => {
@@ -90,5 +91,21 @@ describe('iniciaisUsuario', () => {
     expect(iniciaisUsuario('maria.silva@ufg.br')).toBe('MS');
     expect(iniciaisUsuario('lapig')).toBe('LA');
     expect(iniciaisUsuario('')).toBe('?');
+  });
+});
+
+describe('nomeProprio', () => {
+  it('padroniza caixa alta e caixa baixa, com partículas minúsculas', () => {
+    expect(nomeProprio('BOLSISTA AGUIAR DOS SANTOS')).toBe('Bolsista Aguiar dos Santos');
+    expect(nomeProprio('bolsista de souza e silva')).toBe('Bolsista de Souza e Silva');
+    expect(nomeProprio('  ÉRICA   DA  ÁGUA ')).toBe('Érica da Água');
+  });
+  it('sobe a letra depois de hífen e apóstrofo, e a partícula no começo', () => {
+    expect(nomeProprio("ANA-LUÍSA D'ÁVILA")).toBe("Ana-Luísa D'Ávila");
+    expect(nomeProprio('DA COSTA')).toBe('Da Costa');
+  });
+  it('vazio continua vazio', () => {
+    expect(nomeProprio(null)).toBe('');
+    expect(nomeProprio('')).toBe('');
   });
 });
