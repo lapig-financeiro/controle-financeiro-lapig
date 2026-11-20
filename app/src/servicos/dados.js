@@ -1173,3 +1173,157 @@ export async function arquivoDeOrigem(documento) {
     return { dados: null, erro: 'Não foi possível baixar o arquivo de origem.' };
   }
 }
+
+const PAPEIS_ACESSO = new Set(['admin', 'professor', 'agente', 'automacao']);
+const PAPEIS_EDITAVEIS = new Set(['admin', 'professor', 'agente']);
+
+function validarUsuarioAcesso(u) {
+  return (
+    ehObjetoSimples(u) &&
+    typeof u.user_id === 'string' &&
+    u.user_id.trim().length > 0 &&
+    typeof u.nome === 'string' &&
+    u.nome.trim().length > 0 &&
+    typeof u.email === 'string' &&
+    PAPEIS_ACESSO.has(u.role) &&
+    (u.criado_em === null || u.criado_em === undefined || typeof u.criado_em === 'string') &&
+    Array.isArray(u.centros) &&
+    u.centros.every((id) => typeof id === 'string' && id.trim().length > 0)
+  );
+}
+
+function validarCentroAcesso(c) {
+  return (
+    ehObjetoSimples(c) &&
+    typeof c.id === 'string' &&
+    c.id.trim().length > 0 &&
+    typeof c.code === 'string' &&
+    c.code.trim().length > 0 &&
+    typeof c.name === 'string' &&
+    c.name.trim().length > 0 &&
+    typeof c.active === 'boolean'
+  );
+}
+
+export function validarAcessosUsuarios(d) {
+  return (
+    ehObjetoSimples(d) &&
+    Array.isArray(d.usuarios) &&
+    d.usuarios.every(validarUsuarioAcesso) &&
+    Array.isArray(d.centros) &&
+    d.centros.every(validarCentroAcesso)
+  );
+}
+
+function nomeUsuarioAcesso(usuario) {
+  if (typeof usuario?.display_name === 'string' && usuario.display_name.trim()) {
+    return usuario.display_name.trim();
+  }
+  const email = typeof usuario?.email === 'string' ? usuario.email.trim() : '';
+  if (email.includes('@')) {
+    const local = email.split('@')[0].trim();
+    if (local) return local;
+  }
+  if (email) return email;
+  return '—';
+}
+
+export async function acessosUsuarios() {
+  const mensagem = 'Não foi possível carregar os acessos.';
+  const opcoes = { validar: validarAcessosUsuarios };
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(() => ex.modulo.acessosUsuarios(), mensagem, opcoes);
+  }
+
+  try {
+    const [usersRes, upRes, projRes] = await Promise.all([
+      supabase.from('app_users').select('user_id, role, display_name, email, created_at'),
+      supabase.from('user_projects').select('user_id, project_id'),
+      supabase.from('projects').select('id, code, name, active').order('code'),
+    ]);
+
+    if (usersRes?.error || upRes?.error || projRes?.error) {
+      return { dados: null, erro: mensagem };
+    }
+    if (!Array.isArray(usersRes?.data) || !Array.isArray(upRes?.data) || !Array.isArray(projRes?.data)) {
+      return { dados: null, erro: mensagem };
+    }
+
+    const porUsuario = new Map();
+    for (const rel of upRes.data) {
+      if (!rel || typeof rel.user_id !== 'string' || typeof rel.project_id !== 'string') continue;
+      if (!porUsuario.has(rel.user_id)) porUsuario.set(rel.user_id, new Set());
+      porUsuario.get(rel.user_id).add(rel.project_id);
+    }
+
+    const usuarios = usersRes.data.map((u) => ({
+      user_id: u.user_id,
+      nome: nomeUsuarioAcesso(u),
+      email: typeof u.email === 'string' ? u.email : '',
+      role: u.role,
+      criado_em: u.created_at ?? null,
+      centros: Array.from(porUsuario.get(u.user_id) || []),
+    }));
+
+    const centros = projRes.data.map((c) => ({
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      active: c.active !== false,
+    }));
+
+    return validarPayload({ usuarios, centros }, mensagem, opcoes);
+  } catch {
+    return { dados: null, erro: mensagem };
+  }
+}
+
+export async function salvarAcessos(userId, role, projectIds) {
+  if (typeof userId !== 'string' || !userId.trim()) {
+    return { dados: null, erro: 'Usuário não informado.' };
+  }
+  if (!PAPEIS_EDITAVEIS.has(role)) {
+    return { dados: null, erro: 'Papel inválido.' };
+  }
+  if (
+    !Array.isArray(projectIds) ||
+    !projectIds.every((id) => typeof id === 'string' && id.trim().length > 0)
+  ) {
+    return { dados: null, erro: 'Centros de custo inválidos.' };
+  }
+
+  const ex = await carregarExemplo();
+  if (ex) {
+    if (ex.erro) return { dados: null, erro: ex.erro };
+    try {
+      const res = await ex.modulo.salvarAcessos(userId, role, projectIds);
+      if (res?.erro) return { dados: null, erro: res.erro };
+      return { dados: res?.dados ?? { ok: true }, erro: null };
+    } catch {
+      return { dados: null, erro: 'Não foi possível salvar os acessos.' };
+    }
+  }
+
+  try {
+    const { error } = await supabase.rpc('save_user_assignments', {
+      p_user_id: userId,
+      p_role: role,
+      p_project_ids: projectIds,
+    });
+
+    if (error) {
+      if (String(error.code || '') === '42501') {
+        return { dados: null, erro: 'Sem permissão' };
+      }
+      const msg = typeof error.message === 'string' ? error.message.trim() : '';
+      return { dados: null, erro: msg || 'Não foi possível salvar os acessos.' };
+    }
+
+    return { dados: { ok: true }, erro: null };
+  } catch {
+    return { dados: null, erro: 'Não foi possível salvar os acessos.' };
+  }
+}

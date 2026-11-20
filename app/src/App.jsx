@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { AvisoFalha, BarraTopo, Esqueleto, Manutencao } from './componentes/index.js';
+import { Admin } from './paginas/Admin.jsx';
 import { Bolsistas } from './paginas/Bolsistas.jsx';
 import { Componentes } from './paginas/Componentes.jsx';
 import { EmConstrucao } from './paginas/EmConstrucao.jsx';
@@ -341,7 +342,7 @@ export function App() {
 
     if (rota.pagina === 'admin') {
       if (!papelConhecido || !isAdmin) return null;
-      return <EmConstrucao titulo="Admin" contexto="Acessos por centro de custo e saúde da leitura" />;
+      return <Admin usuarioId={usuario?.id || null} onNavegar={navegarPara} />;
     }
 
     if (rota.pagina === 'componentes' && !import.meta.env.DEV) {
