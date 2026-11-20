@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   saldoLivreMock,
+  situacaoCentroMock,
   repassesMock,
   balancetesMock,
   planosMock,
@@ -17,6 +18,7 @@ const {
   usarVigenciaDoContratoMock,
 } = vi.hoisted(() => ({
   saldoLivreMock: vi.fn(),
+  situacaoCentroMock: vi.fn(),
   repassesMock: vi.fn(),
   balancetesMock: vi.fn(),
   planosMock: vi.fn(),
@@ -32,6 +34,7 @@ const {
 
 vi.mock('../src/servicos/dados.js', () => ({
   saldoLivre: saldoLivreMock,
+  situacaoCentro: situacaoCentroMock,
   repasses: repassesMock,
   balancetes: balancetesMock,
   planos: planosMock,
@@ -251,6 +254,7 @@ const TERMOS_SEM_CADASTRO = {
 };
 
 function configurarBase({ termos = TERMOS_CONFERE, resumo = RESUMO } = {}) {
+  situacaoCentroMock.mockResolvedValue({ dados: null, erro: null });
   saldoLivreMock.mockResolvedValue({
     dados: {
       has_plano: true,
@@ -333,6 +337,7 @@ afterEach(() => {
 
 beforeEach(() => {
   saldoLivreMock.mockReset();
+  situacaoCentroMock.mockReset();
   repassesMock.mockReset();
   balancetesMock.mockReset();
   planosMock.mockReset();

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   saldoLivreMock,
+  situacaoCentroMock,
   repassesMock,
   balancetesMock,
   planosMock,
@@ -17,6 +18,7 @@ const {
   usarVigenciaDoContratoMock,
 } = vi.hoisted(() => ({
   saldoLivreMock: vi.fn(),
+  situacaoCentroMock: vi.fn(),
   repassesMock: vi.fn(),
   balancetesMock: vi.fn(),
   planosMock: vi.fn(),
@@ -32,6 +34,7 @@ const {
 
 vi.mock('../src/servicos/dados.js', () => ({
   saldoLivre: saldoLivreMock,
+  situacaoCentro: situacaoCentroMock,
   repasses: repassesMock,
   balancetes: balancetesMock,
   planos: planosMock,
@@ -76,6 +79,7 @@ afterEach(() => {
 
 beforeEach(() => {
   saldoLivreMock.mockReset();
+  situacaoCentroMock.mockReset();
   repassesMock.mockReset();
   balancetesMock.mockReset();
   planosMock.mockReset();
@@ -117,6 +121,8 @@ function configurarPadrao({
   ],
   avisos = [],
 } = {}) {
+  // Sem a RPC nova (produção antes da 069), a página fica na regra de hoje.
+  situacaoCentroMock.mockResolvedValue({ dados: null, erro: null });
   saldoLivreMock.mockResolvedValue({
     dados: {
       has_plano: true,
@@ -1681,5 +1687,84 @@ describe('destaque Dinheiro em conta', () => {
     const dinheiro = document.querySelectorAll('.destaque')[1];
     expect(dinheiro.textContent).not.toContain('111.111');
     expect(dinheiro.textContent).toContain('consultando');
+  });
+
+  it('selo da rubrica usa a tarifa da RPC nova e volta à regra de hoje sem ela', async () => {
+    const grupos = [
+      {
+        grupo_code: 'a',
+        grupo_name: 'Pessoal',
+        previsto: 60000,
+        realizado: 30000,
+        compromissos: 0,
+        saldo_livre: 30000,
+        compromissos_cobertura: 'nenhuma',
+      },
+      {
+        grupo_code: 'b',
+        grupo_name: 'Serviços de Terceiros P. Jurídica',
+        previsto: 0,
+        realizado: 14.34,
+        compromissos: 0,
+        saldo_livre: -14.34,
+        compromissos_cobertura: 'nenhuma',
+      },
+    ];
+    configurarPadrao({ grupos });
+    situacaoCentroMock.mockResolvedValue({
+      dados: {
+        situacao: 'atenção',
+        motivos: [
+          {
+            codigo: 'tarifa_bancaria',
+            nivel: 'atenção',
+            texto:
+              'Rubrica b — Serviços de Terceiros P. Jurídica: R$ 14,34 de tarifa bancária sem previsão no plano.',
+            grupo_code: 'b',
+            valor: 14.34,
+          },
+        ],
+      },
+      erro: null,
+    });
+
+    const montar = async (resumo) => {
+      render(
+        <Projeto projectId="p-1" hoje="2026-11-18" resumoCentro={resumo} />,
+        document.body
+      );
+      await tick();
+      await tick();
+    };
+    const linhaServicos = () =>
+      Array.from(document.querySelectorAll('.tabela__linha')).find((tr) =>
+        tr.textContent.includes('Serviços de Terceiros P. Jurídica')
+      );
+
+    await montar({ ...resumoCentro, livre: 29985.66, situacao: 'atenção' });
+
+    const linha = linhaServicos();
+    expect(linha).toBeTruthy();
+    const selo = linha.querySelector('.situacao');
+    expect(selo.textContent).toContain('atenção');
+    expect(selo.getAttribute('tabindex')).toBe('0');
+    const idBalao = selo.getAttribute('aria-describedby');
+    expect(idBalao).toBeTruthy();
+    const balao = document.getElementById(idBalao);
+    expect(balao.textContent).toContain('tarifa bancária');
+
+    render(null, document.body);
+    document.body.innerHTML = '';
+
+    // Sem a RPC nova, o selo continua como hoje: grupo negativo = problema,
+    // sem balão.
+    situacaoCentroMock.mockResolvedValue({ dados: null, erro: null });
+    await montar({ ...resumoCentro, livre: -14.34, situacao: 'problema' });
+
+    const seloAntigo = linhaServicos().querySelector('.situacao');
+    expect(seloAntigo.textContent).toContain('problema');
+    expect(seloAntigo.hasAttribute('aria-describedby')).toBe(false);
+    expect(seloAntigo.hasAttribute('tabindex')).toBe(false);
+    expect(document.querySelector('.situacao__balao')).toBeNull();
   });
 });

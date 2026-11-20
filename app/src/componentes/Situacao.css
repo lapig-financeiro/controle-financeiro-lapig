@@ -31,3 +31,76 @@
 .situacao--neutro {
   color: var(--cor-texto-3);
 }
+
+.situacao--com-motivos {
+  position: relative;
+  z-index: var(--z-base);
+  cursor: help;
+}
+
+.situacao--com-motivos:focus-visible {
+  outline: none;
+  border-radius: var(--raio-1);
+  box-shadow: var(--anel-foco);
+}
+
+/* Balão montado no body com posição fixa: não é cortado pela lista
+   (overflow: hidden) nem pela tabela; o topo/esquerda vêm do JSX. */
+.situacao__balao {
+  position: fixed;
+  top: var(--balao-top);
+  left: var(--balao-left);
+  z-index: var(--z-painel);
+  display: none;
+  width: var(--balao-width);
+  max-width: calc(100vw - var(--esp-4));
+  box-sizing: border-box;
+  flex-direction: column;
+  gap: var(--esp-2);
+  padding: var(--esp-3);
+  color: var(--cor-texto);
+  background-color: var(--cor-superficie);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+  box-shadow: var(--sombra-sobreposta);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.situacao__balao[data-aberto='true'] {
+  display: flex;
+}
+
+.situacao__balao--acima {
+  transform: translateY(-100%);
+}
+
+.situacao__balao-linha {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--esp-2);
+}
+
+.situacao__balao-ponto {
+  width: var(--ponto);
+  height: var(--ponto);
+  flex-shrink: 0;
+  margin-top: calc((var(--lh-2) - var(--ponto)) / 2);
+  border-radius: var(--raio-circulo);
+  background-color: currentColor;
+}
+
+.situacao__balao-ponto--problema {
+  color: var(--cor-problema);
+}
+
+.situacao__balao-ponto--atencao {
+  color: var(--cor-atencao);
+}
+
+.situacao__balao-ponto--info {
+  color: var(--cor-texto-3);
+}

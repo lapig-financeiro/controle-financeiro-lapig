@@ -1,7 +1,49 @@
 import { supabase } from './supabase.js';
+import { parseValorBR } from '../util/moeda.js';
 
 export function modoExemploAtivo(env = import.meta.env) {
   return Boolean(env?.DEV && env?.VITE_DADOS === 'exemplo');
+}
+
+const NIVEIS_MOTIVO = ['problema', 'atenção', 'atencao', 'info'];
+
+function ehMotivoValido(motivo) {
+  if (!motivo || typeof motivo !== 'object' || Array.isArray(motivo)) return false;
+  if (typeof motivo.codigo !== 'string' || motivo.codigo.trim() === '') return false;
+  if (!NIVEIS_MOTIVO.includes(String(motivo.nivel || '').trim().toLowerCase())) return false;
+  if (typeof motivo.texto !== 'string' || motivo.texto.trim() === '') return false;
+  return true;
+}
+
+/**
+ * Os motivos dos selos chegam da 069. Antes dela, a produção ainda não
+ * manda a chave: ausente é aceito como lista vazia para o site não
+ * quebrar entre o deploy e a aplicação da migração.
+ */
+export function validarMotivos(motivos, { ausenteOk = true } = {}) {
+  if (motivos === undefined || motivos === null) return ausenteOk;
+  if (!Array.isArray(motivos)) return false;
+  return motivos.every(ehMotivoValido);
+}
+
+export function validarResumoProjetos(d) {
+  return Boolean(
+    d &&
+      typeof d === 'object' &&
+      Array.isArray(d.centros) &&
+      Array.isArray(d.todos) &&
+      d.centros.every((centro) => Boolean(centro) && validarMotivos(centro.motivos))
+  );
+}
+
+export function validarSituacaoCentro(d) {
+  return Boolean(
+    d &&
+      typeof d === 'object' &&
+      typeof d.situacao === 'string' &&
+      d.situacao.trim() !== '' &&
+      validarMotivos(d.motivos, { ausenteOk: false })
+  );
 }
 
 let exemploPromise = null;
@@ -89,8 +131,7 @@ async function chamarRpc(nome, params, mensagemErro, opcoes = {}) {
 
 export async function resumoProjetos() {
   const opcoes = {
-    validar: (d) =>
-      Boolean(d && typeof d === 'object' && Array.isArray(d.centros) && Array.isArray(d.todos)),
+    validar: validarResumoProjetos,
   };
   const ex = await carregarExemplo();
   if (ex) {
@@ -108,6 +149,49 @@ export async function resumoProjetos() {
     'Não foi possível carregar os centros de custo.',
     opcoes
   );
+}
+
+/**
+ * Situação e motivos de um centro pela RPC da 069. Se a RPC ainda não
+ * existir (produção antes da migração), devolve `{ dados: null }` sem
+ * erro e a página usa a regra de hoje.
+ */
+export async function situacaoCentro(projectId) {
+  if (typeof projectId !== 'string' || !projectId.trim()) {
+    return { dados: null, erro: 'Centro é obrigatório.' };
+  }
+  const mensagem = 'Não foi possível carregar a situação do centro.';
+  const ex = await carregarExemplo();
+  if (ex) {
+    return ex.erro
+      ? { dados: null, erro: ex.erro }
+      : responderExemplo(
+          () => ex.modulo.situacaoCentro(projectId),
+          mensagem,
+          { validar: validarSituacaoCentro }
+        );
+  }
+  try {
+    const { data, error } = await supabase.rpc('situacao_centro_v2', {
+      p_project_id: projectId,
+    });
+    if (error) {
+      const codigo = String(error.code || '');
+      if (codigo === '42883' || codigo === 'PGRST202') {
+        return { dados: null, erro: null };
+      }
+      return { dados: null, erro: mensagemDaRpc(error) || mensagem };
+    }
+    if (data === null || data === undefined) {
+      return { dados: null, erro: null };
+    }
+    if (!validarSituacaoCentro(data)) {
+      return { dados: null, erro: mensagem };
+    }
+    return { dados: data, erro: null };
+  } catch {
+    return { dados: null, erro: mensagem };
+  }
 }
 
 export async function pendencias(projectId = null) {
@@ -559,10 +643,20 @@ export async function editarItemCaixa(caixaId, holderId, valorMensal = null, not
   if (typeof caixaId !== 'string' || !caixaId.trim() || typeof holderId !== 'string' || !holderId.trim()) {
     return { dados: null, erro: 'Caixa e pessoa são obrigatórias.' };
   }
-  const valorBruto =
-    valorMensal === null || valorMensal === undefined || valorMensal === ''
-      ? null
-      : Number(valorMensal);
+  let valorBruto = null;
+  if (valorMensal !== null && valorMensal !== undefined) {
+    if (typeof valorMensal === 'string') {
+      const texto = valorMensal.trim();
+      if (texto !== '') {
+        valorBruto = parseValorBR(texto);
+        if (valorBruto === null) {
+          return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+        }
+      }
+    } else {
+      valorBruto = Number(valorMensal);
+    }
+  }
   let valor = null;
   if (valorBruto !== null) {
     if (!Number.isFinite(valorBruto)) {

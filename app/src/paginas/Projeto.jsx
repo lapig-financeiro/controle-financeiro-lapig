@@ -29,6 +29,7 @@ import {
   repasses,
   resolverPendencia,
   saldoLivre,
+  situacaoCentro,
   termosContrato,
   usarVigenciaDoContrato,
 } from '../servicos/dados.js';
@@ -186,10 +187,13 @@ function somarGrupos(grupos) {
   return { soma: totalCentavos / 100, somaCentavos: totalCentavos, invalida: false };
 }
 
-function situacaoGrupo(grupo, hasBalancete, defasagemMeses) {
+export function situacaoGrupo(grupo, hasBalancete, defasagemMeses, motivos = null) {
   if (!hasBalancete) return 'sem balancete';
   const livre = numeroFinito(grupo?.saldo_livre);
   if (livre === null) return 'sem dado';
+  const lista = Array.isArray(motivos) ? motivos : [];
+  const tarifa = lista.some((motivo) => motivo?.codigo === 'tarifa_bancaria');
+  if (livre < 0 && tarifa) return 'atenção';
   if (livre < 0) return 'problema';
   const defasagem = numeroFinito(defasagemMeses);
   if (defasagem !== null && defasagem >= 2) {
@@ -344,6 +348,7 @@ export function Projeto({
 }) {
   const [abaAtiva, setAbaAtiva] = useState(abaInicial || 'dinheiro');
   const [saldoSt, setSaldoSt] = useState({ carregando: true, dados: null, erro: null });
+  const [situacaoSt, setSituacaoSt] = useState({ carregando: true, dados: null, erro: null });
   const [repassesSt, setRepassesSt] = useState({ carregando: true, dados: null, erro: null });
   const [docsSt, setDocsSt] = useState(() => docsVazios(null));
   const [pendenciasSt, setPendenciasSt] = useState({ carregando: true, dados: [], erro: null });
@@ -383,6 +388,7 @@ export function Projeto({
   const rolarParaDocumentosRef = useRef(false);
 
   const genSaldoRef = useRef(0);
+  const genSituacaoRef = useRef(0);
   const genRepassesRef = useRef(0);
   const genDocsRef = useRef(0);
   const genPendenciasRef = useRef(0);
@@ -413,6 +419,7 @@ export function Projeto({
     setErroMostrarCentro(null);
     setSalvandoPendenciaId(null);
     setTermosSt({ carregando: true, dados: null, erro: null });
+    setSituacaoSt({ carregando: true, dados: null, erro: null });
     setPainelContrato(false);
     setSalvandoTermoId(null);
     setErroTermo(null);
@@ -460,6 +467,24 @@ export function Projeto({
       return;
     }
     setSaldoSt({ carregando: false, dados: res.dados, erro: res.erro });
+  }, [projectId]);
+
+  const carregarSituacao = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genSituacaoRef.current;
+    setSituacaoSt({ carregando: true, dados: null, erro: null });
+    let res;
+    try {
+      res = await situacaoCentro(id);
+    } catch {
+      res = { dados: null, erro: null };
+    }
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genSituacaoRef.current) {
+      return;
+    }
+    // Sem dado (RPC ainda não aplicada ou falha) a página fica com a
+    // regra de hoje; o selo não inventa motivo.
+    setSituacaoSt({ carregando: false, dados: res?.dados || null, erro: res?.erro || null });
   }, [projectId]);
 
   const carregarRepasses = useCallback(async () => {
@@ -558,6 +583,7 @@ export function Projeto({
 
   useEffect(() => {
     const saldoRef = genSaldoRef;
+    const situacaoRef = genSituacaoRef;
     const repassesRef = genRepassesRef;
     const docsRef = genDocsRef;
     const pendenciasRef = genPendenciasRef;
@@ -569,6 +595,7 @@ export function Projeto({
     if (!projectId || centroOculto) {
       return () => {
         saldoRef.current += 1;
+        situacaoRef.current += 1;
         repassesRef.current += 1;
         docsRef.current += 1;
         pendenciasRef.current += 1;
@@ -580,6 +607,7 @@ export function Projeto({
     }
 
     carregarSaldo();
+    carregarSituacao();
     carregarRepasses();
     carregarDocumentos();
     carregarPendencias();
@@ -587,6 +615,7 @@ export function Projeto({
 
     return () => {
       saldoRef.current += 1;
+      situacaoRef.current += 1;
       repassesRef.current += 1;
       docsRef.current += 1;
       pendenciasRef.current += 1;
@@ -595,7 +624,7 @@ export function Projeto({
       docAbaRef.current += 1;
       termosRef.current += 1;
     };
-  }, [projectId, centroOculto, carregarSaldo, carregarRepasses, carregarDocumentos, carregarPendencias, carregarTermos]);
+  }, [projectId, centroOculto, carregarSaldo, carregarSituacao, carregarRepasses, carregarDocumentos, carregarPendencias, carregarTermos]);
 
   const voltarProps = {
     rotulo: 'Projetos',
@@ -886,6 +915,7 @@ export function Projeto({
     setConfirmacaoContrato(false);
     await carregarTermos();
     await carregarSaldo();
+    await carregarSituacao();
     await carregarExplicar();
     if (onRecarregarResumo) {
       try {
@@ -895,6 +925,19 @@ export function Projeto({
       }
     }
   };
+
+  // Selo do topo: a RPC nova manda situação e motivos; sem ela, fica a
+  // regra de hoje (resumo_projetos_v2).
+  const situacaoDados = situacaoSt.dados;
+  const situacaoTopo = situacaoDados?.situacao || resumoCentro?.situacao || 'sem dado';
+  const motivosTopo = situacaoDados
+    ? situacaoDados.motivos
+    : (Array.isArray(resumoCentro?.motivos) ? resumoCentro.motivos : null);
+  const temSituacaoTopo = Boolean(situacaoDados || resumoCentro);
+  const motivosDoGrupo = (grupoCode) =>
+    Array.isArray(motivosTopo)
+      ? motivosTopo.filter((motivo) => motivo?.grupo_code === grupoCode)
+      : [];
 
   // Destaque principal: sempre o `livre` do resumo (nunca recalculado).
   let valorPrincipal = (
@@ -940,7 +983,7 @@ export function Projeto({
       <Valor
         valor={resumoCentro.livre}
         centavos={false}
-        problema={resumoCentro.situacao === 'problema'}
+        problema={situacaoTopo === 'problema'}
         origem={{ resumo: 'Ver origem deste valor' }}
         onOrigem={abrirPainelRaiz}
       />
@@ -948,7 +991,7 @@ export function Projeto({
       <Valor
         valor={resumoCentro.livre}
         centavos={false}
-        problema={resumoCentro.situacao === 'problema'}
+        problema={situacaoTopo === 'problema'}
         semOrigem="Saldo livre sem detalhamento disponível"
       />
     );
@@ -1451,7 +1494,12 @@ export function Projeto({
     {
       chave: 'situacao',
       titulo: 'Situação',
-      render: (g) => <Situacao estado={situacaoGrupo(g, hasBalancete, defasagemMeses)} />,
+      render: (g) => (
+        <Situacao
+          estado={situacaoGrupo(g, hasBalancete, defasagemMeses, motivosDoGrupo(g.grupo_code))}
+          motivos={motivosDoGrupo(g.grupo_code)}
+        />
+      ),
     },
   ];
 
@@ -2147,11 +2195,16 @@ export function Projeto({
         titulo={tituloPagina}
         contexto={contextoPagina}
         acoes={
-          driveUrl ? (
-            <Botao variante="secundario" icone={ExternalLink} href={driveUrl} externo>
-              Pasta no Drive
-            </Botao>
-          ) : null
+          <>
+            {temSituacaoTopo && (
+              <Situacao estado={situacaoTopo} motivos={motivosTopo} />
+            )}
+            {driveUrl ? (
+              <Botao variante="secundario" icone={ExternalLink} href={driveUrl} externo>
+                Pasta no Drive
+              </Botao>
+            ) : null}
+          </>
         }
       />
 

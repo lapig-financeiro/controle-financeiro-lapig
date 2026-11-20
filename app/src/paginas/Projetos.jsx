@@ -230,7 +230,11 @@ export function Projetos({
                       />
                     )}
                   </span>
-                  <Situacao estado={situacao} className="projetos__situacao" />
+                  <Situacao
+                    estado={situacao}
+                    motivos={centro.motivos}
+                    className="projetos__situacao"
+                  />
                 </LinhaDeLista>
               );
             })}

@@ -1,3 +1,5 @@
+import { parseValorBR } from '../util/moeda.js';
+
 export const SENTINELA_EXEMPLO = '__EXEMPLO_CF__';
 
 const IDS = {
@@ -9,6 +11,7 @@ const IDS = {
   estacoes: '00000000-0000-4000-8000-000000030906',
   corredor: '00000000-0000-4000-8000-000000030907',
   solos: '00000000-0000-4000-8000-000000030908',
+  tarifa: '00000000-0000-4000-8000-000000030909',
 };
 
 const CENTROS_BASE = [
@@ -35,6 +38,23 @@ const CENTROS_BASE = [
     data_referencia: '2026-08-15',
     erro: null,
     responsaveis: ['Prof. Renato Alves', 'Profa. Clara Mendes'],
+    motivos: [
+      {
+        codigo: 'balancete_atrasado',
+        nivel: 'atenção',
+        texto: 'O último balancete cobre até 08/2026 (3 meses atrás).',
+        grupo_code: null,
+        valor: null,
+      },
+      {
+        codigo: 'pendencias_abertas',
+        nivel: 'atenção',
+        texto:
+          '2 pendências abertas: Conta 7.1.3.99 sem rubrica no balancete de ago/26; Aditivo sem data de evento informada',
+        grupo_code: null,
+        valor: null,
+      },
+    ],
   },
   {
     id: IDS.nascentes,
@@ -47,6 +67,23 @@ const CENTROS_BASE = [
     data_referencia: '2026-10-20',
     erro: null,
     responsaveis: ['Prof. Renato Alves'],
+    motivos: [
+      {
+        codigo: 'saldo_negativo',
+        nivel: 'problema',
+        texto:
+          'Rubrica f — Equipamentos e material permanente: gasto R$ 4.250,00 acima do previsto.',
+        grupo_code: 'f',
+        valor: 4250,
+      },
+      {
+        codigo: 'pendencias_abertas',
+        nivel: 'atenção',
+        texto: '1 pendência aberta: Equipamentos acima do previsto exige remanejamento',
+        grupo_code: null,
+        valor: null,
+      },
+    ],
   },
   {
     id: IDS.veredas,
@@ -59,6 +96,15 @@ const CENTROS_BASE = [
     data_referencia: null,
     erro: null,
     responsaveis: ['Profa. Beatriz Cunha'],
+    motivos: [
+      {
+        codigo: 'sem_balancete',
+        nivel: 'info',
+        texto: 'Este centro não tem balancete importado: falta o realizado por rubrica.',
+        grupo_code: null,
+        valor: null,
+      },
+    ],
   },
   {
     id: IDS.florestal,
@@ -71,6 +117,15 @@ const CENTROS_BASE = [
     data_referencia: '2026-10-10',
     erro: null,
     responsaveis: [],
+    motivos: [
+      {
+        codigo: 'sem_plano',
+        nivel: 'info',
+        texto: 'Este centro não tem plano de trabalho ativo: falta o previsto por rubrica.',
+        grupo_code: null,
+        valor: null,
+      },
+    ],
   },
   {
     id: IDS.estacoes,
@@ -83,6 +138,15 @@ const CENTROS_BASE = [
     data_referencia: null,
     erro: 'falha_saldo_livre',
     responsaveis: ['Profa. Beatriz Cunha'],
+    motivos: [
+      {
+        codigo: 'falha',
+        nivel: 'info',
+        texto: 'Não foi possível calcular o saldo deste centro.',
+        grupo_code: null,
+        valor: null,
+      },
+    ],
   },
   {
     id: IDS.corredor,
@@ -91,10 +155,20 @@ const CENTROS_BASE = [
     end_date: '2027-11-30',
     drive_folder_url: 'https://drive.google.com/drive/folders/exemplo-30907',
     livre: 42000,
-    situacao: 'em dia',
+    situacao: 'atenção',
     data_referencia: '2026-10-18',
     erro: null,
     responsaveis: ['Profa. Clara Mendes'],
+    motivos: [
+      {
+        codigo: 'pendencias_abertas',
+        nivel: 'atenção',
+        texto:
+          '1 pendência aberta: Planilha de novembro encerraria duas bolsas antes do previsto',
+        grupo_code: null,
+        valor: null,
+      },
+    ],
   },
   {
     id: IDS.solos,
@@ -107,6 +181,28 @@ const CENTROS_BASE = [
     data_referencia: '2026-10-22',
     erro: null,
     responsaveis: ['Prof. Renato Alves'],
+  },
+  {
+    id: IDS.tarifa,
+    code: '30.909',
+    name: 'Bacia Experimental do Rio Claro',
+    end_date: '2027-10-31',
+    drive_folder_url: null,
+    livre: 29985.66,
+    situacao: 'atenção',
+    data_referencia: '2026-10-25',
+    erro: null,
+    responsaveis: ['Prof. Renato Alves'],
+    motivos: [
+      {
+        codigo: 'tarifa_bancaria',
+        nivel: 'atenção',
+        texto:
+          'Rubrica b — Serviços de Terceiros P. Jurídica: R$ 14,34 de tarifa bancária sem previsão no plano. É cobrança comum da FUNAPE; vale prever no próximo remanejamento.',
+        grupo_code: 'b',
+        valor: 14.34,
+      },
+    ],
   },
 ];
 
@@ -650,6 +746,65 @@ const SALDOS_EXEMPLO = {
     avisos: [],
     nota: 'Dados sintéticos de demonstração.',
   },
+  [IDS.tarifa]: {
+    has_plano: true,
+    has_balancete: true,
+    project_id: IDS.tarifa,
+    project_name: 'Bacia Experimental do Rio Claro',
+    end_date: '2027-10-31',
+    meses_restantes: 11,
+    data_referencia: '2026-10-25',
+    balancete_cobre_ate: '2026-10-01',
+    balancete_defasagem_meses: 1,
+    saldo_disponivel_caixa: 40000,
+    rendimento_liquido: 500,
+    compromissos_bolsas: 0,
+    bolsas_ativas: [],
+    grupos: [
+      {
+        grupo_code: 'a',
+        grupo_name: 'Pessoal',
+        previsto: 60000,
+        realizado: 30000,
+        saldo: 30000,
+        compromissos: 0,
+        saldo_livre: 30000,
+        compromissos_cobertura: 'nenhuma',
+      },
+      {
+        grupo_code: 'b',
+        grupo_name: 'Serviços de Terceiros P. Jurídica',
+        previsto: 0,
+        realizado: 14.34,
+        saldo: -14.34,
+        compromissos: 0,
+        saldo_livre: -14.34,
+        compromissos_cobertura: 'nenhuma',
+      },
+    ],
+    rubricas: [
+      {
+        rubrica_code: 'a.bolsas',
+        rubrica_name: 'Bolsas de pesquisa',
+        grupo_code: 'a',
+        previsto: 60000,
+        realizado: 30000,
+        compromissos: 0,
+        saldo_livre: 30000,
+      },
+      {
+        rubrica_code: 'b.servicos',
+        rubrica_name: 'Serviços de terceiros',
+        grupo_code: 'b',
+        previsto: 0,
+        realizado: 14.34,
+        compromissos: 0,
+        saldo_livre: -14.34,
+      },
+    ],
+    avisos: [],
+    nota: 'Dados sintéticos de demonstração.',
+  },
 };
 
 const REPASSES_EXEMPLO = {
@@ -720,6 +875,14 @@ const REPASSES_EXEMPLO = {
     valor_total_plano: 90000,
     data_balancete: '2026-10-22',
     recursos: { recebido: 90000, a_receber: 0 },
+  },
+  [IDS.tarifa]: {
+    parcelas: [
+      { parcela: 1, data_prevista: '2026-05-01', data_texto: null, valor: 60000, valor_texto: null },
+    ],
+    valor_total_plano: 60000,
+    data_balancete: '2026-10-25',
+    recursos: { recebido: 30000, a_receber: 0 },
   },
 };
 
@@ -792,6 +955,16 @@ const BALANCETES_EXEMPLO = {
       created_at: '2026-10-23T10:00:00Z',
     },
   ],
+  [IDS.tarifa]: [
+    {
+      id: '00000000-0000-4000-8000-000000090901',
+      data_referencia: '2026-10-25',
+      arquivo_nome: 'balancete-30909-out-26.pdf',
+      saldo_disponivel: 40000,
+      rendimento_liquido: 500,
+      created_at: '2026-10-26T10:00:00Z',
+    },
+  ],
 };
 
 const PLANOS_EXEMPLO = {
@@ -856,6 +1029,19 @@ const PLANOS_EXEMPLO = {
       valor_total_plano: 405000,
       arquivo_nome: 'plano-trabalho-30904.docx',
       created_at: '2026-07-02T09:00:00Z',
+    },
+  ],
+  [IDS.tarifa]: [
+    {
+      id: '00000000-0000-4000-8000-000000080901',
+      versao: 1,
+      tipo: 'original',
+      data_documento: '2026-01-10',
+      ativo: true,
+      titulo: 'Plano de trabalho vigente',
+      valor_total_plano: 60000,
+      arquivo_nome: 'plano-trabalho-30909.docx',
+      created_at: '2026-01-11T09:00:00Z',
     },
   ],
 };
@@ -1115,6 +1301,7 @@ export async function resumoProjetos() {
     .map((c) => ({
       ...c,
       responsaveis: [...c.responsaveis],
+      motivos: structuredClone(c.motivos || []),
       pendencias_abertas: contarPendenciasAbertas(c.id),
     }));
 
@@ -1123,6 +1310,20 @@ export async function resumoProjetos() {
       centros,
       ocultos: todos.filter((c) => c.oculto).length,
       todos,
+    },
+    erro: null,
+  };
+}
+
+export async function situacaoCentro(projectId) {
+  const centro = CENTROS_BASE.find((c) => c.id === projectId);
+  if (!centro) {
+    return { dados: null, erro: 'Centro de custo não encontrado.' };
+  }
+  return {
+    dados: {
+      situacao: centro.situacao,
+      motivos: structuredClone(centro.motivos || []),
     },
     erro: null,
   };
@@ -1707,9 +1908,20 @@ export async function editarItemCaixa(caixaId, holderId, valorMensal = null, not
   const item = caixa.itens.find((i) => i.holder_id === holderId);
   if (!item) return { dados: null, erro: 'Pessoa não está nesta caixa.' };
 
-  const valor = valorMensal === null || valorMensal === undefined
-    ? null
-    : Number(valorMensal);
+  let valor = null;
+  if (valorMensal !== null && valorMensal !== undefined) {
+    if (typeof valorMensal === 'string') {
+      const texto = valorMensal.trim();
+      if (texto !== '') {
+        valor = parseValorBR(texto);
+        if (valor === null) {
+          return { dados: null, erro: 'O valor no pedido deve ser um número positivo.' };
+        }
+      }
+    } else {
+      valor = Number(valorMensal);
+    }
+  }
   if (valor !== null) {
     const arredondado = Math.round(valor * 100) / 100;
     if (!Number.isFinite(arredondado) || arredondado <= 0) {
@@ -2450,6 +2662,77 @@ export const ARVORES_EXEMPLO = {
             conta: 'soma dos lançamentos',
             sinal: -1,
             partes: [noFolha({ rotulo: '7.1.3.03.03.04020 — PASSAGENS', valor: 58500, tipo: 'legado', chave: 'linha:bl-908-1' })],
+          }),
+        ],
+      }),
+    ],
+  }),
+  [IDS.tarifa]: noCalculo({
+    rotulo: 'Livre para gastar',
+    valor: 29985.66,
+    chave: 'livre',
+    conta: 'soma dos grupos',
+    partes: [
+      noCalculo({
+        rotulo: 'Pessoal',
+        valor: 30000,
+        chave: 'grupo:a',
+        conta: 'previsto − realizado',
+        nota: 'compromissos fora de bolsas não são rastreados',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Bolsas de pesquisa',
+            valor: 60000,
+            chave: 'rubrica:a.bolsas:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({
+                rotulo: 'Bolsas de pesquisa',
+                valor: 60000,
+                tipo: 'legado',
+                chave: 'linha:pr-909-a1',
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Bolsas de pesquisa',
+            valor: 30000,
+            chave: 'rubrica:a.bolsas:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: '7.1.3.04.01.09142 — BOLSA DOACAO PESQUISA',
+                valor: 30000,
+                tipo: 'legado',
+                chave: 'linha:bl-909-1',
+              }),
+            ],
+          }),
+        ],
+      }),
+      noCalculo({
+        rotulo: 'Serviços de Terceiros P. Jurídica',
+        valor: -14.34,
+        chave: 'grupo:b',
+        conta: 'previsto − realizado',
+        nota: 'compromissos fora de bolsas não são rastreados',
+        partes: [
+          noCalculo({
+            rotulo: 'Realizado — Serviços de terceiros',
+            valor: 14.34,
+            chave: 'rubrica:b.servicos:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: '7.1.3.05.01.00054 — DESPESA SERVIÇOS BANCÁRIOS',
+                valor: 14.34,
+                tipo: 'legado',
+                chave: 'linha:bl-909-2',
+              }),
+            ],
           }),
         ],
       }),

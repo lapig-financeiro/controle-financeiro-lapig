@@ -441,7 +441,7 @@ describe('página Bolsistas — caixas e ações', () => {
     );
   });
 
-  it('tira quem saiu da lista pela RPC de limpar e recarrega', async () => {
+  it('tira quem saiu da lista em dois passos e só chama a RPC no "Sim, tirar"', async () => {
     const comOcultos = dados();
     comOcultos.caixas[0].itens_ocultos = 1;
     pedidoBolsasMock.mockResolvedValueOnce({ dados: comOcultos, erro: null });
@@ -451,6 +451,19 @@ describe('página Bolsistas — caixas e ações', () => {
     const aviso = document.querySelector('.bolsistas__caixa-ocultos');
     expect(aviso.textContent).toContain('1 pessoa saiu da lista');
     botaoPorTexto(aviso, 'Tirar quem saiu da lista').click();
+    await tick();
+
+    expect(limparOcultosDaCaixaMock).not.toHaveBeenCalled();
+    expect(aviso.textContent).toContain(
+      'Isso tira 1 pessoa da caixa e apaga o valor e a nota ajustados dela.'
+    );
+    botaoPorTexto(aviso, 'Cancelar').click();
+    await tick();
+    expect(limparOcultosDaCaixaMock).not.toHaveBeenCalled();
+
+    botaoPorTexto(aviso, 'Tirar quem saiu da lista').click();
+    await tick();
+    botaoPorTexto(document.querySelector('.bolsistas__caixa-ocultos'), 'Sim, tirar').click();
     await tick();
 
     expect(limparOcultosDaCaixaMock).toHaveBeenCalledWith('k1');

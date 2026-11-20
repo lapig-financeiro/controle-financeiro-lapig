@@ -122,6 +122,7 @@ function CaixaPedido({
   const [nome, setNome] = useState(caixa.nome);
   const [meses, setMeses] = useState(String(caixa.meses));
   const [confirmando, setConfirmando] = useState(false);
+  const [confirmandoLimpar, setConfirmandoLimpar] = useState(false);
 
   useEffect(() => {
     setNome(caixa.nome);
@@ -197,14 +198,47 @@ function CaixaPedido({
             {caixa.itens_ocultos === 1 ? 'pessoa saiu da lista' : 'pessoas saíram da lista'} e não
             entra{caixa.itens_ocultos === 1 ? '' : 'm'} nesta conta.
           </span>
-          <Botao
-            variante="fantasma"
-            tamanho="compacto"
-            onClick={() => onLimparOcultos(caixa.id)}
-            desabilitado={emAcao}
-          >
-            Tirar quem saiu da lista
-          </Botao>
+          {!confirmandoLimpar ? (
+            <Botao
+              variante="fantasma"
+              tamanho="compacto"
+              onClick={() => setConfirmandoLimpar(true)}
+              desabilitado={emAcao}
+            >
+              Tirar quem saiu da lista
+            </Botao>
+          ) : (
+            <div
+              class="bolsistas__confirmacao"
+              role="group"
+              aria-label="Confirmar remoção de quem saiu da lista"
+            >
+              <span>
+                {caixa.itens_ocultos === 1
+                  ? 'Isso tira 1 pessoa da caixa e apaga o valor e a nota ajustados dela.'
+                  : `Isso tira ${caixa.itens_ocultos} pessoas da caixa e apaga o valor e a nota ajustados delas.`}
+              </span>
+              <Botao
+                variante="secundario"
+                tamanho="compacto"
+                onClick={() => {
+                  setConfirmandoLimpar(false);
+                  onLimparOcultos(caixa.id);
+                }}
+                desabilitado={emAcao}
+              >
+                Sim, tirar
+              </Botao>
+              <Botao
+                variante="fantasma"
+                tamanho="compacto"
+                onClick={() => setConfirmandoLimpar(false)}
+                desabilitado={emAcao}
+              >
+                Cancelar
+              </Botao>
+            </div>
+          )}
         </div>
       )}
 
