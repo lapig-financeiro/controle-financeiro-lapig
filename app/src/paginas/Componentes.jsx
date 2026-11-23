@@ -12,6 +12,7 @@ import {
   Destaque,
   Documento,
   Esqueleto,
+  GraficoProjecao,
   GradeDestaques,
   LinhaDeLista,
   Lista,
@@ -30,6 +31,25 @@ import {
 } from '../componentes/index.js';
 import { dinheiroCompacto } from '../util/formato.js';
 import './Componentes.css';
+
+// Dados fictícios do catálogo: nenhum valor ou nome vem de centro real.
+const MESES_PROJECAO_CATALOGO = [
+  { mes: '2026-08', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 88000, em_conta_fim: 88000, orcamento_resta: 168000 },
+  { mes: '2026-09', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 76000, em_conta_fim: 76000, orcamento_resta: 156000 },
+  { mes: '2026-10', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 64000, em_conta_fim: 64000, orcamento_resta: 144000 },
+  { mes: '2026-11', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 52000, em_conta_fim: 52000, orcamento_resta: 132000 },
+  { mes: '2026-12', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 40000, em_conta_fim: 40000, orcamento_resta: 120000 },
+  {
+    mes: '2027-01',
+    folha: 12000,
+    entra_antes: 0,
+    entra_depois: 34000,
+    desembolsos: [{ parcela: 3, liquido: 34000 }],
+    em_conta_apos_folha: -8000,
+    em_conta_fim: 26000,
+    orcamento_resta: 108000,
+  },
+];
 
 function criarPdfMinimoCatalogo() {
   const comandos = [
@@ -719,7 +739,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
             contexto="6 bolsistas ativos"
           />
           <Destaque
-            rotulo="Repasses"
+            rotulo="Desembolsos"
             valor="3 de 4"
             contexto="próximo em jan/27"
           />
@@ -887,6 +907,13 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
             />
           </Cartao>
         </div>
+
+        <Cartao
+          titulo="Projeção das bolsas"
+          subtitulo="Duas barras por mês: dinheiro em conta depois da folha e orçamento de Bolsas que resta. Dados fictícios."
+        >
+          <GraficoProjecao meses={MESES_PROJECAO_CATALOGO} mesFalta="2027-01" />
+        </Cartao>
 
         <Cartao titulo="Avisos, estado vazio e tabela vazia">
           <AvisoFalha

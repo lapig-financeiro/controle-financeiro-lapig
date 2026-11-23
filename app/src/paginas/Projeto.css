@@ -265,3 +265,113 @@ button.projeto__link-documento:focus-visible {
   padding-top: var(--esp-2);
   border-top: var(--borda);
 }
+
+.projeto__resposta-bolsas {
+  display: block;
+  margin-top: var(--esp-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
+.projeto__resposta-bolsas--atencao {
+  color: var(--cor-atencao);
+}
+
+.projeto__resposta-bolsas .valor {
+  color: var(--cor-texto);
+  font-weight: var(--fw-semi);
+}
+
+.projeto__cabe-ate {
+  white-space: nowrap;
+}
+
+.projeto__cabe-ate--vazio {
+  color: var(--cor-texto-3);
+}
+
+.projeto__cabe-ate-painel {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
+.projeto__projecao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  margin-top: var(--esp-2);
+  padding-top: var(--esp-5);
+  border-top: var(--borda);
+}
+
+.projeto__projecao:focus-visible {
+  outline: none;
+  box-shadow: var(--anel-foco);
+  border-radius: var(--raio-1);
+}
+
+.projeto__projecao-cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--esp-2);
+}
+
+.projeto__projecao-titulo {
+  font-size: var(--fs-3);
+  line-height: var(--lh-3);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}
+
+.projeto__projecao-frase {
+  font-size: var(--fs-3);
+  line-height: var(--lh-3);
+  color: var(--cor-texto);
+}
+
+.projeto__contar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-2);
+}
+
+.projeto__projecao-motivo {
+  color: var(--cor-texto-2);
+}
+
+.projeto__projecao-detalhes summary {
+  padding: var(--esp-2) 0;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+  cursor: pointer;
+}
+
+.projeto__projecao-detalhes summary:focus-visible {
+  outline: none;
+  box-shadow: var(--anel-foco);
+  border-radius: var(--raio-1);
+}
+
+.projeto__projecao-regras {
+  margin: 0;
+  padding-left: var(--esp-5);
+  color: var(--cor-texto-2);
+}
+
+.projeto__projecao-regras li {
+  margin-bottom: var(--esp-1);
+}
+
+.projeto__projecao-subtitulo {
+  margin-top: var(--esp-3);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}

@@ -1,0 +1,138 @@
+.grafico-projecao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+  min-width: 0;
+}
+
+.grafico-projecao__legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-4);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-2);
+}
+
+.grafico-projecao__legenda-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esp-1);
+}
+
+.grafico-projecao__amostra {
+  display: inline-block;
+  width: var(--esp-3);
+  height: var(--esp-3);
+  border-radius: var(--raio-1);
+  flex-shrink: 0;
+}
+
+.grafico-projecao__amostra--conta {
+  background-color: var(--grafico-1);
+}
+
+.grafico-projecao__amostra--falta {
+  background-color: var(--cor-problema);
+}
+
+.grafico-projecao__amostra--orcamento {
+  background-color: var(--grafico-2);
+  border: 1px solid var(--grafico-1);
+}
+
+.grafico-projecao__amostra--desembolso {
+  height: 0;
+  border-top: 1px dashed var(--grafico-3);
+  border-radius: 0;
+  background: none;
+}
+
+.grafico-projecao__rolagem {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.grafico-projecao__svg {
+  display: block;
+  font-family: var(--fonte-sans);
+}
+
+.grafico-projecao__grade {
+  stroke: var(--cor-borda);
+  stroke-width: 1;
+}
+
+.grafico-projecao__eixo {
+  fill: var(--cor-texto-3);
+}
+
+.grafico-projecao__mes {
+  fill: var(--cor-texto-2);
+}
+
+.grafico-projecao__mes--falta {
+  fill: var(--cor-problema);
+  font-weight: var(--fw-semi);
+}
+
+.grafico-projecao__faixa-falta {
+  fill: var(--cor-problema-suave);
+}
+
+.grafico-projecao__barra-conta {
+  fill: var(--grafico-1);
+}
+
+.grafico-projecao__barra-conta--negativa {
+  fill: var(--cor-problema);
+}
+
+.grafico-projecao__barra-orcamento {
+  fill: var(--grafico-2);
+  stroke: var(--grafico-1);
+  stroke-width: 1.5;
+}
+
+.grafico-projecao__desembolso {
+  stroke: var(--grafico-3);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.grafico-projecao__rotulo-desembolso {
+  fill: var(--grafico-3);
+}
+
+.grafico-projecao__detalhes summary {
+  padding: var(--esp-2) 0;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+  cursor: pointer;
+}
+
+.grafico-projecao__detalhes summary:focus-visible {
+  outline: none;
+  box-shadow: var(--anel-foco);
+  border-radius: var(--raio-1);
+}
+
+.grafico-projecao__tabela {
+  margin-top: var(--esp-2);
+}
+
+.grafico-projecao__mes-tabela--falta {
+  color: var(--cor-problema);
+  font-weight: var(--fw-semi);
+}
+
+.grafico-projecao__vazio {
+  color: var(--cor-texto-3);
+}
+
+@media (max-width: 640px) {
+  .grafico-projecao__legenda {
+    gap: var(--esp-2);
+  }
+}

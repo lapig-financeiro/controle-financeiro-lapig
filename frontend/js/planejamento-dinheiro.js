@@ -25,7 +25,7 @@
 const r2 = x => Number(Number(x).toFixed(2));
 const mesDe = d => (d ? String(d).slice(0, 7) : null);
 // Data só de mês ("Novembro/2026", gravada como dia 1º com o texto em data_texto) vence no fim do mês.
-function vencimento(p) {
+export function vencimento(p) {
   if (!p.data_prevista) return null;
   if (!p.data_texto) return p.data_prevista;
   const [y, m] = p.data_prevista.split('-').map(Number);

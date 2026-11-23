@@ -590,9 +590,9 @@ describe('página do Projeto', () => {
     expect(destaques[2].textContent).toContain('—');
     expect(destaques[2].textContent).toContain('valor incompleto');
 
-    // Parcela 2 é parcial (150k recebido para 100k + 100k): "1 parcela parcial" tem prioridade sobre "próximo em fev/27".
+    // Desembolso 2 é parcial (150k recebido para 100k + 100k): "1 desembolso parcial" tem prioridade sobre "próximo em fev/27".
     expect(destaques[3].textContent).toContain('1 de 3');
-    expect(destaques[3].textContent).toContain('1 parcela parcial');
+    expect(destaques[3].textContent).toContain('1 desembolso parcial');
     expect(destaques[3].textContent).not.toContain('próximo em fev/27');
 
     // Aba Dinheiro: grupo com saldo_livre null quando has_balancete=true mostra situação e título "sem dado".

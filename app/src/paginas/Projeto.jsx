@@ -7,10 +7,12 @@ import {
   Botao,
   CabecalhoPagina,
   Cartao,
+  Chip,
   DeOndeVem,
   Destaque,
   Documento,
   Esqueleto,
+  GraficoProjecao,
   GradeDestaques,
   PainelLateral,
   Situacao,
@@ -33,6 +35,7 @@ import {
   termosContrato,
   usarVigenciaDoContrato,
 } from '../servicos/dados.js';
+import { projetarBolsas } from '../servicos/projecao.js';
 import {
   dataCompacta,
   dataCompleta,
@@ -233,7 +236,7 @@ function situacaoCentroAntiga(resumo, grupos, hasBalancete, defasagemMeses) {
 function resumirRepasses(repassesDados, hasPlano, hoje) {
   if (!repassesDados) {
     return {
-      valor: <Valor valor={null} motivoSemDado="indisponível" semOrigem="Parcelas do cronograma" />,
+      valor: <Valor valor={null} motivoSemDado="indisponível" semOrigem="Desembolsos do cronograma" />,
       contexto: 'indisponível',
     };
   }
@@ -264,7 +267,7 @@ function resumirRepasses(repassesDados, hasPlano, hoje) {
   if (calc.itens.length === 0) {
     const motivo = hasPlano === false ? 'sem plano' : 'sem cronograma';
     return {
-      valor: <Valor valor={null} motivoSemDado={motivo} semOrigem="Parcelas do cronograma" />,
+      valor: <Valor valor={null} motivoSemDado={motivo} semOrigem="Desembolsos do cronograma" />,
       contexto: motivo,
     };
   }
@@ -274,7 +277,7 @@ function resumirRepasses(repassesDados, hasPlano, hoje) {
       ? 'sem dados de recurso'
       : 'sem balancete';
     return {
-      valor: <Valor valor={null} motivoSemDado={motivo} semOrigem="Parcelas do cronograma" />,
+      valor: <Valor valor={null} motivoSemDado={motivo} semOrigem="Desembolsos do cronograma" />,
       contexto: motivo,
     };
   }
@@ -307,19 +310,19 @@ function resumirRepasses(repassesDados, hasPlano, hoje) {
 
   let contexto;
   if (atrasadas > 0) {
-    contexto = atrasadas === 1 ? '1 parcela atrasada' : `${atrasadas} parcelas atrasadas`;
+    contexto = atrasadas === 1 ? '1 desembolso atrasado' : `${atrasadas} desembolsos atrasados`;
   } else if (parciais > 0) {
-    contexto = parciais === 1 ? '1 parcela parcial' : `${parciais} parcelas parciais`;
+    contexto = parciais === 1 ? '1 desembolso parcial' : `${parciais} desembolsos parciais`;
   } else if (notasEmitidas > 0) {
     contexto = notasEmitidas === 1 ? '1 nota emitida' : `${notasEmitidas} notas emitidas`;
   } else if (aConfirmar > 0) {
-    contexto = aConfirmar === 1 ? '1 parcela a confirmar' : `${aConfirmar} parcelas a confirmar`;
+    contexto = aConfirmar === 1 ? '1 desembolso a confirmar' : `${aConfirmar} desembolsos a confirmar`;
   } else if (semData > 0) {
-    contexto = semData === 1 ? '1 parcela sem data' : `${semData} parcelas sem data`;
+    contexto = semData === 1 ? '1 desembolso sem data' : `${semData} desembolsos sem data`;
   } else if (proximaFutura) {
     contexto = `próximo em ${dataCompacta(proximaFutura.mes)}`;
   } else if (recebidas === total) {
-    contexto = 'todas recebidas';
+    contexto = 'todos recebidos';
   } else {
     contexto = 'cronograma em dia';
   }
@@ -342,6 +345,120 @@ function resumirDetalhePendencia(detalhe) {
     pares.push({ rotulo: 'Competência', valor: dataCompacta(detalhe.competencia) });
   }
   return pares;
+}
+
+function mesSeguinteProjecao(mes) {
+  const [ano, m] = mes.split('-').map(Number);
+  const total = ano * 12 + (m - 1) + 1;
+  const novoAno = Math.floor(total / 12);
+  const novoMes = total - novoAno * 12 + 1;
+  return `${novoAno}-${String(novoMes).padStart(2, '0')}`;
+}
+
+/**
+ * A resposta curta que aparece no cartão "Bolsas por mês", na coluna
+ * "Cabe até" e no painel. `data` é o último mês que cabe; sem data,
+ * `motivo` explica por que a conta não fecha.
+ */
+function respostaDaProjecao(projecao) {
+  if (!projecao) return null;
+
+  if (projecao.estado === 'sem_bolsas' || projecao.estado === 'dado_incompleto') {
+    return {
+      data: null,
+      motivo: projecao.motivo || 'sem conta',
+      texto: projecao.motivo || 'sem conta',
+      atencao: projecao.estado === 'dado_incompleto',
+    };
+  }
+
+  if (projecao.estado === 'sem_balancete' || projecao.estado === 'repoe_gasto') {
+    const motivo =
+      projecao.estado === 'sem_balancete'
+        ? 'sem balancete: só o orçamento de Bolsas'
+        : 'o plano repõe o gasto: só o orçamento de Bolsas';
+    return {
+      data: projecao.cabe_ate,
+      motivo,
+      texto: projecao.cabe_ate
+        ? `Cabem até ${dataCompacta(projecao.cabe_ate)} · ${motivo}`
+        : motivo,
+      atencao: !projecao.ate_o_fim,
+    };
+  }
+
+  if (projecao.ate_o_fim) {
+    const motivo = 'fim das bolsas cadastradas';
+    return {
+      data: projecao.cabe_ate,
+      motivo,
+      texto: `Cabem até ${dataCompacta(projecao.cabe_ate)} · ${motivo}`,
+      atencao: false,
+    };
+  }
+
+  if (projecao.limite === 'orcamento' && projecao.cabe_ate) {
+    const motivo = `acaba o orçamento de Bolsas em ${dataCompacta(mesSeguinteProjecao(projecao.cabe_ate))}`;
+    return {
+      data: projecao.cabe_ate,
+      motivo,
+      texto: `Cabem até ${dataCompacta(projecao.cabe_ate)} · ${motivo}`,
+      atencao: true,
+    };
+  }
+
+  if (projecao.mes_falta) {
+    const motivo = projecao.depende_de
+      ? `${dataCompacta(projecao.mes_falta)} depende do desembolso ${projecao.depende_de.parcela}`
+      : `falta dinheiro em conta em ${dataCompacta(projecao.mes_falta)}`;
+    return {
+      data: projecao.cabe_ate,
+      motivo,
+      texto: projecao.cabe_ate
+        ? `Cabem até ${dataCompacta(projecao.cabe_ate)} · ${motivo}`
+        : motivo,
+      atencao: true,
+    };
+  }
+
+  return {
+    data: projecao.cabe_ate,
+    motivo: projecao.motivo || '',
+    texto: projecao.motivo || '',
+    atencao: false,
+  };
+}
+
+function fraseDaProjecao(projecao) {
+  if (!projecao || projecao.estado !== 'ok') return '';
+
+  if (projecao.ate_o_fim) {
+    const linhaApertada = projecao.meses.find(
+      (linha) => linha.mes === projecao.mes_mais_apertado
+    );
+    const aperto =
+      linhaApertada && Number.isFinite(linhaApertada.em_conta_apos_folha)
+        ? ` O mês mais apertado é ${dataCompacta(linhaApertada.mes)}, com ${dinheiro(linhaApertada.em_conta_apos_folha, { centavos: false })} em conta depois da folha.`
+        : '';
+    const sobra =
+      Number.isFinite(projecao.sobra_orcamento) && projecao.sobra_orcamento > 0
+        ? ` Sobram ${dinheiro(projecao.sobra_orcamento, { centavos: false })} na rubrica de Bolsas.`
+        : '';
+    return `As bolsas cadastradas cabem até ${dataCompacta(projecao.cabe_ate)}.${aperto}${sobra}`;
+  }
+
+  if (projecao.limite === 'orcamento') {
+    const limite = mesSeguinteProjecao(projecao.cabe_ate);
+    const linha = projecao.meses.find((item) => item.mes === limite);
+    const falta = linha ? Math.max(0, -linha.orcamento_resta) : null;
+    return `O orçamento de Bolsas paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(limite)} faltam ${dinheiro(falta, { centavos: false })} na rubrica de Bolsas.`;
+  }
+
+  const ultimoMes = projecao.meses[projecao.meses.length - 1]?.mes;
+  if (projecao.depende_de) {
+    return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07; o desembolso ${projecao.depende_de.parcela} entra depois da folha e, com ele, a conta segue até ${dataCompacta(ultimoMes)}.`;
+  }
+  return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07 e a conta não se recupera dentro das bolsas cadastradas.`;
 }
 
 function validarUrlDrive(url) {
@@ -386,6 +503,11 @@ export function Projeto({
   const [erroTermo, setErroTermo] = useState(null);
   const [confirmacaoContrato, setConfirmacaoContrato] = useState(false);
   const [usandoVigencia, setUsandoVigencia] = useState(false);
+  const [contarProjecao, setContarProjecao] = useState({
+    futuro: true,
+    atrasado: false,
+    rendimento: false,
+  });
 
   const [painelOrigem, setPainelOrigem] = useState(null);
   const [explicarSt, setExplicarSt] = useState({
@@ -414,6 +536,8 @@ export function Projeto({
   abaAtivaRef.current = abaAtiva;
   const docsBlocoRef = useRef(null);
   const rolarParaDocumentosRef = useRef(false);
+  const projecaoSecaoRef = useRef(null);
+  const rolarParaProjecaoRef = useRef(false);
 
   const genSaldoRef = useRef(0);
   const genSituacaoRef = useRef(0);
@@ -442,6 +566,8 @@ export function Projeto({
     setDocAbaSt({ carregandoId: null, erro: null, nota: null, refPendente: null, doc: null });
     setDocsSt(docsVazios(projectId));
     rolarParaDocumentosRef.current = false;
+    rolarParaProjecaoRef.current = false;
+    setContarProjecao({ futuro: true, atrasado: false, rendimento: false });
     setConfirmacao(null);
     setErroResolucao(null);
     setErroMostrarCentro(null);
@@ -460,6 +586,15 @@ export function Projeto({
     rolarParaDocumentosRef.current = false;
     docsBlocoRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
   }, [abaAtiva]);
+
+  useEffect(() => {
+    if (abaAtiva !== 'dinheiro' || !rolarParaProjecaoRef.current) return;
+    const secao = projecaoSecaoRef.current;
+    if (!secao) return;
+    rolarParaProjecaoRef.current = false;
+    secao.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    secao.focus?.({ preventScroll: true });
+  }, [abaAtiva, saldoSt.carregando, repassesSt.carregando]);
 
   const carregarExplicar = useCallback(async () => {
     const id = projectId;
@@ -1110,18 +1245,77 @@ export function Projeto({
   const resumoRep = repassesSt.carregando
     ? {
         valor: (
-          <Valor valor={null} motivoSemDado="consultando" semOrigem="Parcelas do cronograma" />
+          <Valor valor={null} motivoSemDado="consultando" semOrigem="Desembolsos do cronograma" />
         ),
         contexto: 'consultando',
       }
     : repassesSt.erro
       ? {
           valor: (
-            <Valor valor={null} motivoSemDado={repassesSt.erro} semOrigem="Parcelas do cronograma" />
+            <Valor valor={null} motivoSemDado={repassesSt.erro} semOrigem="Desembolsos do cronograma" />
           ),
           contexto: 'indisponível',
         }
       : resumirRepasses(repassesSt.dados, hasPlano, hoje);
+
+  // Projeção das bolsas: a mesma conta alimenta o cartão, a coluna
+  // "Cabe até" e a seção da aba Dinheiro. Nunca é chamada com leitura
+  // falha; sem uma das pontas, não há data para mostrar.
+  const projetar =
+    hasPlano && saldoSt.dados && repassesSt.dados
+      ? projetarBolsas({
+          saldo: saldoSt.dados,
+          repasses: repassesSt.dados,
+          hoje,
+          contar: contarProjecao,
+        })
+      : null;
+  const secaoProjecaoDisponivel = Boolean(
+    hasPlano &&
+      saldoSt.dados &&
+      !saldoSt.carregando &&
+      !saldoSt.erro &&
+      !repassesSt.carregando &&
+      !repassesSt.erro
+  );
+  const respostaProjecao = secaoProjecaoDisponivel
+    ? respostaDaProjecao(projetar)
+    : null;
+  const gruposComBolsas = new Set(
+    rubricas
+      .filter((rubrica) => rubrica?.compromisso_tipo === 'bolsas')
+      .map((rubrica) => rubrica.grupo_code)
+  );
+  const previstoTotalProjecao = rubricas.reduce(
+    (soma, rubrica) => soma + (numeroFinito(rubrica?.previsto) ?? 0),
+    0
+  );
+  const previstoTaxaProjecao = rubricas
+    .filter((rubrica) => rubrica?.compromisso_tipo === 'taxa')
+    .reduce((soma, rubrica) => soma + (numeroFinito(rubrica?.previsto) ?? 0), 0);
+  const folhaMaximaProjecao =
+    projetar && projetar.meses.length > 0
+      ? Math.max(...projetar.meses.map((linha) => linha.folha))
+      : null;
+  const folhasVariamProjecao = Boolean(
+    projetar && new Set(projetar.meses.map((linha) => linha.folha)).size > 1
+  );
+
+  const respostaBolsasNode = respostaProjecao ? (
+    <span
+      class={`projeto__resposta-bolsas${respostaProjecao.atencao ? ' projeto__resposta-bolsas--atencao' : ''}`}
+    >
+      {respostaProjecao.data ? (
+        <>
+          Cabem até <Valor valor={`${respostaProjecao.data}-01`} tipo="data" /> ·{' '}
+          {respostaProjecao.motivo}
+        </>
+      ) : (
+        respostaProjecao.motivo
+      )}
+    </span>
+  ) : null;
+  const fraseProjecao = projetar?.estado === 'ok' ? fraseDaProjecao(projetar) : '';
 
   // Pendências do centro.
   const listaPendencias = [...(pendenciasSt.dados || [])].sort((a, b) => {
@@ -1155,6 +1349,22 @@ export function Projeto({
     if (onNavegar && projectId) {
       onNavegar(urlProjeto(projectId, novaAba));
     }
+  };
+
+  const irParaProjecao = () => {
+    if (!secaoProjecaoDisponivel) return;
+    if (abaAtivaRef.current === 'dinheiro') {
+      const secao = projecaoSecaoRef.current;
+      secao?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+      secao?.focus?.({ preventScroll: true });
+      return;
+    }
+    rolarParaProjecaoRef.current = true;
+    selecionarAba('dinheiro');
+  };
+
+  const alternarContar = (chave) => {
+    setContarProjecao((anterior) => ({ ...anterior, [chave]: !anterior[chave] }));
   };
 
   const irParaDocumentos = () => {
@@ -1520,6 +1730,18 @@ export function Projeto({
       ),
     },
     {
+      chave: 'cabe_ate',
+      titulo: 'Cabe até',
+      render: (g) =>
+        gruposComBolsas.has(g.grupo_code) && respostaProjecao?.data ? (
+          <span class="projeto__cabe-ate" title={respostaProjecao.texto}>
+            <Valor valor={`${respostaProjecao.data}-01`} tipo="data" />
+          </span>
+        ) : (
+          <span class="projeto__cabe-ate projeto__cabe-ate--vazio">—</span>
+        ),
+    },
+    {
       chave: 'situacao',
       titulo: 'Situação',
       render: (g) => (
@@ -1564,6 +1786,133 @@ export function Projeto({
             rotuloLinha={(g) => `Abrir detalhe de ${g.grupo_name}`}
             legenda="Execução por grupo de rubrica"
           />
+
+          {secaoProjecaoDisponivel && projetar && (
+            <section
+              class="projeto__projecao"
+              ref={projecaoSecaoRef}
+              tabIndex={-1}
+              aria-labelledby="projecao-titulo"
+            >
+              <div class="projeto__projecao-cabecalho">
+                <h3 id="projecao-titulo" class="projeto__projecao-titulo">
+                  Até quando as bolsas cabem
+                </h3>
+                {projetar.meses.length > 0 && (
+                  <span class="projeto__nota-discreta">
+                    folha de {folhasVariamProjecao ? 'até ' : ''}
+                    {dinheiro(folhaMaximaProjecao, { centavos: false })} todo dia 07 · bolsas
+                    cadastradas até{' '}
+                    {dataCompacta(projetar.meses[projetar.meses.length - 1].mes)}
+                  </span>
+                )}
+              </div>
+
+              {fraseProjecao && (
+                <p class="projeto__projecao-frase texto-corrido">{fraseProjecao}</p>
+              )}
+
+              <div class="projeto__contar" role="group" aria-label="O que entra na conta">
+                <span class="projeto__nota-discreta">Contar:</span>
+                <Chip
+                  ativo={contarProjecao.futuro}
+                  onClick={() => alternarContar('futuro')}
+                >
+                  Desembolso futuro no prazo
+                </Chip>
+                <Chip
+                  ativo={contarProjecao.atrasado}
+                  onClick={() => alternarContar('atrasado')}
+                >
+                  Desembolso atrasado
+                </Chip>
+                <Chip
+                  ativo={contarProjecao.rendimento}
+                  onClick={() => alternarContar('rendimento')}
+                >
+                  Rendimento
+                </Chip>
+              </div>
+
+              {projetar.estado === 'ok' ? (
+                <GraficoProjecao meses={projetar.meses} mesFalta={projetar.mes_falta} />
+              ) : (
+                <p class="projeto__projecao-motivo texto-corrido">
+                  {projetar.estado === 'sem_balancete' || projetar.estado === 'repoe_gasto'
+                    ? projetar.ate_o_fim
+                      ? `${projetar.motivo} O orçamento cobre os ${projetar.meses.length} meses, até ${dataCompacta(projetar.cabe_ate)}.`
+                      : `${projetar.motivo} O orçamento cobre até ${dataCompacta(projetar.cabe_ate)}.`
+                    : projetar.motivo}
+                </p>
+              )}
+
+              {projetar.atrasados.map((atrasado) => (
+                <AvisoFalha
+                  key={atrasado.parcela}
+                  className="projeto__aviso-atrasado"
+                  mensagem={`Desembolso ${atrasado.parcela} atrasado: ${dinheiro(atrasado.valor, { centavos: false })} previstos para ${atrasado.quando || 'data não informada'} não aparece no balancete${repassesSt.dados?.data_balancete ? ` de ${dataCompleta(repassesSt.dados.data_balancete)}` : ''}. ${contarProjecao.atrasado ? 'Está contado acima, no primeiro mês da conta.' : 'Não está contado acima.'}`}
+                />
+              ))}
+
+              <details class="projeto__projecao-detalhes">
+                <summary>Como a conta é feita</summary>
+                <ul class="projeto__projecao-regras">
+                  <li>
+                    Começa no dinheiro em conta do último balancete
+                    {repassesSt.dados?.data_balancete
+                      ? ` (${dataCompleta(repassesSt.dados.data_balancete)})`
+                      : ''}
+                    , sem o rendimento, a não ser que "Rendimento" esteja marcado.
+                  </li>
+                  {projetar.meses.length > 0 && (
+                    <li>
+                      Sai a folha das bolsas cadastradas todo dia 07, de{' '}
+                      {dataCompacta(projetar.meses[0].mes)} até o fim de cada bolsa.
+                    </li>
+                  )}
+                  <li>
+                    Desembolso entra no dia previsto no plano, já sem as taxas (
+                    {textoPct(Math.round(projetar.taxa_fracao * 1000))}% ={' '}
+                    {dinheiro(previstoTaxaProjecao, { centavos: false })} de{' '}
+                    {dinheiro(previstoTotalProjecao, { centavos: false })} de previsto).
+                  </li>
+                  <li>
+                    O desembolso atrasado, quando marcado, entra no primeiro mês da conta,
+                    antes da folha.
+                  </li>
+                  <li>Gasto das outras rubricas não entra: não tem data marcada.</li>
+                  <li>
+                    "Cabe até" é o primeiro destes a chegar: falta de dinheiro em conta, fim
+                    do orçamento da rubrica ou fim das bolsas cadastradas.
+                  </li>
+                </ul>
+
+                {projetar.fora.length > 0 && (
+                  <>
+                    <h4 class="projeto__projecao-subtitulo">O que não entrou</h4>
+                    <ul class="projeto__projecao-regras">
+                      {projetar.fora.map((item, indice) => (
+                        <li key={`${item.parcela}-${indice}`}>
+                          Desembolso {item.parcela}: {item.motivo}.
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {projetar.avisos.length > 0 && (
+                  <>
+                    <h4 class="projeto__projecao-subtitulo">Avisos da conta</h4>
+                    <ul class="projeto__projecao-regras">
+                      {projetar.avisos.map((aviso, indice) => (
+                        <li key={indice}>{aviso}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </details>
+            </section>
+          )}
         </>
       ),
     },
@@ -2194,6 +2543,19 @@ export function Projeto({
                     semOrigem="Comprometido da rubrica na composição reserva"
                   />
                 </span>
+                {r.compromisso_tipo === 'bolsas' && (
+                  <p class="projeto__cabe-ate-painel">
+                    {respostaProjecao?.data ? (
+                      <>
+                        Cabe até{' '}
+                        <Valor valor={`${respostaProjecao.data}-01`} tipo="data" /> ·{' '}
+                        {respostaProjecao.motivo}
+                      </>
+                    ) : (
+                      respostaProjecao?.motivo || 'Cabe até: —'
+                    )}
+                  </p>
+                )}
               </div>
             ))}
           </dl>
@@ -2244,6 +2606,10 @@ export function Projeto({
         <AvisoFalha mensagem={situacaoSt.erro} aoTentarNovamente={carregarSituacao} />
       )}
 
+      {repassesSt.erro && (
+        <AvisoFalha mensagem={repassesSt.erro} aoTentarNovamente={carregarRepasses} />
+      )}
+
       {docsDoCentro.erroBalancetes &&
         (abaAtiva !== 'documentos' || carregandoDocumentos) && (
           <AvisoFalha
@@ -2273,10 +2639,11 @@ export function Projeto({
         <Destaque
           rotulo="Bolsas por mês"
           valor={valorBolsas}
-          contexto={contextoBolsas}
+          contexto={<>{contextoBolsas}{respostaBolsasNode}</>}
+          onClick={secaoProjecaoDisponivel ? irParaProjecao : null}
         />
         <Destaque
-          rotulo="Repasses"
+          rotulo="Desembolsos"
           valor={resumoRep.valor}
           contexto={resumoRep.contexto}
         />
