@@ -48,6 +48,11 @@
   background: none;
 }
 
+.grafico-projecao__amostra--mes-falta {
+  background-color: var(--cor-problema-suave);
+  border: 1px solid var(--cor-problema);
+}
+
 .grafico-projecao__rolagem {
   overflow-x: auto;
   min-width: 0;
@@ -55,6 +60,9 @@
 
 .grafico-projecao__svg {
   display: block;
+  width: 100%;
+  height: auto;
+  min-width: var(--grafico-largura-minima);
   font-family: var(--fonte-sans);
 }
 
@@ -65,10 +73,12 @@
 
 .grafico-projecao__eixo {
   fill: var(--cor-texto-3);
+  font-size: var(--fs-1);
 }
 
 .grafico-projecao__mes {
   fill: var(--cor-texto-2);
+  font-size: var(--fs-1);
 }
 
 .grafico-projecao__mes--falta {
@@ -82,6 +92,7 @@
 
 .grafico-projecao__barra-conta {
   fill: var(--grafico-1);
+  rx: var(--raio-1);
 }
 
 .grafico-projecao__barra-conta--negativa {
@@ -92,6 +103,7 @@
   fill: var(--grafico-2);
   stroke: var(--grafico-1);
   stroke-width: 1.5;
+  rx: var(--raio-1);
 }
 
 .grafico-projecao__desembolso {
@@ -102,6 +114,8 @@
 
 .grafico-projecao__rotulo-desembolso {
   fill: var(--grafico-3);
+  font-size: var(--fs-1);
+  font-weight: var(--fw-semi);
 }
 
 .grafico-projecao__detalhes summary {

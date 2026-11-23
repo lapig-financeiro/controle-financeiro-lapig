@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projetarBolsas } from '../src/servicos/projecao.js';
+import * as dadosExemplo from '../src/servicos/dadosExemplo.js';
 
 const HOJE = '2026-11-23';
 
@@ -46,6 +47,7 @@ function cenario({
       end_date: '2027-09-30',
       data_referencia: '2026-11-17',
       compromissos_inicio: '2026-12-01',
+      compromissos_fim: '2027-09-30',
       saldo_disponivel_caixa: caixa,
       rendimento_liquido: rendimento,
       compromissos_bolsas: 500000,
@@ -108,7 +110,7 @@ describe('projetarBolsas — cenário obrigatório', () => {
     expect(projecao.mes_mais_apertado).toBe('2027-04');
     expect(projecao.sobra_orcamento).toBe(60000);
     expect(projecao.atrasados).toEqual([
-      { parcela: 3, valor: 500000, quando: '10/10/2026' },
+      { parcela: 3, valor: 500000, quando: '10/10/2026', situacao: 'atrasada' },
     ]);
     expect(projecao.fora).toEqual([]);
   });
@@ -193,11 +195,14 @@ describe('projetarBolsas — dia do vencimento e folha', () => {
   it('entra antes da folha até o dia 07, depois do dia 07 e no fim do mês quando a data é só de mês', () => {
     const { saldo, repasses } = cenario();
     saldo.compromissos_inicio = '2026-12-01';
+    saldo.compromissos_fim = '2026-12-31';
     saldo.compromissos_bolsas = 10000;
     saldo.end_date = '2026-12-31';
     saldo.saldo_disponivel_caixa = 10000;
     saldo.rendimento_liquido = 0;
-    saldo.bolsas_ativas = [{ scholarship_id: 'b-1', valor_mensal: 10000, meses: 1 }];
+    saldo.bolsas_ativas = [
+      { scholarship_id: 'b-1', valor_mensal: 10000, meses: 1, end_date: '2026-12-31' },
+    ];
     saldo.rubricas = [
       { rubrica_code: 'a.bolsas', previsto: 100000, realizado: 0, saldo: 100000, compromisso_tipo: 'bolsas' },
     ];
@@ -229,13 +234,14 @@ describe('projetarBolsas — dia do vencimento e folha', () => {
   it('a folha cai quando uma bolsa termina antes da mais longa', () => {
     const { saldo, repasses } = cenario();
     saldo.compromissos_inicio = '2026-12-01';
+    saldo.compromissos_fim = '2027-02-28';
     saldo.compromissos_bolsas = 35000;
     saldo.end_date = '2027-02-28';
     saldo.saldo_disponivel_caixa = 100000;
     saldo.rendimento_liquido = 0;
     saldo.bolsas_ativas = [
-      { scholarship_id: 'b-1', valor_mensal: 10000, meses: 3 },
-      { scholarship_id: 'b-2', valor_mensal: 5000, meses: 1 },
+      { scholarship_id: 'b-1', valor_mensal: 10000, meses: 3, end_date: '2027-02-28' },
+      { scholarship_id: 'b-2', valor_mensal: 5000, meses: 1, end_date: '2026-12-31' },
     ];
     saldo.rubricas = [
       { rubrica_code: 'a.bolsas', previsto: 100000, realizado: 0, saldo: 100000, compromisso_tipo: 'bolsas' },
@@ -299,7 +305,7 @@ describe('projetarBolsas — o que entra e o que fica de fora', () => {
     });
 
     expect(projecao.atrasados).toEqual([
-      { parcela: 1, valor: 500000, quando: '10/01/2027' },
+      { parcela: 1, valor: 500000, quando: '10/01/2027', situacao: 'nota_emitida' },
     ]);
     expect(projecao.meses.every((mes) => mes.entra_antes === 0)).toBe(true);
   });
@@ -437,5 +443,440 @@ describe('projetarBolsas — estados e avisos', () => {
 
     expect(projecao.avisos).toContain('o balancete não separa o rendimento');
     expect(projecao.meses[0].em_conta_apos_folha).toBe(200000);
+  });
+});
+
+describe('projetarBolsas — 2ª rodada', () => {
+  function cenarioDePosicionamento({ bolsas, compromissosBolsas, caixa = 100000 }) {
+    return {
+      saldo: {
+        has_plano: true,
+        has_balancete: true,
+        project_id: 'p-posicao',
+        end_date: '2027-08-31',
+        data_referencia: '2026-11-17',
+        compromissos_inicio: '2026-12-01',
+        compromissos_fim: '2027-08-31',
+        saldo_disponivel_caixa: caixa,
+        rendimento_liquido: 0,
+        compromissos_bolsas: compromissosBolsas,
+        bolsas_ativas: bolsas,
+        rubricas: [
+          {
+            rubrica_code: 'a.bolsas',
+            grupo_code: 'a',
+            previsto: 100000,
+            realizado: 0,
+            saldo: 100000,
+            compromisso_tipo: 'bolsas',
+          },
+        ],
+      },
+      repasses: {
+        parcelas: [],
+        valor_total_plano: null,
+        data_balancete: '2026-11-17',
+        recursos: { recebido: 0, a_receber: 0 },
+      },
+    };
+  }
+
+  it('posiciona a bolsa pelo fim: quem começa em mar/27 paga só mar..ago', () => {
+    const { saldo, repasses } = cenarioDePosicionamento({
+      bolsas: [
+        {
+          scholarship_id: 'b-1',
+          valor_mensal: 10000,
+          meses: 6,
+          end_date: '2027-08-31',
+        },
+      ],
+      compromissosBolsas: 60000,
+    });
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.meses.map((mes) => mes.mes)).toEqual([
+      '2026-12', '2027-01', '2027-02', '2027-03',
+      '2027-04', '2027-05', '2027-06', '2027-07', '2027-08',
+    ]);
+    expect(projecao.meses.map((mes) => mes.folha)).toEqual([
+      0, 0, 0, 10000, 10000, 10000, 10000, 10000, 10000,
+    ]);
+  });
+
+  it('posiciona a bolsa pelo fim: quem termina em fev/27 paga só dez..fev', () => {
+    const { saldo, repasses } = cenarioDePosicionamento({
+      bolsas: [
+        {
+          scholarship_id: 'b-1',
+          valor_mensal: 10000,
+          meses: 3,
+          end_date: '2027-02-28',
+        },
+        {
+          scholarship_id: 'b-2',
+          valor_mensal: 5000,
+          meses: 6,
+          end_date: '2027-08-31',
+        },
+      ],
+      compromissosBolsas: 60000,
+    });
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.meses.map((mes) => mes.folha)).toEqual([
+      10000, 10000, 10000, 5000, 5000, 5000, 5000, 5000, 5000,
+    ]);
+  });
+
+  it('dado faltando vira dado_incompleto: saldo da rubrica de bolsas nulo', () => {
+    const { saldo, repasses } = cenario();
+    saldo.rubricas.find((rubrica) => rubrica.compromisso_tipo === 'bolsas').saldo = null;
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('dado_incompleto');
+    expect(projecao.motivo).toContain('saldo');
+  });
+
+  it('dado faltando vira dado_incompleto: previsto nulo numa rubrica', () => {
+    const { saldo, repasses } = cenario();
+    saldo.rubricas.find((rubrica) => rubrica.compromisso_tipo === 'taxa').previsto = null;
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('dado_incompleto');
+    expect(projecao.motivo).toContain('previsto');
+  });
+
+  it('com orçamento de 410.000 o desembolso salva abril, mas a conta segue só até jul/27', () => {
+    const { saldo, repasses } = cenario({ orcamentoBolsas: 410000, rendimento: 0 });
+    saldo.saldo_disponivel_caixa = 220000;
+    saldo.rubricas = [
+      {
+        rubrica_code: 'a.bolsas',
+        grupo_code: 'a',
+        previsto: 410000,
+        realizado: 0,
+        saldo: 410000,
+        compromisso_tipo: 'bolsas',
+      },
+    ];
+    repasses.parcelas = [
+      {
+        parcela: 4,
+        data_prevista: '2027-04-10',
+        data_texto: null,
+        valor: 500000,
+        valor_texto: null,
+      },
+    ];
+    repasses.valor_total_plano = 500000;
+    repasses.recursos = { recebido: 0, a_receber: 0 };
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.limite).toBe('caixa');
+    expect(projecao.cabe_ate).toBe('2027-03');
+    expect(projecao.mes_falta).toBe('2027-04');
+    expect(projecao.depende_de).toEqual({ parcela: 4, mes: '2027-04' });
+    expect(projecao.meses.find((mes) => mes.mes === '2027-08').orcamento_resta).toBe(-40000);
+  });
+
+  it('desembolso futuro desligado vai para fora como "desligado em Contar"', () => {
+    const { saldo, repasses } = cenario();
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: false, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.fora).toContainEqual({
+      parcela: 4,
+      motivo: 'desligado em Contar',
+    });
+    expect(projecao.meses[4].entra_depois).toBe(0);
+  });
+
+  it('sem balancete, desembolso futuro não entra em meses e vai para fora', () => {
+    const { saldo, repasses } = cenario({ caixa: null, rendimento: null });
+    saldo.has_balancete = false;
+    repasses.recursos = null;
+    repasses.data_balancete = null;
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('sem_balancete');
+    expect(projecao.fora).toContainEqual({
+      parcela: 4,
+      motivo: 'sem balancete para receber',
+    });
+    expect(
+      projecao.meses.every(
+        (mes) => mes.entra_antes === 0 && mes.entra_depois === 0 && mes.desembolsos.length === 0
+      )
+    ).toBe(true);
+  });
+
+  it('balancete existe mas não informa o dinheiro em conta', () => {
+    const { saldo, repasses } = cenario({ caixa: null, rendimento: null });
+    saldo.has_balancete = true;
+    saldo.saldo_disponivel_caixa = null;
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('sem_balancete');
+    expect(projecao.motivo).toContain('não informa o dinheiro em conta');
+  });
+
+  it('guarda a situação de cada atrasado: confirmar', () => {
+    const { saldo, repasses } = cenario();
+    repasses.parcelas = [
+      {
+        parcela: 1,
+        data_prevista: '2026-11-20',
+        data_texto: null,
+        valor: 500000,
+        valor_texto: null,
+      },
+    ];
+    repasses.valor_total_plano = 500000;
+    repasses.recursos = { recebido: 0, a_receber: 0 };
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.atrasados).toEqual([
+      {
+        parcela: 1,
+        valor: 500000,
+        quando: '20/11/2026',
+        situacao: 'confirmar',
+      },
+    ]);
+  });
+
+  it('guarda a situação de cada atrasado: parcial só com o que falta', () => {
+    const { saldo, repasses } = cenario();
+    repasses.parcelas = [
+      {
+        parcela: 1,
+        data_prevista: '2026-01-15',
+        data_texto: null,
+        valor: 100000,
+        valor_texto: null,
+      },
+      {
+        parcela: 2,
+        data_prevista: '2026-08-15',
+        data_texto: null,
+        valor: 100000,
+        valor_texto: null,
+      },
+    ];
+    repasses.valor_total_plano = 200000;
+    repasses.recursos = { recebido: 150000, a_receber: 0 };
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.atrasados).toEqual([
+      {
+        parcela: 2,
+        valor: 50000,
+        quando: '15/08/2026',
+        situacao: 'parcial',
+      },
+    ]);
+  });
+
+  it('desembolso sem data vai para fora e não entra na conta', () => {
+    const { saldo, repasses } = cenario();
+    repasses.parcelas = [
+      {
+        parcela: 1,
+        data_prevista: null,
+        data_texto: null,
+        valor: 100000,
+        valor_texto: null,
+      },
+    ];
+    repasses.valor_total_plano = 100000;
+    repasses.recursos = { recebido: 0, a_receber: 0 };
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.fora).toContainEqual({
+      parcela: 1,
+      motivo: 'sem data prevista no plano',
+    });
+    expect(projecao.atrasados).toEqual([]);
+  });
+
+  it('empate entre caixa e orçamento no mesmo mês fica com o caixa', () => {
+    const { saldo, repasses } = cenario({
+      caixa: 250000,
+      rendimento: 0,
+      orcamentoBolsas: 250000,
+    });
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: false, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.mes_falta).toBe('2027-05');
+    expect(projecao.limite).toBe('caixa');
+    expect(projecao.cabe_ate).toBe('2027-04');
+  });
+
+  it('sem o fim da janela, com vigência inválida ou sem fim de bolsa vira dado_incompleto', () => {
+    const base = cenarioDePosicionamento({
+      bolsas: [
+        {
+          scholarship_id: 'b-1',
+          valor_mensal: 10000,
+          meses: 6,
+          end_date: '2027-08-31',
+        },
+      ],
+      compromissosBolsas: 60000,
+    });
+
+    const semFimDaJanela = structuredClone(base);
+    delete semFimDaJanela.saldo.compromissos_fim;
+    expect(
+      projetarBolsas({
+        ...semFimDaJanela,
+        hoje: HOJE,
+        contar: { futuro: true, atrasado: false, rendimento: false },
+      }).estado
+    ).toBe('dado_incompleto');
+
+    const vigenciaInvalida = structuredClone(base);
+    vigenciaInvalida.saldo.end_date = 'data-invalida';
+    expect(
+      projetarBolsas({
+        ...vigenciaInvalida,
+        hoje: HOJE,
+        contar: { futuro: true, atrasado: false, rendimento: false },
+      }).estado
+    ).toBe('dado_incompleto');
+
+    const bolsaSemFim = structuredClone(base);
+    bolsaSemFim.saldo.bolsas_ativas[0].end_date = null;
+    expect(
+      projetarBolsas({
+        ...bolsaSemFim,
+        hoje: HOJE,
+        contar: { futuro: true, atrasado: false, rendimento: false },
+      }).estado
+    ).toBe('dado_incompleto');
+  });
+});
+
+describe('projetarBolsas — modo exemplo coerente com a 066', () => {
+  it('cada centro com bolsas tem fim de janela, fim de bolsa e compromisso igual à soma', async () => {
+    const resumo = await dadosExemplo.resumoProjetos();
+    expect(resumo.erro).toBeNull();
+
+    for (const centro of resumo.dados.todos) {
+      const resposta = await dadosExemplo.saldoLivre(centro.id);
+      if (resposta.erro || !resposta.dados) continue;
+      const saldo = resposta.dados;
+      if (!Array.isArray(saldo.bolsas_ativas) || saldo.bolsas_ativas.length === 0) continue;
+
+      expect(saldo.compromissos_fim).toBe(saldo.end_date);
+      const soma = saldo.bolsas_ativas.reduce(
+        (total, bolsa) => total + bolsa.valor_mensal * bolsa.meses,
+        0
+      );
+      expect(Math.abs(soma - saldo.compromissos_bolsas)).toBeLessThanOrEqual(1);
+
+      for (const bolsa of saldo.bolsas_ativas) {
+        expect(bolsa.end_date).toBeTruthy();
+        expect(bolsa.meses).toBeGreaterThan(0);
+        expect(bolsa.end_date.slice(0, 7) >= saldo.compromissos_inicio.slice(0, 7)).toBe(true);
+        expect(bolsa.end_date.slice(0, 7) <= saldo.compromissos_fim.slice(0, 7)).toBe(true);
+      }
+    }
+  });
+
+  it('tem uma bolsa encerrada dentro da janela e uma que começa no meio', async () => {
+    const cerrado = (await dadosExemplo.saldoLivre('00000000-0000-4000-8000-000000030901'))
+      .dados;
+    const encerrada = cerrado.bolsas_ativas.find(
+      (bolsa) =>
+        bolsa.end_date < '2026-11-23' &&
+        bolsa.end_date.slice(0, 7) >= cerrado.compromissos_inicio.slice(0, 7) &&
+        bolsa.meses >= 1
+    );
+    expect(encerrada).toBeTruthy();
+
+    const corredor = (await dadosExemplo.saldoLivre('00000000-0000-4000-8000-000000030907'))
+      .dados;
+    const [anoInicio, mesInicio] = corredor.compromissos_inicio
+      .slice(0, 7)
+      .split('-')
+      .map(Number);
+    const inicioEmMeses = anoInicio * 12 + (mesInicio - 1);
+    const comecaNoMeio = corredor.bolsas_ativas.some((bolsa) => {
+      const [ano, mes] = bolsa.end_date.slice(0, 7).split('-').map(Number);
+      return ano * 12 + (mes - 1) - (bolsa.meses - 1) > inicioEmMeses;
+    });
+    expect(comecaNoMeio).toBe(true);
   });
 });

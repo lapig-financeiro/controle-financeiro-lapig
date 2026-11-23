@@ -112,26 +112,31 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   }
 
   // ---------- Folha ----------
-  // Cada bolsa paga valor_mensal por `meses` meses a partir de
-  // compromissos_inicio (a janela da 048). Valor ou meses inválidos
-  // nunca viram zero: sem eles a conta inteira mentiria.
+  // Cada bolsa cobre `meses` meses da janela da 066. A posição vem do
+  // FIM: último mês = menor entre o fim da bolsa e o fim da janela;
+  // primeiro = último − meses + 1. Assim uma bolsa que começa no meio
+  // da janela não paga os meses anteriores e uma que terminou dentro
+  // dela paga só os primeiros. Valor, meses ou fim inválidos nunca
+  // viram zero: sem eles a conta inteira mentiria.
   const bolsas = [];
   for (const bolsa of saldo.bolsas_ativas) {
     const valorMensal = numero(bolsa?.valor_mensal);
     const meses = numero(bolsa?.meses);
+    const fimBolsa = mesDeData(bolsa?.end_date);
     if (
       valorMensal === null ||
       valorMensal <= 0 ||
       meses === null ||
       !Number.isInteger(meses) ||
-      meses < 1
+      meses < 1 ||
+      !fimBolsa
     ) {
       return respostaSemConta(
         'dado_incompleto',
-        'Há bolsa ativa sem valor mensal ou sem número de meses; a conta não pode tratar isso como zero.'
+        'Há bolsa ativa sem valor mensal, sem número de meses ou sem data de término; a conta não pode tratar isso como zero.'
       );
     }
-    bolsas.push({ valor_mensal: valorMensal, meses });
+    bolsas.push({ valor_mensal: valorMensal, meses, fim: fimBolsa });
   }
 
   if (bolsas.length === 0) {
@@ -143,6 +148,22 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     return respostaSemConta(
       'dado_incompleto',
       'O balancete não diz a partir de quando as bolsas contam; a projeção não pode começar.'
+    );
+  }
+
+  const fimCentro = mesDeData(saldo.end_date);
+  if (!fimCentro) {
+    return respostaSemConta(
+      'dado_incompleto',
+      'A vigência do centro não está cadastrada; a projeção não pode terminar.'
+    );
+  }
+
+  const fimJanela = mesDeData(saldo.compromissos_fim);
+  if (!fimJanela) {
+    return respostaSemConta(
+      'dado_incompleto',
+      'O saldo não trouxe o fim da janela de compromissos; a conta não pode posicionar as bolsas.'
     );
   }
 
@@ -160,20 +181,26 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     );
   }
 
-  const ultimoMesBolsa = somarMeses(
-    inicio,
-    bolsas.reduce((maior, bolsa) => Math.max(maior, bolsa.meses), 0) - 1
-  );
-  const fimCentro = mesDeData(saldo.end_date);
-  if (!fimCentro) {
-    avisos.push('O centro não tem vigência cadastrada: a conta vai até a última bolsa.');
-  }
-  const fim = fimCentro && fimCentro < ultimoMesBolsa ? fimCentro : ultimoMesBolsa;
+  const bolsasPosicionadas = bolsas.map((bolsa) => {
+    const ultimo = bolsa.fim < fimJanela ? bolsa.fim : fimJanela;
+    const primeiro = somarMeses(ultimo, -(bolsa.meses - 1));
+    return { ...bolsa, primeiro, ultimo };
+  });
 
-  if (fim < inicio) {
+  if (bolsasPosicionadas.some((bolsa) => bolsa.ultimo < inicio)) {
+    avisos.push('Uma bolsa termina antes do início da janela; ela não entra na folha.');
+  }
+
+  const ultimoMesBolsa = bolsasPosicionadas.reduce(
+    (maior, bolsa) => (bolsa.ultimo > maior ? bolsa.ultimo : maior),
+    ''
+  );
+  const fim = ultimoMesBolsa < fimCentro ? ultimoMesBolsa : fimCentro;
+
+  if (!fim || fim < inicio) {
     return respostaSemConta(
       'sem_bolsas',
-      'As bolsas cadastradas começam depois do fim da vigência do centro.'
+      'As bolsas cadastradas terminam antes do início da janela do balancete.'
     );
   }
 
@@ -188,12 +215,12 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     }
   }
 
-  // Folha de cada mês: cada bolsa continua até o seu `meses`; depois
-  // disso deixa de pesar. O mês mais distante define o fim da conta.
-  const folhas = mesesConta.map((_, indice) =>
+  const folhas = mesesConta.map((mes) =>
     r2(
-      bolsas.reduce(
-        (soma, bolsa) => soma + (indice < bolsa.meses ? bolsa.valor_mensal : 0),
+      bolsasPosicionadas.reduce(
+        (soma, bolsa) =>
+          soma +
+          (mes >= bolsa.primeiro && mes <= bolsa.ultimo ? bolsa.valor_mensal : 0),
         0
       )
     )
@@ -208,17 +235,33 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       'O saldo não trouxe a rubrica de bolsas; o orçamento não pode ser lido.'
     );
   }
+  for (const rubrica of rubricas) {
+    if (numero(rubrica?.previsto) === null) {
+      return respostaSemConta(
+        'dado_incompleto',
+        'Há rubrica sem previsto no plano; a fração de taxa não pode ser calculada.'
+      );
+    }
+  }
+  for (const rubrica of rubricasBolsas) {
+    if (numero(rubrica?.saldo) === null) {
+      return respostaSemConta(
+        'dado_incompleto',
+        'A rubrica de bolsas está sem saldo no plano; o orçamento não pode ser lido.'
+      );
+    }
+  }
   let orcamento = r2(
-    rubricasBolsas.reduce((soma, rubrica) => soma + (numero(rubrica?.saldo) ?? 0), 0)
+    rubricasBolsas.reduce((soma, rubrica) => soma + numero(rubrica.saldo), 0)
   );
 
   const somaPrevisto = r2(
-    rubricas.reduce((soma, rubrica) => soma + (numero(rubrica?.previsto) ?? 0), 0)
+    rubricas.reduce((soma, rubrica) => soma + numero(rubrica.previsto), 0)
   );
   const somaPrevistoTaxa = r2(
     rubricas
       .filter((rubrica) => rubrica?.compromisso_tipo === 'taxa')
-      .reduce((soma, rubrica) => soma + (numero(rubrica?.previsto) ?? 0), 0)
+      .reduce((soma, rubrica) => soma + numero(rubrica.previsto), 0)
   );
   const taxaFracao = somaPrevisto > 0 ? somaPrevistoTaxa / somaPrevisto : 0;
 
@@ -239,6 +282,12 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     hoje,
     totalPlano: numero(repasses.valor_total_plano),
   });
+
+  // ---------- Dinheiro em conta ----------
+  const temCaixa =
+    saldo.has_balancete !== false && numero(saldo.saldo_disponivel_caixa) !== null;
+  const repoeGasto = calcParcelas.sem_valores;
+  const usarCaixa = temCaixa && !repoeGasto;
 
   const brutosPorParcela = new Map(
     parcelas
@@ -291,8 +340,9 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
         parcela: item.parcela,
         valor: r2(faltaParcela),
         quando: item.quando,
+        situacao: item.situacao,
       });
-      if (opcoes.atrasado) {
+      if (opcoes.atrasado && usarCaixa) {
         guardar(antesPorMes, mesesConta[0], { parcela: item.parcela, liquido });
       }
       continue;
@@ -304,11 +354,23 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       fora.push({ parcela: item.parcela, motivo: 'sem data prevista no plano' });
       continue;
     }
+    if (!usarCaixa) {
+      fora.push({
+        parcela: item.parcela,
+        motivo: repoeGasto
+          ? 'o plano repõe o gasto: o dinheiro em conta não limita'
+          : 'sem balancete para receber',
+      });
+      continue;
+    }
+    if (!opcoes.futuro) {
+      fora.push({ parcela: item.parcela, motivo: 'desligado em Contar' });
+      continue;
+    }
     if (mesVenc > fim) {
       fora.push({ parcela: item.parcela, motivo: 'chega depois da última bolsa' });
       continue;
     }
-    if (!opcoes.futuro) continue;
 
     let mesEntrada = mesVenc;
     if (mesEntrada < inicio) {
@@ -326,12 +388,6 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       liquido,
     });
   }
-
-  // ---------- Dinheiro em conta ----------
-  const temCaixa =
-    saldo.has_balancete !== false && numero(saldo.saldo_disponivel_caixa) !== null;
-  const repoeGasto = calcParcelas.sem_valores;
-  const usarCaixa = temCaixa && !repoeGasto;
 
   let saldoConta = null;
   if (usarCaixa) {
@@ -357,12 +413,12 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   for (let indice = 0; indice < mesesConta.length; indice += 1) {
     const mes = mesesConta[indice];
     const folha = folhas[indice];
-    const antes = r2(
-      (antesPorMes.get(mes) || []).reduce((soma, d) => soma + d.liquido, 0)
-    );
-    const depois = r2(
-      (depoisPorMes.get(mes) || []).reduce((soma, d) => soma + d.liquido, 0)
-    );
+    const antes = usarCaixa
+      ? r2((antesPorMes.get(mes) || []).reduce((soma, d) => soma + d.liquido, 0))
+      : 0;
+    const depois = usarCaixa
+      ? r2((depoisPorMes.get(mes) || []).reduce((soma, d) => soma + d.liquido, 0))
+      : 0;
 
     let emContaAposFolha = null;
     let emContaFim = null;
@@ -390,10 +446,12 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       folha,
       entra_antes: antes,
       entra_depois: depois,
-      desembolsos: [
-        ...(antesPorMes.get(mes) || []),
-        ...(depoisPorMes.get(mes) || []),
-      ],
+      desembolsos: usarCaixa
+        ? [
+            ...(antesPorMes.get(mes) || []),
+            ...(depoisPorMes.get(mes) || []),
+          ]
+        : [],
       em_conta_apos_folha: emContaAposFolha,
       em_conta_fim: emContaFim,
       orcamento_resta: orcamento,
@@ -456,7 +514,10 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       'O plano não fixa parcelas: o financiador repõe o gasto, então o dinheiro em conta não limita. Vale o orçamento de Bolsas.';
   } else if (!temCaixa) {
     estado = 'sem_balancete';
-    motivo = 'Sem balancete: a conta mostra só o orçamento de Bolsas.';
+    motivo =
+      saldo.has_balancete === false
+        ? 'Sem balancete: a conta mostra só o orçamento de Bolsas.'
+        : 'O balancete não informa o dinheiro em conta; a conta mostra só o orçamento de Bolsas.';
   }
 
   return {

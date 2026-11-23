@@ -3,14 +3,12 @@ import { Tabela } from './Tabela.jsx';
 import { Valor } from './Valor.jsx';
 import './GraficoProjecao.css';
 
-const LARGURA = 900;
 const ALTURA = 320;
 const MARGEM_ESQUERDA = 64;
 const MARGEM_DIREITA = 12;
 const MARGEM_TOPO = 44;
 const MARGEM_BASE = 44;
-const LARGURA_PLOT = LARGURA - MARGEM_ESQUERDA - MARGEM_DIREITA;
-const ALTURA_PLOT = ALTURA - MARGEM_TOPO - MARGEM_BASE;
+const LARGURA_POR_MES = 56;
 
 function passoBonito(bruto) {
   if (!(bruto > 0) || !Number.isFinite(bruto)) return 1000;
@@ -32,6 +30,10 @@ function textoEixo(valor) {
  * faixa marca o mês da falta e uma linha tracejada marca o mês em que
  * entra um desembolso. SVG em Preact, sem biblioteca de gráfico; cores
  * só por classe com tokens.
+ *
+ * O SVG ocupa 100% da largura da caixa e rola dentro dela quando a
+ * largura mínima (56 px por mês) não couber. Acima de 14 meses o eixo
+ * mostra meses alternados; acima de 24, só janeiro e julho.
  */
 export function GraficoProjecao({
   meses = [],
@@ -40,6 +42,18 @@ export function GraficoProjecao({
   className = '',
 }) {
   if (!Array.isArray(meses) || meses.length === 0) return null;
+
+  const LARGURA = MARGEM_ESQUERDA + MARGEM_DIREITA + meses.length * LARGURA_POR_MES;
+  const LARGURA_PLOT = LARGURA - MARGEM_ESQUERDA - MARGEM_DIREITA;
+  const ALTURA_PLOT = ALTURA - MARGEM_TOPO - MARGEM_BASE;
+  const larguraMinima = `${meses.length * LARGURA_POR_MES}px`;
+
+  const mostrarRotuloMes = (indice) => {
+    if (meses.length <= 14) return true;
+    if (meses.length <= 24) return indice % 2 === 0;
+    const mes = meses[indice].mes;
+    return mes.slice(5, 7) === '01' || mes.slice(5, 7) === '07';
+  };
 
   const valores = [];
   for (const linha of meses) {
@@ -67,6 +81,7 @@ export function GraficoProjecao({
   const larguraMes = LARGURA_PLOT / meses.length;
   const larguraBarra = Math.min(larguraMes * 0.28, 28);
   const espacoEntreBarras = Math.min(larguraMes * 0.06, 4);
+  const temNegativo = meses.some((linha) => linha.em_conta_apos_folha < 0);
   const temDesembolso = meses.some((linha) => (linha.desembolsos || []).length > 0);
 
   const primeiro = meses[0]?.mes;
@@ -88,10 +103,12 @@ export function GraficoProjecao({
           <i class="grafico-projecao__amostra grafico-projecao__amostra--conta" aria-hidden="true" />
           em conta depois da folha
         </span>
-        <span class="grafico-projecao__legenda-item">
-          <i class="grafico-projecao__amostra grafico-projecao__amostra--falta" aria-hidden="true" />
-          falta para a folha
-        </span>
+        {temNegativo && (
+          <span class="grafico-projecao__legenda-item">
+            <i class="grafico-projecao__amostra grafico-projecao__amostra--falta" aria-hidden="true" />
+            falta para a folha
+          </span>
+        )}
         <span class="grafico-projecao__legenda-item">
           <i class="grafico-projecao__amostra grafico-projecao__amostra--orcamento" aria-hidden="true" />
           orçamento de Bolsas que resta
@@ -105,14 +122,22 @@ export function GraficoProjecao({
             desembolso que entra
           </span>
         )}
+        {mesFalta && (
+          <span class="grafico-projecao__legenda-item">
+            <i
+              class="grafico-projecao__amostra grafico-projecao__amostra--mes-falta"
+              aria-hidden="true"
+            />
+            mês em que falta
+          </span>
+        )}
       </div>
 
       <div class="grafico-projecao__rolagem">
         <svg
           class="grafico-projecao__svg"
           viewBox={`0 0 ${LARGURA} ${ALTURA}`}
-          width={LARGURA}
-          height={ALTURA}
+          style={{ '--grafico-largura-minima': larguraMinima }}
           role="img"
           aria-label={rotulo}
         >
@@ -130,7 +155,6 @@ export function GraficoProjecao({
                 x={MARGEM_ESQUERDA - 8}
                 y={escalaY(valor) + 4}
                 text-anchor="end"
-                font-size={12}
               >
                 {textoEixo(valor)}
               </text>
@@ -164,7 +188,6 @@ export function GraficoProjecao({
                     y={yDaBarra(conta)}
                     width={larguraBarra}
                     height={alturaBarra(conta)}
-                    rx={2}
                   />
                 )}
 
@@ -175,7 +198,6 @@ export function GraficoProjecao({
                     y={yDaBarra(orcamento)}
                     width={larguraBarra}
                     height={alturaBarra(orcamento)}
-                    rx={2}
                   />
                 )}
 
@@ -200,8 +222,6 @@ export function GraficoProjecao({
                         x={ancorarNoFim ? x - 6 : x + 6}
                         y={14 + faixa * 14 + posicao * 14}
                         text-anchor={ancorarNoFim ? 'end' : 'start'}
-                        font-size={12}
-                        font-weight={600}
                       >
                         {`+ desembolso ${desembolso.parcela} (${dinheiroCompacto(desembolso.liquido)})`}
                       </text>
@@ -209,15 +229,16 @@ export function GraficoProjecao({
                   );
                 })}
 
-                <text
-                  class={`grafico-projecao__mes${linha.mes === mesFalta ? ' grafico-projecao__mes--falta' : ''}`}
-                  x={centro}
-                  y={ALTURA - MARGEM_BASE + 20}
-                  text-anchor="middle"
-                  font-size={12}
-                >
-                  {dataCompacta(linha.mes)}
-                </text>
+                {mostrarRotuloMes(indice) && (
+                  <text
+                    class={`grafico-projecao__mes${linha.mes === mesFalta ? ' grafico-projecao__mes--falta' : ''}`}
+                    x={centro}
+                    y={ALTURA - MARGEM_BASE + 20}
+                    text-anchor="middle"
+                  >
+                    {dataCompacta(linha.mes)}
+                  </text>
+                )}
               </g>
             );
           })}

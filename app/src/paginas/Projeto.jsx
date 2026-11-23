@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useId, useRef, useState } from 'preact/hooks';
 import { ExternalLink } from 'lucide-preact';
 import { situacaoDasParcelas } from '../../../frontend/js/planejamento-dinheiro.js';
 import {
@@ -355,12 +355,20 @@ function mesSeguinteProjecao(mes) {
   return `${novoAno}-${String(novoMes).padStart(2, '0')}`;
 }
 
+function mesAnteriorProjecao(mes) {
+  const [ano, m] = mes.split('-').map(Number);
+  const total = ano * 12 + (m - 1) - 1;
+  const novoAno = Math.floor(total / 12);
+  const novoMes = total - novoAno * 12 + 1;
+  return `${novoAno}-${String(novoMes).padStart(2, '0')}`;
+}
+
 /**
  * A resposta curta que aparece no cartão "Bolsas por mês", na coluna
  * "Cabe até" e no painel. `data` é o último mês que cabe; sem data,
  * `motivo` explica por que a conta não fecha.
  */
-function respostaDaProjecao(projecao) {
+function respostaDaProjecao(projecao, hasBalancete = true) {
   if (!projecao) return null;
 
   if (projecao.estado === 'sem_bolsas' || projecao.estado === 'dado_incompleto') {
@@ -375,7 +383,9 @@ function respostaDaProjecao(projecao) {
   if (projecao.estado === 'sem_balancete' || projecao.estado === 'repoe_gasto') {
     const motivo =
       projecao.estado === 'sem_balancete'
-        ? 'sem balancete: só o orçamento de Bolsas'
+        ? hasBalancete
+          ? 'balancete sem dinheiro em conta: só o orçamento de Bolsas'
+          : 'sem balancete: só o orçamento de Bolsas'
         : 'o plano repõe o gasto: só o orçamento de Bolsas';
     return {
       data: projecao.cabe_ate,
@@ -429,6 +439,26 @@ function respostaDaProjecao(projecao) {
   };
 }
 
+function mensagemDoAtrasado(atrasado, dataBalancete, contado) {
+  const valor = dinheiro(atrasado.valor, { centavos: false });
+  const quando = atrasado.quando || 'data não informada';
+  const data = dataBalancete ? dataCompleta(dataBalancete) : null;
+  const sufixo = contado
+    ? 'Está contado acima, no primeiro mês da conta.'
+    : 'Não está contado acima.';
+
+  if (atrasado.situacao === 'parcial') {
+    return `Desembolso ${atrasado.parcela} entrou em parte; falta ${valor} dos previstos para ${quando}. A parte que falta não aparece no balancete${data ? ` de ${data}` : ''}. ${sufixo}`;
+  }
+  if (atrasado.situacao === 'confirmar') {
+    return `Desembolso ${atrasado.parcela} venceu depois do último balancete: confirmar. ${valor} previstos para ${quando}. ${sufixo}`;
+  }
+  if (atrasado.situacao === 'nota_emitida') {
+    return `Desembolso ${atrasado.parcela} nota emitida, não paga: ${valor} previstos para ${quando}. ${sufixo}`;
+  }
+  return `Desembolso ${atrasado.parcela} atrasado: ${valor} previstos para ${quando} não aparece no balancete${data ? ` de ${data}` : ''}. ${sufixo}`;
+}
+
 function fraseDaProjecao(projecao) {
   if (!projecao || projecao.estado !== 'ok') return '';
 
@@ -455,8 +485,15 @@ function fraseDaProjecao(projecao) {
   }
 
   const ultimoMes = projecao.meses[projecao.meses.length - 1]?.mes;
+  const mesLimiteOrcamento = projecao.meses.find(
+    (linha) => linha.orcamento_resta < 0
+  )?.mes;
+  const fimDoDepende =
+    mesLimiteOrcamento && mesLimiteOrcamento > projecao.mes_falta
+      ? mesAnteriorProjecao(mesLimiteOrcamento)
+      : ultimoMes;
   if (projecao.depende_de) {
-    return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07; o desembolso ${projecao.depende_de.parcela} entra depois da folha e, com ele, a conta segue até ${dataCompacta(ultimoMes)}.`;
+    return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07; o desembolso ${projecao.depende_de.parcela} entra depois da folha e, com ele, a conta segue até ${dataCompacta(fimDoDepende)}.`;
   }
   return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07 e a conta não se recupera dentro das bolsas cadastradas.`;
 }
@@ -494,7 +531,12 @@ export function Projeto({
   const [abaAtiva, setAbaAtiva] = useState(abaInicial || 'dinheiro');
   const [saldoSt, setSaldoSt] = useState({ carregando: true, dados: null, erro: null });
   const [situacaoSt, setSituacaoSt] = useState({ carregando: true, dados: null, erro: null });
-  const [repassesSt, setRepassesSt] = useState({ carregando: true, dados: null, erro: null });
+  const [repassesSt, setRepassesSt] = useState({
+    carregando: true,
+    dados: null,
+    erro: null,
+    projectId: null,
+  });
   const [docsSt, setDocsSt] = useState(() => docsVazios(null));
   const [pendenciasSt, setPendenciasSt] = useState({ carregando: true, dados: [], erro: null });
   const [termosSt, setTermosSt] = useState({ carregando: true, dados: null, erro: null });
@@ -508,6 +550,7 @@ export function Projeto({
     atrasado: false,
     rendimento: false,
   });
+  const projecaoTituloId = useId();
 
   const [painelOrigem, setPainelOrigem] = useState(null);
   const [explicarSt, setExplicarSt] = useState({
@@ -653,12 +696,12 @@ export function Projeto({
   const carregarRepasses = useCallback(async () => {
     const id = projectId;
     const gen = ++genRepassesRef.current;
-    setRepassesSt({ carregando: true, dados: null, erro: null });
+    setRepassesSt({ carregando: true, dados: null, erro: null, projectId: null });
     const res = await repasses(id);
     if (!montadoRef.current || projectIdRef.current !== id || gen !== genRepassesRef.current) {
       return;
     }
-    setRepassesSt({ carregando: false, dados: res.dados, erro: res.erro });
+    setRepassesSt({ carregando: false, dados: res.dados, erro: res.erro, projectId: id });
   }, [projectId]);
 
   const carregarDocumentos = useCallback(async () => {
@@ -1183,6 +1226,7 @@ export function Projeto({
     }
   }
 
+  let somaBolsasCartao = null;
   let valorBolsas = (
     <Valor valor={null} motivoSemDado="sem dado" semOrigem="Soma das bolsas ativas desta tela" />
   );
@@ -1224,6 +1268,7 @@ export function Projeto({
       );
       contextoBolsas = 'valor incompleto';
     } else {
+      somaBolsasCartao = somaBolsasMes;
       valorBolsas = (
         <Valor
           valor={somaBolsasMes}
@@ -1259,10 +1304,19 @@ export function Projeto({
       : resumirRepasses(repassesSt.dados, hasPlano, hoje);
 
   // Projeção das bolsas: a mesma conta alimenta o cartão, a coluna
-  // "Cabe até" e a seção da aba Dinheiro. Nunca é chamada com leitura
-  // falha; sem uma das pontas, não há data para mostrar.
+  // "Cabe até" e a seção da aba Dinheiro. Ela só é calculada quando o
+  // saldo e os desembolsos são do centro atual; na troca de centro, a
+  // tela não mostra a data do centro anterior por um render.
+  const saldoDoCentroAtual = Boolean(
+    saldoSt.dados && saldoSt.dados.project_id === projectId
+  );
+  const repassesDoCentroAtual = Boolean(
+    repassesSt.dados?.project_id
+      ? repassesSt.dados.project_id === projectId
+      : repassesSt.projectId === projectId
+  );
   const projetar =
-    hasPlano && saldoSt.dados && repassesSt.dados
+    hasPlano && saldoDoCentroAtual && repassesDoCentroAtual && repassesSt.dados
       ? projetarBolsas({
           saldo: saldoSt.dados,
           repasses: repassesSt.dados,
@@ -1272,14 +1326,17 @@ export function Projeto({
       : null;
   const secaoProjecaoDisponivel = Boolean(
     hasPlano &&
+      saldoDoCentroAtual &&
+      repassesDoCentroAtual &&
       saldoSt.dados &&
       !saldoSt.carregando &&
       !saldoSt.erro &&
       !repassesSt.carregando &&
       !repassesSt.erro
   );
-  const respostaProjecao = secaoProjecaoDisponivel
-    ? respostaDaProjecao(projetar)
+  const temSecaoProjecao = Boolean(secaoProjecaoDisponivel && projetar);
+  const respostaProjecao = temSecaoProjecao
+    ? respostaDaProjecao(projetar, hasBalancete)
     : null;
   const gruposComBolsas = new Set(
     rubricas
@@ -1300,6 +1357,13 @@ export function Projeto({
   const folhasVariamProjecao = Boolean(
     projetar && new Set(projetar.meses.map((linha) => linha.folha)).size > 1
   );
+  const primeiroMesFolhaProjecao = projetar?.meses[0]?.folha ?? null;
+  const notaFolhaProjecao =
+    Number.isFinite(primeiroMesFolhaProjecao) &&
+    Number.isFinite(somaBolsasCartao) &&
+    primeiroMesFolhaProjecao > somaBolsasCartao + 0.005
+      ? 'inclui bolsa que termina antes de hoje e o balancete ainda não mostra paga'
+      : '';
 
   const respostaBolsasNode = respostaProjecao ? (
     <span
@@ -1352,7 +1416,7 @@ export function Projeto({
   };
 
   const irParaProjecao = () => {
-    if (!secaoProjecaoDisponivel) return;
+    if (!temSecaoProjecao) return;
     if (abaAtivaRef.current === 'dinheiro') {
       const secao = projecaoSecaoRef.current;
       secao?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
@@ -1785,25 +1849,26 @@ export function Projeto({
             onClicarLinha={(g) => abrirPainelGrupo(g)}
             rotuloLinha={(g) => `Abrir detalhe de ${g.grupo_name}`}
             legenda="Execução por grupo de rubrica"
+            className="projeto__tabela-rubricas"
           />
 
-          {secaoProjecaoDisponivel && projetar && (
+          {temSecaoProjecao && (
             <section
               class="projeto__projecao"
               ref={projecaoSecaoRef}
               tabIndex={-1}
-              aria-labelledby="projecao-titulo"
+              aria-labelledby={projecaoTituloId}
             >
               <div class="projeto__projecao-cabecalho">
-                <h3 id="projecao-titulo" class="projeto__projecao-titulo">
+                <h3 id={projecaoTituloId} class="projeto__projecao-titulo">
                   Até quando as bolsas cabem
                 </h3>
                 {projetar.meses.length > 0 && (
                   <span class="projeto__nota-discreta">
                     folha de {folhasVariamProjecao ? 'até ' : ''}
-                    {dinheiro(folhaMaximaProjecao, { centavos: false })} todo dia 07 · bolsas
-                    cadastradas até{' '}
-                    {dataCompacta(projetar.meses[projetar.meses.length - 1].mes)}
+                    {dinheiro(folhaMaximaProjecao, { centavos: false })} todo dia 07
+                    {notaFolhaProjecao ? ` · ${notaFolhaProjecao}` : ''} · bolsas cadastradas
+                    até {dataCompacta(projetar.meses[projetar.meses.length - 1].mes)}
                   </span>
                 )}
               </div>
@@ -1850,7 +1915,11 @@ export function Projeto({
                 <AvisoFalha
                   key={atrasado.parcela}
                   className="projeto__aviso-atrasado"
-                  mensagem={`Desembolso ${atrasado.parcela} atrasado: ${dinheiro(atrasado.valor, { centavos: false })} previstos para ${atrasado.quando || 'data não informada'} não aparece no balancete${repassesSt.dados?.data_balancete ? ` de ${dataCompleta(repassesSt.dados.data_balancete)}` : ''}. ${contarProjecao.atrasado ? 'Está contado acima, no primeiro mês da conta.' : 'Não está contado acima.'}`}
+                  mensagem={mensagemDoAtrasado(
+                    atrasado,
+                    repassesSt.dados?.data_balancete,
+                    contarProjecao.atrasado
+                  )}
                 />
               ))}
 
@@ -1872,7 +1941,7 @@ export function Projeto({
                   )}
                   <li>
                     Desembolso entra no dia previsto no plano, já sem as taxas (
-                    {textoPct(Math.round(projetar.taxa_fracao * 1000))}% ={' '}
+                    {textoPct(Math.round(projetar.taxa_fracao * 100 * 1000))}% ={' '}
                     {dinheiro(previstoTaxaProjecao, { centavos: false })} de{' '}
                     {dinheiro(previstoTotalProjecao, { centavos: false })} de previsto).
                   </li>
@@ -2350,6 +2419,21 @@ export function Projeto({
           (p) => p && typeof p === 'object' && p.chave === `grupo:${grupoPainel.grupo_code}`
         ) || null
       : null;
+  const grupoTemBolsas = rubricasGrupo.some(
+    (rubrica) => rubrica?.compromisso_tipo === 'bolsas'
+  );
+  const linhaCabeAtePainel = () => (
+    <p class="projeto__cabe-ate-painel">
+      {respostaProjecao?.data ? (
+        <>
+          Cabe até <Valor valor={`${respostaProjecao.data}-01`} tipo="data" /> ·{' '}
+          {respostaProjecao.motivo}
+        </>
+      ) : (
+        respostaProjecao?.motivo || 'Cabe até: —'
+      )}
+    </p>
+  );
 
   const renderPainelGruposFallback = () => (
     <>
@@ -2543,19 +2627,7 @@ export function Projeto({
                     semOrigem="Comprometido da rubrica na composição reserva"
                   />
                 </span>
-                {r.compromisso_tipo === 'bolsas' && (
-                  <p class="projeto__cabe-ate-painel">
-                    {respostaProjecao?.data ? (
-                      <>
-                        Cabe até{' '}
-                        <Valor valor={`${respostaProjecao.data}-01`} tipo="data" /> ·{' '}
-                        {respostaProjecao.motivo}
-                      </>
-                    ) : (
-                      respostaProjecao?.motivo || 'Cabe até: —'
-                    )}
-                  </p>
-                )}
+                {r.compromisso_tipo === 'bolsas' && linhaCabeAtePainel()}
               </div>
             ))}
           </dl>
@@ -2640,7 +2712,7 @@ export function Projeto({
           rotulo="Bolsas por mês"
           valor={valorBolsas}
           contexto={<>{contextoBolsas}{respostaBolsasNode}</>}
-          onClick={secaoProjecaoDisponivel ? irParaProjecao : null}
+          onClick={temSecaoProjecao ? irParaProjecao : null}
         />
         <Destaque
           rotulo="Desembolsos"
@@ -2704,10 +2776,13 @@ export function Projeto({
               {renderPainelGrupoDetalheFallback(grupoPainel)}
             </div>
           ) : noGrupoArvore ? (
-            <DeOndeVem
-              arvore={noGrupoArvore}
-              valorEsperado={numeroFinito(grupoPainel.saldo_livre)}
-            />
+            <>
+              {grupoTemBolsas && linhaCabeAtePainel()}
+              <DeOndeVem
+                arvore={noGrupoArvore}
+                valorEsperado={numeroFinito(grupoPainel.saldo_livre)}
+              />
+            </>
           ) : arvoreRaizNula ? (
             <div class="projeto__painel-reserva">
               <p class="projeto__nota-discreta">

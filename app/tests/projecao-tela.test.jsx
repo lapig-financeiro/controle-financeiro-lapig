@@ -73,6 +73,7 @@ vi.mock('../src/servicos/leitoresDocumento.js', () => ({
 }));
 
 import { Projeto } from '../src/paginas/Projeto.jsx';
+import { GraficoProjecao } from '../src/componentes/GraficoProjecao.jsx';
 
 const HOJE = '2026-11-23';
 const tick = () => new Promise((resolve) => setTimeout(resolve, 30));
@@ -112,6 +113,7 @@ function configurarPadrao() {
       end_date: '2027-09-30',
       data_referencia: '2026-11-17',
       compromissos_inicio: '2026-12-01',
+      compromissos_fim: '2027-09-30',
       saldo_disponivel_caixa: 250000,
       rendimento_liquido: 30000,
       compromissos_bolsas: 500000,
@@ -276,6 +278,10 @@ describe('Projeto — projeção das bolsas na tela', () => {
 
     const cartao = cartaoBolsas();
     expect(cartao.textContent).toContain('Cabem até mar/27');
+    const legenda = document.querySelector('.grafico-projecao__legenda').textContent;
+    expect(legenda).toContain('falta para a folha');
+    expect(legenda).toContain('mês em que falta');
+    expect(document.querySelector('.grafico-projecao__tabela').textContent).toContain('145.000');
 
     const botaoRendimento = Array.from(
       document.querySelectorAll('.projeto__contar .chip')
@@ -296,6 +302,19 @@ describe('Projeto — projeção das bolsas na tela', () => {
       document.querySelectorAll('.projeto__contar .chip')
     ).find((botao) => botao.textContent.includes('Rendimento'));
     expect(botaoRendimentoDepois.getAttribute('aria-pressed')).toBe('true');
+
+    const linhaPessoalDepois = Array.from(
+      document.querySelectorAll('.abas__painel tbody tr')
+    ).find((linha) => linha.textContent.includes('Pessoal'));
+    expect(linhaPessoalDepois.querySelector('.projeto__cabe-ate').textContent).toContain(
+      'set/27'
+    );
+    expect(document.querySelector('.grafico-projecao__tabela').textContent).toContain('175.000');
+    expect(document.querySelector('.grafico-projecao__tabela').textContent).toContain('60.000');
+
+    const legendaDepois = document.querySelector('.grafico-projecao__legenda').textContent;
+    expect(legendaDepois).not.toContain('falta para a folha');
+    expect(legendaDepois).not.toContain('mês em que falta');
   });
 
   it('mostra AvisoFalha e nenhuma data quando o saldo ou os desembolsos falham', async () => {
@@ -398,6 +417,11 @@ describe('Projeto — projeção das bolsas na tela', () => {
     expect(secao.textContent).toContain('Até quando as bolsas cabem');
     expect(secao.getAttribute('tabindex')).toBe('-1');
     expect(document.activeElement).toBe(secao);
+
+    const titulo = secao.querySelector('.projeto__projecao-titulo');
+    expect(titulo.id).toBeTruthy();
+    expect(titulo.id).not.toBe('projecao-titulo');
+    expect(secao.getAttribute('aria-labelledby')).toBe(titulo.id);
   });
 
   it('repete o "Cabe até" no painel "Rubricas deste grupo", na rubrica de bolsas', async () => {
@@ -439,5 +463,283 @@ describe('Projeto — projeção das bolsas na tela', () => {
     expect(motivo.textContent).toContain('Sem balancete: a conta mostra só o orçamento de Bolsas.');
     expect(motivo.textContent).toContain('até set/27');
     expect(document.querySelector('.grafico-projecao')).toBeNull();
+  });
+
+  it('mostra a taxa em porcentagem certa no "Como a conta é feita"', async () => {
+    configurarPadrao();
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const detalhes = document.querySelector('.projeto__projecao-detalhes');
+    expect(detalhes.textContent).toContain('15% =');
+    expect(detalhes.textContent).toContain('300.000');
+    expect(detalhes.textContent).toContain('2.000.000');
+    expect(detalhes.textContent).not.toContain('0,15%');
+  });
+
+  it('mostra o "Cabe até" no painel também com a árvore do DeOndeVem', async () => {
+    configurarPadrao();
+    explicarLivreMock.mockResolvedValue({
+      dados: {
+        valor: 60000,
+        motivo: null,
+        data_referencia: '2026-11-17',
+        rotulo: 'Livre para gastar',
+        tipo: 'calculo',
+        conta: 'soma dos grupos',
+        chave: 'livre',
+        sinal: 1,
+        ref: null,
+        nota: null,
+        partes: [
+          {
+            rotulo: 'Pessoal',
+            valor: 60000,
+            tipo: 'calculo',
+            chave: 'grupo:a',
+            conta: null,
+            sinal: 1,
+            ref: null,
+            nota: null,
+            partes: [],
+          },
+        ],
+      },
+      erro: null,
+    });
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const linhaPessoal = Array.from(
+      document.querySelectorAll('.abas__painel tbody tr')
+    ).find((linha) => linha.textContent.includes('Pessoal'));
+    linhaPessoal.querySelector('.tabela__gatilho').click();
+    await tick();
+
+    const painel = document.querySelector('.painel-lateral');
+    expect(painel.querySelector('.de-onde-vem')).toBeTruthy();
+    expect(painel.querySelector('.projeto__cabe-ate-painel')).toBeTruthy();
+    expect(painel.textContent).toContain('Cabe até');
+    expect(painel.textContent).toContain('mar/27');
+    expect(painel.textContent).toContain('abr/27 depende do desembolso 4');
+  });
+
+  it('com orçamento depois do desembolso, a frase do depende para no mês anterior ao limite', async () => {
+    const { saldo, repasses } = configurarPadrao();
+    saldo.saldo_disponivel_caixa = 220000;
+    saldo.rendimento_liquido = 0;
+    saldo.compromissos_inicio = '2026-12-01';
+    saldo.compromissos_fim = '2027-09-30';
+    saldo.end_date = '2027-09-30';
+    saldo.compromissos_bolsas = 500000;
+    saldo.rubricas = [
+      {
+        rubrica_code: 'a.bolsas',
+        rubrica_name: 'Bolsas de pesquisa',
+        grupo_code: 'a',
+        previsto: 410000,
+        realizado: 0,
+        saldo: 410000,
+        compromissos: 500000,
+        saldo_livre: -90000,
+        compromisso_tipo: 'bolsas',
+      },
+    ];
+    repasses.parcelas = [
+      {
+        parcela: 4,
+        data_prevista: '2027-04-10',
+        data_texto: null,
+        valor: 500000,
+        valor_texto: null,
+      },
+    ];
+    repasses.valor_total_plano = 500000;
+    repasses.recursos = { recebido: 0, a_receber: 0 };
+
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const frase = document.querySelector('.projeto__projecao-frase');
+    expect(frase.textContent).toContain('segue até jul/27');
+    expect(frase.textContent).not.toContain('segue até set/27');
+    expect(cartaoBolsas().textContent).toContain('abr/27 depende do desembolso 4');
+  });
+
+  it('usa o rótulo certo no aviso de confirmar, parcial e nota emitida', async () => {
+    const casos = [
+      {
+        parcelas: [
+          {
+            parcela: 1,
+            data_prevista: '2026-11-20',
+            data_texto: null,
+            valor: 500000,
+            valor_texto: null,
+          },
+        ],
+        recursos: { recebido: 0, a_receber: 0 },
+        total: 500000,
+        trecho: 'venceu depois do último balancete: confirmar',
+      },
+      {
+        parcelas: [
+          {
+            parcela: 1,
+            data_prevista: '2026-01-15',
+            data_texto: null,
+            valor: 100000,
+            valor_texto: null,
+          },
+          {
+            parcela: 2,
+            data_prevista: '2026-08-15',
+            data_texto: null,
+            valor: 100000,
+            valor_texto: null,
+          },
+        ],
+        recursos: { recebido: 150000, a_receber: 0 },
+        total: 200000,
+        trecho: 'entrou em parte; falta',
+      },
+      {
+        parcelas: [
+          {
+            parcela: 1,
+            data_prevista: '2027-01-10',
+            data_texto: null,
+            valor: 500000,
+            valor_texto: null,
+          },
+        ],
+        recursos: { recebido: 0, a_receber: 500000 },
+        total: 500000,
+        trecho: 'nota emitida, não paga',
+      },
+    ];
+
+    for (const caso of casos) {
+      render(null, document.body);
+      const { repasses } = configurarPadrao();
+      repasses.parcelas = caso.parcelas;
+      repasses.recursos = caso.recursos;
+      repasses.valor_total_plano = caso.total;
+      render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+      await tick();
+      expect(document.querySelector('.projeto__aviso-atrasado').textContent).toContain(
+        caso.trecho
+      );
+    }
+
+    expect(document.querySelector('.projeto__aviso-atrasado').textContent).toContain(
+      '500.000'
+    );
+  });
+
+  it('não projeta com dados de outro centro e deixa o cartão sem destino', async () => {
+    configurarPadrao();
+    render(<Projeto projectId="p-outro" hoje={HOJE} />, document.body);
+    await tick();
+
+    expect(document.body.textContent).not.toContain('Cabem até');
+    expect(document.querySelector('.destaque--clicavel')).toBeNull();
+    expect(document.querySelector('.projeto__projecao')).toBeNull();
+
+    render(null, document.body);
+    const { saldo, repasses } = configurarPadrao();
+    saldo.project_id = 'p-2';
+    repasses.project_id = 'p-1';
+    render(<Projeto projectId="p-2" hoje={HOJE} />, document.body);
+    await tick();
+
+    expect(document.body.textContent).not.toContain('Cabem até');
+    expect(document.querySelector('.projeto__projecao')).toBeNull();
+  });
+
+  it('explica a folha maior no primeiro mês e usa "folha de até" quando ela cai', async () => {
+    const { saldo } = configurarPadrao();
+    saldo.compromissos_inicio = '2026-09-01';
+    saldo.compromissos_fim = '2027-01-31';
+    saldo.end_date = '2027-01-31';
+    saldo.saldo_disponivel_caixa = 300000;
+    saldo.rendimento_liquido = 0;
+    saldo.compromissos_bolsas = 230000;
+    saldo.bolsas_ativas = [
+      {
+        scholarship_id: 'b-encerrada',
+        bolsista: 'Bolsista que terminou',
+        valor_mensal: 5000,
+        meses: 1,
+        end_date: '2026-09-30',
+      },
+      ...Array.from({ length: 9 }, (_, indice) => ({
+        scholarship_id: `b-ativa-${indice + 1}`,
+        bolsista: `Bolsista ativo ${indice + 1}`,
+        valor_mensal: 5000,
+        meses: 5,
+        end_date: '2027-01-31',
+      })),
+    ];
+
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const cabecalho = document.querySelector('.projeto__projecao-cabecalho').textContent;
+    expect(cabecalho).toContain('folha de até');
+    expect(cabecalho).toContain('50.000');
+    expect(cabecalho).toContain(
+      'inclui bolsa que termina antes de hoje e o balancete ainda não mostra paga'
+    );
+    expect(cartaoBolsas().textContent).toContain('45.000');
+  });
+});
+
+describe('GraficoProjecao', () => {
+  it('com 30 meses usa 56 px por mês e mostra só janeiro e julho no eixo', () => {
+    const meses = Array.from({ length: 30 }, (_, indice) => {
+      const ano = 2026 + Math.floor(indice / 12);
+      const mes = String((indice % 12) + 1).padStart(2, '0');
+      return {
+        mes: `${ano}-${mes}`,
+        folha: 10000,
+        entra_antes: 0,
+        entra_depois: 0,
+        desembolsos: [],
+        em_conta_apos_folha: 50000,
+        em_conta_fim: 50000,
+        orcamento_resta: 100000,
+      };
+    });
+
+    render(<GraficoProjecao meses={meses} />, document.body);
+
+    const svg = document.querySelector('.grafico-projecao__svg');
+    expect(svg.style.getPropertyValue('--grafico-largura-minima')).toBe('1680px');
+    const rotulos = Array.from(svg.querySelectorAll('.grafico-projecao__mes')).map(
+      (elemento) => elemento.textContent
+    );
+    expect(rotulos).toEqual(['jan/26', 'jul/26', 'jan/27', 'jul/27', 'jan/28']);
+  });
+
+  it('não mostra "falta para a folha" nem "mês em que falta" quando não há nenhum', () => {
+    const meses = [
+      {
+        mes: '2026-12',
+        folha: 10000,
+        entra_antes: 0,
+        entra_depois: 0,
+        desembolsos: [],
+        em_conta_apos_folha: 20000,
+        em_conta_fim: 20000,
+        orcamento_resta: 50000,
+      },
+    ];
+
+    render(<GraficoProjecao meses={meses} />, document.body);
+
+    const legenda = document.querySelector('.grafico-projecao__legenda').textContent;
+    expect(legenda).not.toContain('falta para a folha');
+    expect(legenda).not.toContain('mês em que falta');
   });
 });
