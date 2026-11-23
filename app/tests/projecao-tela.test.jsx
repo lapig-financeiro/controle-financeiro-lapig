@@ -715,7 +715,9 @@ describe('GraficoProjecao', () => {
     render(<GraficoProjecao meses={meses} />, document.body);
 
     const svg = document.querySelector('.grafico-projecao__svg');
-    expect(svg.style.getPropertyValue('--grafico-largura-minima')).toBe('1680px');
+    // 30 meses × 56 px + margens: desenhado em pixels reais, sem escalar o texto.
+    expect(svg.getAttribute('width')).toBe(String(30 * 56 + 64 + 12));
+    expect(svg.getAttribute('viewBox')).toBe(`0 0 ${30 * 56 + 64 + 12} 320`);
     const rotulos = Array.from(svg.querySelectorAll('.grafico-projecao__mes')).map(
       (elemento) => elemento.textContent
     );

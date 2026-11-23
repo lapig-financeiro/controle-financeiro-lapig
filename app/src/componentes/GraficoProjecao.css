@@ -60,9 +60,6 @@
 
 .grafico-projecao__svg {
   display: block;
-  width: 100%;
-  height: auto;
-  min-width: var(--grafico-largura-minima);
   font-family: var(--fonte-sans);
 }
 

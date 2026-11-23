@@ -260,3 +260,12 @@ worktree; nada foi versionado dele. Os 13 itens da tarefa foram tratados:
   de estilo como `style` só de custom property; o valor de 56 px por mês é a medida pedida na tarefa.
 - A regra de rolagem da tabela vale até 900 px para não depender de uma media query composta (a guarda só aceita
   640/900/1024).
+
+## Ajuste do Claude depois da 2ª rodada (23/11)
+
+O gráfico fluido da 2ª rodada escalava o `viewBox` (5 meses = 356 px de desenho esticados até a largura do
+cartão): o texto ficava com ~3× o tamanho do token e a página passava a rolar para o lado em 1400 px. Agora o
+`GraficoProjecao` mede a caixa (`ResizeObserver`) e desenha o SVG na largura real, `max(caixa, meses × 56 px +
+margens)`, sem escala: texto em `--fs-1`, gráfico ocupando o cartão em 1400 px e rolando só dentro da caixa em
+390 px (página sem rolagem horizontal nas duas larguras, conferido no navegador). O teste de 30 meses passou a
+conferir `width`/`viewBox` em vez da variável CSS que saiu.

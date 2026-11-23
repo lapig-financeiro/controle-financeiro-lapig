@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { dataCompacta, dinheiroCompacto } from '../util/formato.js';
 import { Tabela } from './Tabela.jsx';
 import { Valor } from './Valor.jsx';
@@ -41,12 +42,30 @@ export function GraficoProjecao({
   ariaLabel = '',
   className = '',
 }) {
+  // O SVG é desenhado na largura real da caixa (sem escalar o viewBox),
+  // para o texto ficar no tamanho do token. Abaixo do mínimo por mês, a
+  // caixa rola.
+  const caixaRef = useRef(null);
+  const [larguraCaixa, setLarguraCaixa] = useState(0);
+  useEffect(() => {
+    const el = caixaRef.current;
+    if (!el) return undefined;
+    const medir = () => setLarguraCaixa(Math.floor(el.clientWidth || 0));
+    medir();
+    if (typeof ResizeObserver !== 'function') return undefined;
+    const obs = new ResizeObserver(medir);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
   if (!Array.isArray(meses) || meses.length === 0) return null;
 
-  const LARGURA = MARGEM_ESQUERDA + MARGEM_DIREITA + meses.length * LARGURA_POR_MES;
+  const LARGURA = Math.max(
+    MARGEM_ESQUERDA + MARGEM_DIREITA + meses.length * LARGURA_POR_MES,
+    larguraCaixa
+  );
   const LARGURA_PLOT = LARGURA - MARGEM_ESQUERDA - MARGEM_DIREITA;
   const ALTURA_PLOT = ALTURA - MARGEM_TOPO - MARGEM_BASE;
-  const larguraMinima = `${meses.length * LARGURA_POR_MES}px`;
 
   const mostrarRotuloMes = (indice) => {
     if (meses.length <= 14) return true;
@@ -133,11 +152,12 @@ export function GraficoProjecao({
         )}
       </div>
 
-      <div class="grafico-projecao__rolagem">
+      <div class="grafico-projecao__rolagem" ref={caixaRef}>
         <svg
           class="grafico-projecao__svg"
           viewBox={`0 0 ${LARGURA} ${ALTURA}`}
-          style={{ '--grafico-largura-minima': larguraMinima }}
+          width={LARGURA}
+          height={ALTURA}
           role="img"
           aria-label={rotulo}
         >
