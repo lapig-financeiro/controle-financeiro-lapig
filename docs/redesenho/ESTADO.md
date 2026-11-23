@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 20/11/2026, noite (depois da 069 e do acesso da Mariana).
+Última atualização: 23/11/2026 (projeção das bolsas, 2ª rodada no worktree `redesenho/projecao-bolsas`).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -52,6 +52,7 @@
 | Uso real | **20/11: a Mariana recebeu o acesso** ao `/v2/` (papel professor, 7 centros: 30.099, 30.109, 30.111, 30.113, 30.116, 30.117, 30.118). É a primeira pessoa de fora usando o site novo: o retorno dela orienta as próximas telas. Telas que ela vê: Projetos, página do projeto (dinheiro, rubricas com motivo do selo, "De onde vem", termos do contrato, pendências) e Bolsistas. Análise e Admin ainda dizem "em construção". |
 | F3-B | **No ar em 20/11: 068 aplicada** (run 44649574063): tela "Bolsistas" do `/v2/` (montar pedido de bolsas: filtros de centro, equipe Pastagem/Alertas/Solos e situação; caixas com totais vindos da RPC; passo a passo no topo) e migração 068 (`bolsista_equipes`, `caixas_pedido`, `caixa_pedido_itens`, 8 RPCs, sem policy nem grant; lock por dono; agente e automação barrados). 3 rodadas; revisões MiniMax max e DeepSeek max resolvidas; PGlite com 17 mutantes. Login da Mariana criado e com os 7 centros (20/11). Ajustes da revisão final na 069. |
 | F3-C | **No ar em 20/11: 069 aplicada** (run 44748685655): motivo nos selos de situação (balão no hover, foco e toque, na lista e nas rubricas), tarifa bancária sem previsão vira atenção com o motivo escrito (ILPF 30.116), `situacao_centro_v2` e ajustes da revisão da 068 (só põe na caixa quem está na lista, confirmação no "Tirar quem saiu da lista", dono no `for update`, lock ao apagar). 2 rodadas + ajustes do Claude; revisões MiniMax max (2) e DeepSeek max cego; PGlite com 10 mutantes. |
+| Projeção das bolsas | **2ª rodada pronta no worktree `redesenho/projecao-bolsas` (23/11, sem push e sem migração).** Conta pura em `app/src/servicos/projecao.js`: bolsa posicionada pelo fim (`end_date` + `meses` + `compromissos_fim`), meses só até o fim do centro, dado faltando vira `dado_incompleto`, `depende_de` respeita o orçamento, desembolsos desligados/sem balancete vão para `fora` e `atrasados` guarda a situação. Tela: cartão com "Cabem até", coluna na tabela, seção com chips, gráfico fluido (56 px/mês mínimo, eixo alternado acima de 14 meses), legenda condicional, `useId`, foco e rolagem da tabela. Exemplos coerentes com a 066 (bolsa encerrada e bolsa que começa no meio). App **238 testes**, raiz **685**, lint/build verdes; visto em 1400 e 390 px (375 px de largura útil, sem rolagem da página). Falta revisão final e o "ok" para juntar/publicar. |
 
 ## Próximos passos (proposta de 20/11; a ordem é decisão do Victor)
 O que já está no ar: F0, F1, F2 (menos a F2-D), F3-A/B/C. O que falta do plano (README §6): F2-D, Admin, a F3
@@ -62,10 +63,11 @@ de verdade (leitura automática), F4 (o resto dos contratos), F5 (Análise) e o 
    desde a F0-A e a F1).
 2. **Rotina de novembro** (`docs/rotina-mensal.md`, skill `rotina-do-mes`): quando a pasta "11 - Novembro 2026"
    aparecer no Drive. Esperando os balancetes do 30.106 e o do 30.110 depois de 03/11.
-3. **Projeção por rubrica** (a F2-D do plano). É a pergunta que a tela ainda não responde: "até quando as bolsas
-   deste centro cabem?". A `calc_project_monthly` soma caixa sem olhar rubrica, por isso a tela não usa. Precisa
-   do Victor antes da tarefa: o que conta como entrada (parcela do cronograma × balancete, como em
-   `planejamento-dinheiro.js`) e como a resposta aparece na página do projeto.
+3. **Projeção por rubrica** (a F2-D do plano) — **2ª rodada pronta no worktree `redesenho/projecao-bolsas` em
+   23/11**, sem push. Responde "até quando as bolsas cabem" com o menor entre o orçamento da rubrica e o caixa mês
+   a mês, cruzando os desembolsos com o balancete (a mesma regra de `planejamento-dinheiro.js`) e posicionando cada
+   bolsa pelo fim da janela da 066. App 238 testes, raiz 685, lint/build verdes; visto em 1400 e 390 px. Falta
+   revisão final e o "ok" do Victor para juntar/publicar; o relatório está em `relatorios/projecao-bolsas.md`.
 4. **Admin mínimo** (README §2.4) — **no ar em 20/11** (ver tabela). Hoje o acesso da Mariana foi dado pelo Claude via `save_user_assignments`. A tela
    Admin dá ao Victor quem vê qual centro e o filtro da própria visão (o banco já tem `filtro_visao` e `centros_visiveis()` desde a 063), sem
    precisar de nós. Pequena e independente de 3: dá para correr em paralelo.
@@ -102,6 +104,8 @@ Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeç
 ## Registro
 | Data | O que aconteceu |
 |---|---|
+| 23/11 | **Projeção das bolsas, 2ª rodada** (revisões MiniMax max e DeepSeek max conferidas pelo Claude): bolsa posicionada pelo fim da janela da 066, `saldo`/`previsto` nulos viram `dado_incompleto`, `depende_de` respeita o orçamento, desligado/sem balancete vão para `fora`, `atrasados` guarda a situação, taxa em 15% (não 0,15%), "Cabe até" no painel normal, gráfico fluido com teste de 30 meses, troca de centro sem data anterior, nota das duas folhas, legenda condicional, `useId` e rolagem da tabela. Exemplos coerentes com a 066 (Cerrado com bolsa encerrada, Corredor com bolsa que começa no meio, 34.000 livre). App 238 testes, raiz 685, lint/build verdes; mutantes desfeitos derrubam os testes. `documento.test.jsx` falhou uma vez e passou nas seguintes. Visto em 1400 e 390 px (375 de largura útil). Sem push |
+| 23/11 | **Projeção das bolsas** pronta no worktree `redesenho/projecao-bolsas` (sem push, sem migração): `projetarBolsas` com folha por bolsa, orçamento e caixa mês a mês; cartão "Bolsas por mês" com "Cabem até", coluna "Cabe até" e seção na aba Dinheiro com os três chips e gráfico SVG; "Repasses" virou "Desembolsos"; exemplos e catálogo ajustados. App 215 testes, raiz 685, lint/build verdes. Mutantes: dia 07 (`<=` → `<`) falhou 1 teste; rendimento somado falhou 6. Visto em 1400 e 390 px, sem rolagem horizontal da página. Falta revisão e o ok para publicar |
 | 20/11 | Admin mínimo feito pelo agy Orchestrator (Argon), a pedido do Victor: 1ª rodada 7c34031; revisões MiniMax max e DeepSeek max acharam centro sem código derrubando a tela (alto), rebaixar admin sem confirmação, "Marcar todos" pegando encerrados escondidos, reabrir durante a recarga e foco da confirmação; 2ª rodada db69d7b corrigiu tudo com teste. Dados reais conferidos só leitura: 5 logins, 21 centros, todos com código |
 | 20/11 | Victor enviou o acesso do `/v2/` à Mariana. ESTADO revisto: linhas velhas (F3-A, próximos passos, notas da 064/065) trocadas por "Próximos passos", "Dívidas técnicas" e "Pendências com o Victor" atuais |
 | 20/11 | **069 aplicada** com o ok do Victor (F3-C; master 7db4edb, ensaio 44746974367, aplicar 44748685655, aprovação cbf79c0860667bed, manutenção ligada e desligada). Conferida pela API: resumo 200 com `motivos` nos 11 centros; 30.116 em atenção pela tarifa (R$ 14,34); 30.088 e 30.095 seguem em problema (CIP/DAO acima do previsto) com a tarifa deles separada; `situacao_centro_v2` 200; anon 401; `_situacao_centro` 403; `get_pedido_bolsas_v2` 200 (137 bolsistas) |

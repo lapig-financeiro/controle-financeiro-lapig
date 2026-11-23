@@ -363,14 +363,14 @@ export async function repasses(projectId) {
       ? { dados: null, erro: ex.erro }
       : responderExemplo(
           () => ex.modulo.repasses(projectId),
-          'Não foi possível carregar os repasses deste centro.',
+          'Não foi possível carregar os desembolsos deste centro.',
           opcoes
         );
   }
   return chamarRpc(
     'get_repasses_v2',
     { p_project_id: projectId },
-    'Não foi possível carregar os repasses deste centro.',
+    'Não foi possível carregar os desembolsos deste centro.',
     opcoes
   );
 }

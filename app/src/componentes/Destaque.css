@@ -36,6 +36,19 @@
   color: var(--cor-texto-3);
 }
 
+.destaque--clicavel {
+  cursor: pointer;
+}
+
+.destaque--clicavel:hover {
+  border-color: var(--cor-borda-forte);
+}
+
+.destaque--clicavel:focus-visible {
+  outline: none;
+  box-shadow: var(--anel-foco);
+}
+
 .grade-destaques {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr));

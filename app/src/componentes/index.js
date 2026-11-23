@@ -22,3 +22,4 @@ export { AvisoFalha } from './AvisoFalha.jsx';
 export { Vazio } from './Vazio.jsx';
 export { Esqueleto } from './Esqueleto.jsx';
 export { BarraTopo } from './BarraTopo.jsx';
+export { GraficoProjecao } from './GraficoProjecao.jsx';
