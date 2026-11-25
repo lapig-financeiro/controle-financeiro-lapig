@@ -439,3 +439,14 @@ Dois altos, ambos conferidos e corrigidos com teste que falha sem a correção:
   marcador (só espaço ou pontuação entre dois nomes não conta como sobra).
 
 Pacote: 134 testes.
+
+### Quarta conferência curta do Sol (sobre `b8920b5`)
+
+Um alto: com três nomes sobrepostos em cadeia, a sobra do terceiro (`Helena`) era descartada por cruzar outra sobra.
+Correção: as sobras saem da **cobertura de todos os trechos de uma vez** (segmentos entre os cortes), disjuntas dos
+escolhidos por construção. O teste novo de propriedade (3000 dicionários e textos aleatórios, com e sem acento,
+conferido com 5 sementes) achou mais um caso na mesma hora: ocorrências **sobrepostas do mesmo nome**
+(`Inês Ines Inês` com `Ines Ines`) não eram achadas; a busca agora recomeça uma posição depois de cada achado.
+
+Propriedade travada: toda palavra que faz parte de uma ocorrência de nome do dicionário (completo ou primeiro +
+último, sem acento, palavra inteira) some do texto que vai ao modelo; só ficam as outras. Pacote: 136 testes.
