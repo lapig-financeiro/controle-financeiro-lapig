@@ -192,7 +192,9 @@ o k não tinha linha de bolsas. O `esperado` de novembro é 5.000 (só a bolsa c
 falta fica **0**: a folha de novembro da bolsa corrente está faltando, mas o `visto` agregado a compensa. No
 comportamento atual: `folha_atrasada` nulo, `compromissos_bolsas` 65.000 e `a.bolsas` livre 30.000 (seria
 25.000 se a folha fosse contada). Um estorno negativo no mesmo lugar reduz `real(D)` e faz o contrário
-(aumenta a falta); os dois casos mostram que o `visto` não distingue a bolsa nem o sinal do lançamento. Não é
+(aumenta a falta: um estorno de −5.000 levaria a falta a 10.000). O `visto` soma `saldo_atual` com sinal, mas não
+sabe a que bolsa nem a que mês o lançamento pertence: tudo o que entra ou sai da rubrica no intervalo é tratado
+como folha. Não é
 corrigido porque o balancete não traz o vínculo do lançamento com o bolsista.
 
 **(b) Valor mudado na própria linha.** `70.VALOR_ALTERADO` tem uma única bolsa na linha com `amount = 7.000`

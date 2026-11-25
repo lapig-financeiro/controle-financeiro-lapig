@@ -314,7 +314,8 @@ async function main() {
       try { await sql('rollback;'); } catch { /* idem */ }
     }
     if (!falhouAntes) throw new Error('test_070 passou antes da migração 070!');
-    if (!msgAntes.includes('070 FALHOU: 70.UM_MES a.bolsas livre deveria ser 17000 (a 066 daria 25000)')) {
+    // Exige também o valor observado: um "veio" vazio (rubrica sumida na base) não pode passar por falha certa.
+    if (!/070 FALHOU: 70\.UM_MES a\.bolsas livre deveria ser 17000 \(a 066 daria 25000\), veio 25000(\.00)?\b/.test(msgAntes)) {
       throw new Error(`ANTES da 070 falhou pelo motivo errado: ${msgAntes}`);
     }
     console.log(`  [ANTES OK] ${msgAntes}`);
