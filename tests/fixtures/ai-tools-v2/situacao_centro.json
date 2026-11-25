@@ -1,0 +1,26 @@
+{
+  "situacao": "atenção",
+  "motivos": [
+    {
+      "codigo": "folha_atrasada",
+      "nivel": "atenção",
+      "texto": "A folha de out/26 foi paga depois do balancete e ainda não aparece no realizado: R$ 8.000,00. Contato: Pessoa Exemplo Um.",
+      "grupo_code": "a",
+      "valor": 8000
+    },
+    {
+      "codigo": "pendencias_abertas",
+      "nivel": "atenção",
+      "texto": "1 pendência aberta: Pessoa Exemplo Dois, CPF 12345678909, e-mail pessoa.dois@exemplo.test.",
+      "grupo_code": null,
+      "valor": null
+    },
+    {
+      "codigo": "tarifa_bancaria",
+      "nivel": "atenção",
+      "texto": "Rubrica b — Serviços de Terceiros P. Jurídica: saldo livre R$ −14,34 por causa de R$ 14,34 de tarifa bancária sem previsão no plano.",
+      "grupo_code": "b",
+      "valor": 14.34
+    }
+  ]
+}

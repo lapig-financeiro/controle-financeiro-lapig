@@ -1,0 +1,68 @@
+{
+  "centros": [
+    { "id": "00000000-0000-4000-8000-000000030901", "code": "30.901", "name": "Centro Exemplo Um" },
+    { "id": "00000000-0000-4000-8000-000000030902", "code": "30.902", "name": "Centro Exemplo Dois" }
+  ],
+  "bolsistas": [
+    {
+      "holder_id": "00000000-0000-4000-8000-000000070001",
+      "nome": "Pessoa Exemplo Um",
+      "equipe": "pastagem",
+      "valor_vigente": 4200,
+      "cpf": "123.456.789-09",
+      "email": "pessoa.exemplo@exemplo.test",
+      "bolsas": [
+        {
+          "scholarship_id": "00000000-0000-4000-8000-000000040101",
+          "project_id": "00000000-0000-4000-8000-000000030901",
+          "code": "30.901",
+          "valor": 4200,
+          "inicio": "2026-09-01",
+          "fim": "2027-09-01",
+          "status": "active",
+          "vigente_hoje": true
+        }
+      ]
+    },
+    {
+      "holder_id": "00000000-0000-4000-8000-000000070002",
+      "nome": "Pessoa Exemplo Dois",
+      "equipe": "alertas",
+      "valor_vigente": 3000,
+      "cpf": "98765432100",
+      "email": "pessoa.dois@exemplo.test",
+      "bolsas": [
+        {
+          "scholarship_id": "00000000-0000-4000-8000-000000040201",
+          "project_id": "00000000-0000-4000-8000-000000030902",
+          "code": "30.902",
+          "valor": 3000,
+          "inicio": "2026-01-01",
+          "fim": "2027-01-01",
+          "status": "active",
+          "vigente_hoje": true
+        }
+      ]
+    }
+  ],
+  "caixas": [
+    {
+      "id": "00000000-0000-4000-8000-000000080001",
+      "nome": "Caixa Exemplo",
+      "meses": 12,
+      "criado_em": "2026-11-01T10:00:00Z",
+      "pessoas": 1,
+      "total_mensal": 4200,
+      "total_periodo": 50400,
+      "itens_ocultos": 0,
+      "itens": [
+        {
+          "holder_id": "00000000-0000-4000-8000-000000070001",
+          "valor_mensal": null,
+          "valor_usado": 4200,
+          "nota": null
+        }
+      ]
+    }
+  ]
+}
