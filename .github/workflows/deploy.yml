@@ -77,5 +77,11 @@ jobs:
         with:
           path: _site
 
+      # Em 25/11/2026 o deploy falhou 5 vezes seguidas com "No artifacts named
+      # github-pages": o upload terminava com sucesso e o deploy-pages consultava
+      # a API 0,2 s depois, antes de o artefato aparecer. A espera tira a corrida.
+      - name: Esperar o artefato ficar visível para o deploy
+        run: sleep 30
+
       - id: deployment
         uses: actions/deploy-pages@v4
