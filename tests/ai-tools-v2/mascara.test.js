@@ -380,3 +380,71 @@ describe('todo paraModelo', () => {
     }
   });
 });
+
+describe('máscara — nenhum pedaço de nome fica à vista', () => {
+  function semAcento(palavra) {
+    return palavra.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  }
+
+  async function sessaoCom(nomes) {
+    const pedido = fixture('pedido_bolsas');
+    const base = pedido.bolsistas[0];
+    pedido.bolsistas = nomes.map((nome, indice) => ({ ...base, id: `pessoa-${indice}`, nome }));
+    const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    return sessao;
+  }
+
+  it('cadeia de três nomes sobrepostos (caso da 4ª conferência curta)', async () => {
+    const sessao = await sessaoCom([
+      'Ana Beatriz Camila Daniela Elisa Fernanda',
+      'Camila Daniela Elisa Fernanda Gabriela',
+      'Fernanda Gabriela Helena',
+    ]);
+    const marcado = sessao.marcarTexto(
+      'Ana Beatriz Camila Daniela Elisa Fernanda Gabriela Helena'
+    ).texto;
+    expect(marcado.replace(/⟦P\d+⟧/g, '')).not.toMatch(/[A-Za-z]/);
+  });
+
+  it('dicionários e textos aleatórios: só sobra palavra que não faz parte de nome achado', async () => {
+    const POOL = ['Ana', 'Inês', 'Ines', 'Paula', 'João', 'Joao', 'Lima', 'Souza', 'Maria'];
+    let semente = 20261125;
+    const sorteio = (n) => {
+      semente = (semente * 1103515245 + 12345) % 2147483648;
+      return semente % n;
+    };
+    for (let rodada = 0; rodada < 3000; rodada += 1) {
+      const nomes = [];
+      const quantos = 1 + sorteio(4);
+      for (let i = 0; i < quantos; i += 1) {
+        const tamanho = 2 + sorteio(3);
+        nomes.push(Array.from({ length: tamanho }, () => POOL[sorteio(POOL.length)]).join(' '));
+      }
+      const sessao = await sessaoCom(nomes);
+      const palavras = Array.from({ length: 4 + sorteio(8) }, () => POOL[sorteio(POOL.length)]);
+
+      // Referência: o dicionário inteiro (nome completo e primeiro + último de
+      // nome com 3+ palavras), comparado sem acento e por palavra inteira.
+      const chaves = new Set();
+      for (const nome of nomes) {
+        const partes = nome.split(' ');
+        chaves.add(partes.map(semAcento).join(' '));
+        if (partes.length > 2) chaves.add(`${semAcento(partes[0])} ${semAcento(partes[partes.length - 1])}`);
+      }
+      const marcada = new Array(palavras.length).fill(false);
+      for (const chave of chaves) {
+        const n = chave.split(' ').length;
+        for (let i = 0; i + n <= palavras.length; i += 1) {
+          if (palavras.slice(i, i + n).map(semAcento).join(' ') === chave) {
+            for (let j = i; j < i + n; j += 1) marcada[j] = true;
+          }
+        }
+      }
+      const esperado = palavras.filter((_, i) => !marcada[i]).sort();
+      const saida = sessao.marcarTexto(palavras.join(' ')).texto;
+      const restantes = saida.replace(/⟦P\d+⟧/g, ' ').split(/\s+/).filter(Boolean).sort();
+      expect(restantes, `nomes=${JSON.stringify(nomes)} texto="${palavras.join(' ')}" saída="${saida}"`).toEqual(esperado);
+    }
+  });
+});

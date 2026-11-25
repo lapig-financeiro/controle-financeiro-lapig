@@ -98,9 +98,10 @@ function limparCpfEEmail(valor) {
  *    mais trechos com acento. "Joao Pedro Silva" ganha de "Pedro Silva"
  *    dentro dele, e "Maria Inês" + "Ana Paula" ganham de "Ines Ana Paula"
  *    que cruza os dois.
- * 2. O que ficou descoberto dentro de algum trecho achado (sobra de um nome
- *    que perdeu a disputa) também vira marcador: o do trecho mais longo que
- *    cobre a sobra. A ficha pode repetir; o nome nunca fica exposto.
+ * 2. O que ficou descoberto dentro da cobertura de todos os trechos achados
+ *    (sobra de nome que perdeu a disputa) também vira marcador: o do trecho
+ *    mais longo que cobre a sobra. A ficha pode repetir; o nome nunca fica
+ *    exposto (propriedade travada por teste com dicionários aleatórios).
  */
 function escolherTrechos(candidatos, fonte) {
   const PESO_CARACTERE = 1000;
@@ -131,27 +132,38 @@ function escolherTrechos(candidatos, fonte) {
     }
   }
 
-  // Sobras: posições cobertas por algum candidato e por nenhum escolhido.
+  // Sobras: posições cobertas por ALGUM candidato e por NENHUM escolhido,
+  // tiradas da cobertura toda de uma vez (não candidato a candidato). As
+  // sobras são disjuntas dos escolhidos por construção, então nenhuma é
+  // descartada por sobreposição: todo caractere achado como nome termina
+  // num marcador, ou é só espaço/pontuação entre dois nomes.
+  const RE_SO_SEPARADOR = /^[^\p{L}\p{N}]*$/u;
+  const cortes = new Set();
+  for (const item of [...candidatos, ...escolhidos]) {
+    cortes.add(item.inicio);
+    cortes.add(item.fim);
+  }
+  const pontos = [...cortes].sort((a, b) => a - b);
+  const cobre = (lista, inicio, fim) => lista.filter((item) => item.inicio <= inicio && item.fim >= fim);
   const sobras = [];
-  for (const candidato of candidatos) {
-    let posicao = candidato.inicio;
-    const dentro = escolhidos
-      .filter((item) => item.inicio < candidato.fim && item.fim > candidato.inicio)
-      .sort((a, b) => a.inicio - b.inicio);
-    for (const item of dentro) {
-      if (item.inicio > posicao) sobras.push({ inicio: posicao, fim: item.inicio, dono: candidato, texto: fonte.slice(posicao, item.inicio) });
-      posicao = Math.max(posicao, item.fim);
-    }
-    if (posicao < candidato.fim) {
-      sobras.push({ inicio: posicao, fim: candidato.fim, dono: candidato, texto: fonte.slice(posicao, candidato.fim) });
+  for (let indice = 0; indice + 1 < pontos.length; indice += 1) {
+    const inicio = pontos[indice];
+    const fim = pontos[indice + 1];
+    if (cobre(escolhidos, inicio, fim).length > 0) continue;
+    const donos = cobre(candidatos, inicio, fim);
+    if (donos.length === 0) continue;
+    const dono = donos.sort((a, b) => b.fim - b.inicio - (a.fim - a.inicio))[0];
+    const anterior = sobras[sobras.length - 1];
+    if (anterior && anterior.fim === inicio && anterior.marcador === dono.marcador) {
+      anterior.fim = fim;
+    } else {
+      sobras.push({ inicio, fim, marcador: dono.marcador, sobra: true });
     }
   }
-  const RE_SO_SEPARADOR = /^[^\p{L}\p{N}]*$/u;
-  for (const sobra of sobras.sort((a, b) => b.dono.fim - b.dono.inicio - (a.dono.fim - a.dono.inicio))) {
-    if (escolhidos.some((item) => sobra.inicio < item.fim && sobra.fim > item.inicio)) continue;
+  for (const sobra of sobras) {
     // Só espaço ou pontuação entre dois nomes escolhidos não é pedaço de nome.
-    if (RE_SO_SEPARADOR.test(sobra.texto)) continue;
-    escolhidos.push({ inicio: sobra.inicio, fim: sobra.fim, marcador: sobra.dono.marcador, sobra: true });
+    if (RE_SO_SEPARADOR.test(fonte.slice(sobra.inicio, sobra.fim))) continue;
+    escolhidos.push(sobra);
   }
   return escolhidos;
 }
@@ -300,7 +312,10 @@ export function criarMascara({ rpc } = {}) {
       'gu'
     );
     const trechos = [];
-    for (const achado of comparavel.matchAll(padrao)) {
+    // Procura também ocorrências sobrepostas do mesmo nome ("Inês Ines Inês"
+    // com "Ines Ines"): depois de cada achado, recomeça uma posição adiante.
+    for (let achado = padrao.exec(comparavel); achado; achado = padrao.exec(comparavel)) {
+      padrao.lastIndex = achado.index + achado[1].length + 1;
       const inicioComparavel = achado.index + achado[1].length;
       const fimComparavel = inicioComparavel + achado[2].length;
       if (fimComparavel > mapa.length) continue;
