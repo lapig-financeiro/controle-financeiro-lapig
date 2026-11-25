@@ -1,0 +1,58 @@
+{
+  "termos": {
+    "vigencia_inicio": {
+      "id": "termo-30901-inicio",
+      "valor": "2025-12-31",
+      "regra": "vigência definida no contrato",
+      "trecho": "CLÁUSULA SEGUNDA — Pessoa Exemplo Um, CPF 123.456.789-09, pessoa.exemplo@exemplo.test.",
+      "documento_nome": "Contrato de prestação de serviços · 30.901",
+      "documento_url": "https://exemplo.test/contrato-30901",
+      "pagina": 2,
+      "nota": null,
+      "origem": "ia",
+      "autor": "Pessoa Exemplo Dois",
+      "criado_em": "2026-11-18T15:10:00Z",
+      "conferido": true,
+      "conferido_em": "2026-11-18T16:00:00Z",
+      "versoes_anteriores": []
+    },
+    "vigencia_fim": {
+      "id": "termo-30901-fim",
+      "valor": "2027-09-30",
+      "regra": "vigência definida no contrato",
+      "trecho": "CLÁUSULA SEGUNDA — a vigência é a definida no instrumento.",
+      "documento_nome": "Contrato de prestação de serviços · 30.901",
+      "documento_url": "https://exemplo.test/contrato-30901",
+      "pagina": 2,
+      "nota": null,
+      "origem": "ia",
+      "autor": "Pessoa Exemplo Dois",
+      "criado_em": "2026-11-18T15:10:00Z",
+      "conferido": true,
+      "conferido_em": "2026-11-18T16:00:00Z",
+      "versoes_anteriores": []
+    },
+    "taxa_total": {
+      "id": "termo-30901-total",
+      "valor": 9.75,
+      "regra": "Project Overhead de 9,75% sobre o valor total do projeto",
+      "trecho": "ANEXO — Project Overhead: 9,75% do valor total do projeto.",
+      "documento_nome": "Plano de trabalho · 30.901 v2",
+      "documento_url": null,
+      "documento_id": "00000000-0000-4000-8000-000000010901",
+      "documento": null,
+      "pagina": 8,
+      "nota": "O contrato fixa 9,75% no total.",
+      "origem": "ia",
+      "autor": "Pessoa Exemplo Dois",
+      "criado_em": "2026-11-18T15:12:00Z",
+      "conferido": false,
+      "conferido_em": null,
+      "versoes_anteriores": []
+    }
+  },
+  "start_date_cadastro": "2025-12-31",
+  "end_date_cadastro": "2027-09-30",
+  "vigencia_situacao": "confere",
+  "vigencia_confere": true
+}

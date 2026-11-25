@@ -1,0 +1,24 @@
+{
+  "parcelas": [
+    {
+      "parcela": 1,
+      "data_prevista": "2026-01-15",
+      "data_texto": null,
+      "valor": 250000,
+      "valor_texto": null
+    },
+    {
+      "parcela": 2,
+      "data_prevista": null,
+      "data_texto": "Após o relatório parcial",
+      "valor": 350000,
+      "valor_texto": "350 mil"
+    }
+  ],
+  "valor_total_plano": 600000,
+  "data_balancete": "2026-10-15",
+  "recursos": {
+    "recebido": 250000,
+    "a_receber": 350000
+  }
+}

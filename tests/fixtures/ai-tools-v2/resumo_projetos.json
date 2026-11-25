@@ -1,0 +1,100 @@
+{
+  "centros": [
+    {
+      "id": "00000000-0000-4000-8000-000000030901",
+      "code": "30.901",
+      "name": "Centro Exemplo Um",
+      "end_date": "2027-09-30",
+      "drive_folder_url": "https://drive.google.com/drive/folders/exemplo-30901",
+      "livre": 84300,
+      "situacao": "em dia",
+      "data_referencia": "2026-10-15",
+      "pendencias_abertas": 0,
+      "erro": null,
+      "responsaveis": ["Pessoa Exemplo Um"],
+      "motivos": []
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000030902",
+      "code": "30.902",
+      "name": "Centro Exemplo Dois",
+      "end_date": "2027-03-31",
+      "drive_folder_url": null,
+      "livre": 19400,
+      "situacao": "atenção",
+      "data_referencia": "2026-08-15",
+      "pendencias_abertas": 2,
+      "erro": null,
+      "responsaveis": ["Pessoa Exemplo Dois"],
+      "motivos": [
+        {
+          "codigo": "balancete_atrasado",
+          "nivel": "atenção",
+          "texto": "O último balancete cobre até 08/2026. Contato: Pessoa Exemplo Dois, CPF 123.456.789-09, e-mail pessoa.exemplo@exemplo.test.",
+          "grupo_code": null,
+          "valor": null
+        },
+        {
+          "codigo": "pendencias_abertas",
+          "nivel": "atenção",
+          "texto": "2 pendências abertas: Pessoa Exemplo Dois; conta 7.1.3.99 sem rubrica.",
+          "grupo_code": null,
+          "valor": null
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000030903",
+      "code": "30.903",
+      "name": "Centro Exemplo Três",
+      "end_date": "2027-06-30",
+      "drive_folder_url": null,
+      "livre": null,
+      "situacao": "sem balancete",
+      "data_referencia": null,
+      "pendencias_abertas": 0,
+      "erro": null,
+      "responsaveis": [],
+      "motivos": [
+        {
+          "codigo": "sem_balancete",
+          "nivel": "info",
+          "texto": "Este centro não tem balancete importado: falta o realizado por rubrica.",
+          "grupo_code": null,
+          "valor": null
+        }
+      ]
+    }
+  ],
+  "ocultos": 1,
+  "todos": [
+    {
+      "id": "00000000-0000-4000-8000-000000030901",
+      "code": "30.901",
+      "name": "Centro Exemplo Um",
+      "responsaveis": ["Pessoa Exemplo Um"],
+      "oculto": false
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000030902",
+      "code": "30.902",
+      "name": "Centro Exemplo Dois",
+      "responsaveis": ["Pessoa Exemplo Dois"],
+      "oculto": false
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000030903",
+      "code": "30.903",
+      "name": "Centro Exemplo Três",
+      "responsaveis": [],
+      "oculto": false
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000030904",
+      "code": "30.904",
+      "name": "Centro Exemplo Oculto",
+      "responsaveis": [],
+      "oculto": true
+    }
+  ]
+}

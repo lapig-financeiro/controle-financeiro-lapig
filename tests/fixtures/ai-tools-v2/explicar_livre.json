@@ -1,0 +1,378 @@
+{
+  "rotulo": "Livre para gastar",
+  "valor": 84300,
+  "tipo": "calculo",
+  "chave": "livre",
+  "conta": "soma dos grupos",
+  "sinal": 1,
+  "ref": null,
+  "nota": null,
+  "partes": [
+    {
+      "rotulo": "Pessoal",
+      "valor": 58200,
+      "tipo": "calculo",
+      "chave": "grupo:a",
+      "conta": "previsto − realizado − comprometido",
+      "sinal": 1,
+      "ref": null,
+      "nota": null,
+      "partes": [
+        {
+          "rotulo": "Previsto — Bolsas de pesquisa",
+          "valor": 780000,
+          "tipo": "calculo",
+          "chave": "rubrica:a.bolsas:previsto",
+          "conta": "soma das linhas do plano",
+          "sinal": 1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "Bolsas de pesquisa",
+              "valor": 780000,
+              "tipo": "legado",
+              "chave": "linha:pr-901-a1",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "plano_rubricas",
+                "alvo_id": "00000000-0000-4000-8000-000000060101",
+                "campo": "valor_previsto"
+              },
+              "nota": null,
+              "partes": []
+            }
+          ]
+        },
+        {
+          "rotulo": "Realizado — Bolsas de pesquisa",
+          "valor": 540000,
+          "tipo": "calculo",
+          "chave": "rubrica:a.bolsas:realizado",
+          "conta": "soma das contas do balancete",
+          "sinal": -1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "7.1.3.04.01.09142 — BOLSA DOAÇÃO PESQUISA",
+              "valor": 380000,
+              "tipo": "documento",
+              "chave": "linha:bl-901-1",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "balancete_lancamentos",
+                "alvo_id": "00000000-0000-4000-8000-000000050101",
+                "campo": "saldo_atual"
+              },
+              "nota": null,
+              "partes": []
+            },
+            {
+              "rotulo": "7.1.3.04.01.09145 — BOLSA APOIO TÉCNICO",
+              "valor": 160000,
+              "tipo": "documento",
+              "chave": "linha:bl-901-2",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "balancete_lancamentos",
+                "alvo_id": "00000000-0000-4000-8000-000000050102",
+                "campo": "saldo_atual"
+              },
+              "nota": null,
+              "partes": []
+            }
+          ]
+        },
+        {
+          "rotulo": "Comprometido — Bolsas de pesquisa",
+          "valor": 193400,
+          "tipo": "calculo",
+          "chave": "rubrica:a.bolsas:comprometido",
+          "conta": "soma das bolsas na janela",
+          "sinal": -1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "Pessoa Exemplo Um — 11 meses × R$ 4.200,00",
+              "valor": 46200,
+              "tipo": "digitado",
+              "chave": "linha:b-901-1",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "scholarships",
+                "alvo_id": "00000000-0000-4000-8000-000000040101",
+                "campo": "amount"
+              },
+              "nota": null,
+              "partes": []
+            },
+            {
+              "rotulo": "Pessoa Exemplo Dois — 11 meses × R$ 13.381,81",
+              "valor": 147200,
+              "tipo": "digitado",
+              "chave": "linha:b-901-2",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "scholarships",
+                "alvo_id": "00000000-0000-4000-8000-000000040201",
+                "campo": "amount"
+              },
+              "nota": null,
+              "partes": []
+            }
+          ]
+        },
+        {
+          "rotulo": "Comprometido — folha atrasada",
+          "valor": 8000,
+          "tipo": "calculo",
+          "chave": "rubrica:a.bolsas:folha_atrasada",
+          "conta": "folha esperada que o balancete ainda não mostra",
+          "sinal": -1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "Folha esperada de 10/2026",
+              "valor": 8000,
+              "tipo": "calculo",
+              "chave": "rubrica:a.bolsas:folha_esperada:comprometido",
+              "conta": "bolsas cadastradas nos meses que o balancete não mostra",
+              "sinal": 1,
+              "ref": null,
+              "nota": null,
+              "partes": [
+                {
+                  "rotulo": "Pessoa Exemplo Um — 1 mês × R$ 4.000,00",
+                  "valor": 4000,
+                  "tipo": "digitado",
+                  "chave": "linha:b-901-folha-1",
+                  "conta": null,
+                  "sinal": 1,
+                  "ref": {
+                    "alvo_tabela": "scholarships",
+                    "alvo_id": "00000000-0000-4000-8000-000000040101",
+                    "campo": "amount"
+                  },
+                  "nota": null,
+                  "partes": []
+                },
+                {
+                  "rotulo": "Pessoa Exemplo Dois — 1 mês × R$ 4.000,00",
+                  "valor": 4000,
+                  "tipo": "digitado",
+                  "chave": "linha:b-901-folha-2",
+                  "conta": null,
+                  "sinal": 1,
+                  "ref": {
+                    "alvo_tabela": "scholarships",
+                    "alvo_id": "00000000-0000-4000-8000-000000040201",
+                    "campo": "amount"
+                  },
+                  "nota": null,
+                  "partes": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rotulo": "Previsto — Auxílio a colaboradores",
+          "valor": 84000,
+          "tipo": "calculo",
+          "chave": "rubrica:a.estag:previsto",
+          "conta": "soma das linhas do plano",
+          "sinal": 1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "Auxílio a colaboradores",
+              "valor": 84000,
+              "tipo": "legado",
+              "chave": "linha:pr-901-a2",
+              "conta": null,
+              "sinal": 1,
+              "ref": null,
+              "nota": null,
+              "partes": []
+            }
+          ]
+        },
+        {
+          "rotulo": "Realizado — Auxílio a colaboradores",
+          "valor": 72400,
+          "tipo": "calculo",
+          "chave": "rubrica:a.estag:realizado",
+          "conta": "soma das contas do balancete",
+          "sinal": -1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "7.1.3.04.02.09210 — AUXÍLIO COLABORADORES EXTERNOS",
+              "valor": 72400,
+              "tipo": "documento",
+              "chave": "linha:bl-901-3",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "balancete_lancamentos",
+                "alvo_id": "00000000-0000-4000-8000-000000050103",
+                "campo": "saldo_atual"
+              },
+              "nota": null,
+              "partes": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rotulo": "Serviços de terceiros (PJ)",
+      "valor": 14100,
+      "tipo": "calculo",
+      "chave": "grupo:b",
+      "conta": "previsto − realizado",
+      "sinal": 1,
+      "ref": null,
+      "nota": "compromissos fora de bolsas não são rastreados",
+      "partes": [
+        {
+          "rotulo": "Previsto — Serviços técnicos especializados",
+          "valor": 120000,
+          "tipo": "calculo",
+          "chave": "rubrica:b.pj:previsto",
+          "conta": "soma das linhas do plano",
+          "sinal": 1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "Serviços técnicos especializados",
+              "valor": 120000,
+              "tipo": "legado",
+              "chave": "linha:pr-901-b1",
+              "conta": null,
+              "sinal": 1,
+              "ref": null,
+              "nota": null,
+              "partes": []
+            }
+          ]
+        },
+        {
+          "rotulo": "Realizado — Serviços técnicos especializados",
+          "valor": 105900,
+          "tipo": "calculo",
+          "chave": "rubrica:b.pj:realizado",
+          "conta": "soma das contas do balancete",
+          "sinal": -1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "7.1.3.05.01.08110 — SERVIÇOS DE PROCESSAMENTO DE DADOS",
+              "valor": 64350.75,
+              "tipo": "documento",
+              "chave": "linha:bl-901-4",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "balancete_lancamentos",
+                "alvo_id": "00000000-0000-4000-8000-000000050104",
+                "campo": "saldo_atual"
+              },
+              "nota": null,
+              "partes": []
+            },
+            {
+              "rotulo": "7.1.3.05.01.08124 — CONSULTORIA TÉCNICA ESPECIALIZADA",
+              "valor": 41549.25,
+              "tipo": "legado",
+              "chave": "linha:bl-901-5",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "balancete_lancamentos",
+                "alvo_id": "00000000-0000-4000-8000-000000050105",
+                "campo": "saldo_atual"
+              },
+              "nota": null,
+              "partes": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "rotulo": "Equipamentos e material permanente",
+      "valor": 12000,
+      "tipo": "calculo",
+      "chave": "grupo:f",
+      "conta": "previsto − realizado",
+      "sinal": 1,
+      "ref": null,
+      "nota": "compromissos fora de bolsas não são rastreados",
+      "partes": [
+        {
+          "rotulo": "Previsto — Equipamentos e material permanente",
+          "valor": 80000,
+          "tipo": "calculo",
+          "chave": "rubrica:f.equip:previsto",
+          "conta": "soma das linhas do plano",
+          "sinal": 1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "Servidores e estações de trabalho",
+              "valor": 80000,
+              "tipo": "legado",
+              "chave": "linha:pr-901-f1",
+              "conta": null,
+              "sinal": 1,
+              "ref": null,
+              "nota": null,
+              "partes": []
+            }
+          ]
+        },
+        {
+          "rotulo": "Realizado — Equipamentos e material permanente",
+          "valor": 68000,
+          "tipo": "calculo",
+          "chave": "rubrica:f.equip:realizado",
+          "conta": "soma das contas do balancete",
+          "sinal": -1,
+          "ref": null,
+          "nota": null,
+          "partes": [
+            {
+              "rotulo": "7.1.3.20.01.05012 — EQUIPAMENTOS DE PROCESSAMENTO DE DADOS",
+              "valor": 68000,
+              "tipo": "documento",
+              "chave": "linha:bl-901-6",
+              "conta": null,
+              "sinal": 1,
+              "ref": {
+                "alvo_tabela": "balancete_lancamentos",
+                "alvo_id": "00000000-0000-4000-8000-000000050106",
+                "campo": "saldo_atual"
+              },
+              "nota": null,
+              "partes": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
