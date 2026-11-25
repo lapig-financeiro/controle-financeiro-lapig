@@ -97,6 +97,38 @@ function parseDDMMYYYY(s) {
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
+/** Meses de início a fim, contando os dois (mesma regra do banco: mês a mês). */
+function mesesInclusivos(inicioIso, fimIso) {
+  const [ai, mi] = inicioIso.split('-').map(Number);
+  const [af, mf] = fimIso.split('-').map(Number);
+  return (af - ai) * 12 + (mf - mi) + 1;
+}
+
+function ultimoDiaDoMes(ano, mes) {
+  return new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+}
+
+/**
+ * Algumas planilhas dão o fim como "início + N meses" (04/02/2026 / 04/02/2027
+ * para 12 bolsas; 01/08/2026 / 01/01/2027 para 5): o dia do fim repete o do
+ * início e o mês do fim não é pago. Contado mês a mês, sairia um mês a mais
+ * (30.106, 25/11/2026). Nesse caso o fim vira o último dia do mês anterior.
+ * Com "Total de Bolsas" na linha, só corrige se a conta corrigida bater com ele.
+ * Devolve o fim certo, ou null quando não há o que corrigir.
+ */
+function fimExclusivoCorrigido(inicioIso, fimIso, totalBolsas) {
+  if (!inicioIso || !fimIso || fimIso <= inicioIso) return null;
+  const [, , di] = inicioIso.split('-').map(Number);
+  const [af, mf, df] = fimIso.split('-').map(Number);
+  if (df !== di || df === ultimoDiaDoMes(af, mf)) return null;
+  const anoAnt = mf === 1 ? af - 1 : af;
+  const mesAnt = mf === 1 ? 12 : mf - 1;
+  const corrigido = `${anoAnt}-${String(mesAnt).padStart(2, '0')}-${String(ultimoDiaDoMes(anoAnt, mesAnt)).padStart(2, '0')}`;
+  if (corrigido < inicioIso) return null;
+  if (totalBolsas && mesesInclusivos(inicioIso, corrigido) !== totalBolsas) return null;
+  return corrigido;
+}
+
 /** Status da FUNAPE que significam "bolsa ativa" para comparação */
 const ACTIVE_STATUSES = ['ativo', 'aguardando aditamento', 'aguardando preenchimento do bolsista'];
 
@@ -217,6 +249,14 @@ function parseBolsaSpreadsheet(arrayBuffer) {
       warnings.push(`Linha ${i + 2}: valor não reconhecido em "${valorRaw}".`);
     }
 
+    const totalBolsas = parseInt(mapped.total_bolsas, 10) || null;
+    const fimCorrigido = fimExclusivoCorrigido(duracao.inicio, duracao.fim, totalBolsas);
+    if (fimCorrigido) {
+      warnings.push(`Linha ${i + 2}: o fim ${duracao.fim.split('-').reverse().join('/')} é "início + N meses" ` +
+        `e esse mês não é pago; a bolsa foi contada até ${fimCorrigido.split('-').reverse().join('/')}.`);
+      duracao.fim = fimCorrigido;
+    }
+
     data.push({
       nome,
       cpf,                                     // 11 dígitos ou null
@@ -229,7 +269,7 @@ function parseBolsaSpreadsheet(arrayBuffer) {
       pagamento_automatico: String(mapped.pagamento_automatico || '').trim(),
       status_funape: statusFunape,
       valor,                                    // numeric
-      total_bolsas: parseInt(mapped.total_bolsas, 10) || null,
+      total_bolsas: totalBolsas,
       bolsas_pagas: parseInt(mapped.bolsas_pagas, 10) || null,
       _rowIndex: i + 2,                          // 1-indexed (linha na planilha)
     });
@@ -245,4 +285,5 @@ function parseBolsaSpreadsheet(arrayBuffer) {
 // ── Browser bridge ─────────────────────────────────────────
 if (typeof window !== 'undefined') {
   window.parseBolsaSpreadsheet = parseBolsaSpreadsheet;
+  window.fimExclusivoCorrigido = fimExclusivoCorrigido;
 }

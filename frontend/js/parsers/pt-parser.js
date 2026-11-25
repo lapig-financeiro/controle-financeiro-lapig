@@ -242,8 +242,11 @@ function extractCabecalho(doc) {
   const mCip = fullText.match(/(?<![a-zà-ÿ])CIP(?![a-zà-ÿ])[\s\S]{0,300}?Total[\s\S]{0,60}?R?\$?\s*(\d[\d.,]*)/i);
   if (mCip) valor_cip = brl(mCip[1].replace(/[.,]$/, ''));
 
-  const mDao = fullText.match(/(?<![a-zà-ÿ])D\.?\s*A\.?\s*O(?![a-zà-ÿ])[^\d]{0,200}?R?\$?\s*(\d[\d.,]*)/i);
-  if (mDao) valor_dao = brl(mDao[1].replace(/[.,]$/, ''));
+  // O valor da frase precisa ter cara de dinheiro: "R$ 23.040" ou "23.040,00".
+  // Com o valor em branco ("R$ ........ (......), conforme detalhado no anexo 1")
+  // o primeiro dígito depois é o número do anexo (30.114 leu DAO = R$ 1).
+  const mDao = fullText.match(/(?<![a-zà-ÿ])D\.?\s*A\.?\s*O(?![a-zà-ÿ])[^\d]{0,200}?(?:R\$\s*(\d[\d.,]*)|(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,3}(?:\.\d{3})+))/i);
+  if (mDao) valor_dao = brl((mDao[1] ?? mDao[2]).replace(/[.,]$/, ''));
 
   // Datas "01/06/2025" (início) e "31/12/2026" (fim) — formato comum em II.c.
   // Sem confiança alta, deixa para usuário preencher se não achar.

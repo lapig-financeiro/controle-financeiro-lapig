@@ -95,6 +95,23 @@ describe('CIP e DAO', () => {
       'serviços de gestão administrativa e financeira o valor de R$ 23.040,00 (vinte e três mil).</p>'));
     expect(ex.data.valor_dao).toBe(23040);
   });
+  it('DAO em branco na frase e na tabela não vira o número do anexo (30.114 lia R$ 1)', () => {
+    const ex = parsePtFromHtml(plano(despesas,
+      '<p>Para execução deste projeto a Fundação.......... aplicará a título de Despesas Administrativas e ' +
+      'Operacionais de caráter indivisível (DAO) decorrentes de serviços de gestão administrativa e financeira ' +
+      'o valor de R$ .................... (..............................), conforme detalhado no anexo 1.</p>' +
+      '<table>' + linha(['Previsão de custos indiretos', '']) + linha(['D.A.O da Fundação', '']) +
+      linha(['Total do plano', '']) + '</table>'));
+    expect(ex.data.valor_dao).toBeNull();
+    expect(rubricas(ex).filter(r => r[0] === 'dao')).toEqual([]);
+    expect(ex.warnings).toContain('Valor DAO não detectado — preencha manualmente se aplicável.');
+  });
+  it('DAO na frase sem "R$" só vale com formato de dinheiro', () => {
+    const ex = parsePtFromHtml(plano(despesas,
+      '<p>Despesas Administrativas e Operacionais de caráter indivisível (DAO) decorrentes de ' +
+      'serviços de gestão administrativa e financeira o valor de 2.500,00 (dois mil e quinhentos reais).</p>'));
+    expect(ex.data.valor_dao).toBe(2500);
+  });
   it('"participantes" não é CIP: sem a seção, o CIP fica sem valor e avisa', () => {
     const ex = parsePtFromHtml(plano(despesas,
       '<p>III.a. Participantes da UFG</p><table>' + linha(['Total', '202008137']) + '</table>'));
