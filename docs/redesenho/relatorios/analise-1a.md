@@ -540,3 +540,13 @@ Cinco achados, todos conferidos e corrigidos pelo Claude, cada um com teste que 
 
 Medido com o oráculo real (sem nomes): `bolsas` do 30.111 sai com ~21 mil caracteres no padrão e ~28 mil com
 `incluir_encerradas` (antes estourava 60 mil). Pacote: 152 testes; Worker: 119.
+
+### Conferência curta do Sol sobre `e9d88b6`
+
+- Médio, **recusado de propósito**: "bolsas futuras entram no recorte padrão" contraria o pedido original, mas é a
+  decisão do Claude registrada acima (bolsa que vai começar é compromisso); `incluir_encerradas: true` trazer
+  canceladas também é o desenho ("todas, com a situação de cada uma").
+- Médio, corrigido: `11/2026  %` (vários espaços antes de `%`) ainda virava data. O lookahead passou a `\s*%`.
+  `11/2026.125` com nós `11`, `2026` e `125` citados à parte fica como limite conhecido (texto artificial).
+- Baixo, limite conhecido: bloco recusado pelo emissor ainda devolve o id ao modelo; no caminho HTTP real a falha de
+  escrita aborta o laço.

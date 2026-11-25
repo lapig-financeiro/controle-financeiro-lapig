@@ -248,6 +248,7 @@ describe('data mês/ano (MM/AAAA)', () => {
   it('MM/AAAA com percentual ou decimal colado não é data e não encobre o número', () => {
     expect(marcarNumeros('11/2026%', [data('2026-11-30')])).not.toEqual([]);
     expect(marcarNumeros('11/2026,5', [data('2026-11-30')])).not.toEqual([]);
+    expect(marcarNumeros('11/2026  %', [data('2026-11-30')])).not.toEqual([]);
   });
 
   it('reconhece MM/AAAA e casa com nó de data do mesmo ano-mês', () => {

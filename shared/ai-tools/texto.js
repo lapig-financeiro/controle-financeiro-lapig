@@ -66,7 +66,7 @@ function coletarCandidatos(texto) {
   // completo continua sendo o único da data inteira.
   // Não vale se vier percentual ou decimal colado ("11/2026%", "11/2026,5"):
   // aí o trecho não é data e o número tem de concorrer sozinho.
-  for (const m of texto.matchAll(/(?<![\d/])(\d{2})\/(\d{4})\b(?!\s?%|[.,]\d)/g)) {
+  for (const m of texto.matchAll(/(?<![\d/])(\d{2})\/(\d{4})\b(?!\s*%|[.,]\d)/g)) {
     const mes = Number(m[1]);
     const ano = Number(m[2]);
     if (!Number.isInteger(mes) || mes < 1 || mes > 12) continue;
