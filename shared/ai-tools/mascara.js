@@ -1,12 +1,13 @@
 // Máscara de dados pessoais da Análise (contrato §5).
 //
 // O modelo nunca vê nome de bolsista, CPF nem e-mail. Nome vira ⟦Pn⟧ estável
-// na sessão; CPF (com ou sem pontuação) e e-mail saem de todo texto. O mapa
-// ⟦Pn⟧ → nome vive só na memória da sessão e só é usado por `reidratar`, que
-// troca marcadores nos blocos que vão à tela.
+// na sessão; CPF (com espaço, ponto, hífen ou barra) e e-mail saem de todo
+// texto. O mapa ⟦Pn⟧ → nome vive só na memória da sessão e só é usado por
+// `reidratar`, que troca marcadores nos blocos que vão à tela.
+
+import { mascararCpf } from './cpf.js';
 
 const RE_MARCADOR = /⟦P(\d+)⟧/g;
-const RE_CPF = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g;
 const RE_EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const BORDA = '0-9A-Za-zÀ-ÖØ-öø-ÿ';
 
@@ -27,8 +28,8 @@ function escaparRegex(valor) {
 
 function limparCpfEEmail(valor) {
   if (typeof valor !== 'string') return valor;
-  let saida = valor.replace(RE_CPF, '').replace(RE_EMAIL, '');
-  // Sobrou espaço duplo ou espaço antes de pontuação onde o dado saiu.
+  let saida = mascararCpf(valor).replace(RE_EMAIL, '');
+  // Sobrou espaço duplo ou espaço antes de pontuação onde o e-mail saiu.
   saida = saida
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+([,.;:!?])/g, '$1')
@@ -43,21 +44,26 @@ function limparCpfEEmail(valor) {
 export function criarMascara({ rpc } = {}) {
   const porMarcador = new Map(); // ⟦P1⟧ -> nome real
   const porNome = new Map(); // chave normalizada -> ⟦P1⟧
+  const porAlvo = new Map(); // alvo_id (ex.: scholarship) -> ⟦P1⟧
   const nomesParaBusca = []; // { nome, marcador }, maior primeiro na hora de usar
   let proximo = 0;
   let carregado = false;
   let carregando = null;
+
+  function criarMarcador(nome) {
+    const marcador = `⟦P${++proximo}⟧`;
+    porNome.set(chaveDoNome(nome), marcador);
+    porMarcador.set(marcador, nome);
+    nomesParaBusca.push({ nome, marcador });
+    return marcador;
+  }
 
   function registrarNome(valor) {
     const nome = limparCpfEEmail(normalizarNome(valor));
     if (!nome) return '';
     const chave = chaveDoNome(nome);
     if (porNome.has(chave)) return porNome.get(chave);
-    const marcador = `⟦P${++proximo}⟧`;
-    porNome.set(chave, marcador);
-    porMarcador.set(marcador, nome);
-    nomesParaBusca.push({ nome, marcador });
-    return marcador;
+    return criarMarcador(nome);
   }
 
   function acrescentarCurto(nomeCompleto, marcador) {
@@ -68,6 +74,50 @@ export function criarMascara({ rpc } = {}) {
     if (chave.length < 3 || porNome.has(chave)) return;
     porNome.set(chave, marcador);
     nomesParaBusca.push({ nome: curto, marcador });
+  }
+
+  /**
+   * Marcador estável por `alvo_id`, sem depender do dicionário. É o que a
+   * árvore do livre usa nas folhas de bolsa: o nome vem do próprio rótulo.
+   */
+  function nomeComAlvo(valor, alvoId) {
+    const nome = limparCpfEEmail(normalizarNome(valor));
+    const alvo = alvoId === undefined || alvoId === null ? null : String(alvoId);
+
+    if (alvo && porAlvo.has(alvo)) {
+      const marcador = porAlvo.get(alvo);
+      if (nome) {
+        const chave = chaveDoNome(nome);
+        if (!porNome.has(chave)) porNome.set(chave, marcador);
+        if (!porMarcador.has(marcador)) porMarcador.set(marcador, nome);
+        if (!nomesParaBusca.some((item) => item.nome === nome && item.marcador === marcador)) {
+          nomesParaBusca.push({ nome, marcador });
+        }
+      }
+      return marcador;
+    }
+
+    if (!nome) {
+      const marcador = `⟦P${++proximo}⟧`;
+      if (alvo) porAlvo.set(alvo, marcador);
+      return marcador;
+    }
+
+    const marcador = registrarNome(nome);
+    if (alvo) porAlvo.set(alvo, marcador);
+    return marcador;
+  }
+
+  /**
+   * Rótulo de folha de bolsa da árvore: "Nome — N meses × R$ X" vira
+   * "⟦Pn⟧ — N meses × R$ X". O nome original fica só na origem do nó.
+   */
+  function rotuloDeBolsa(rotulo, alvoId) {
+    const texto = String(rotulo ?? '');
+    const separador = texto.indexOf(' — ');
+    const nome = separador >= 0 ? texto.slice(0, separador) : texto;
+    const sufixo = separador >= 0 ? texto.slice(separador) : '';
+    return `${nomeComAlvo(nome, alvoId)}${sufixo}`;
   }
 
   /** Carrega nomes de uma resposta de get_pedido_bolsas_v2. */
@@ -98,10 +148,16 @@ export function criarMascara({ rpc } = {}) {
       try {
         const resposta = await rpc('get_pedido_bolsas_v2');
         if (!resposta || resposta.error) {
-          throw new Error('Não foi possível carregar a lista de bolsistas para mascarar nomes.');
+          const mensagem = 'Não foi possível carregar a lista de bolsistas para mascarar nomes.';
+          const falha = new Error(mensagem);
+          falha.codigo = 'http_4xx';
+          throw falha;
         }
         if (!resposta.data || !Array.isArray(resposta.data.bolsistas)) {
-          throw new Error('Formato inesperado em get_pedido_bolsas_v2.');
+          const mensagem = 'Não foi possível carregar a lista de bolsistas para mascarar nomes.';
+          const falha = new Error(mensagem);
+          falha.codigo = 'formato';
+          throw falha;
         }
         carregarNomes(resposta.data.bolsistas);
         carregado = true;
@@ -153,13 +209,51 @@ export function criarMascara({ rpc } = {}) {
     return valor;
   }
 
+  /**
+   * Reidrata o texto e desloca os intervalos `semOrigem` pelo tamanho de cada
+   * nome que entrou. Sem isso, o realce depois da troca aponta para o lugar
+   * errado.
+   */
+  function reidratarTextoComIntervalos(texto, intervalos) {
+    if (typeof texto !== 'string') return { texto, semOrigem: intervalos ?? [] };
+    const mapa = [];
+    let saida = '';
+    let ultimo = 0;
+    for (const achado of texto.matchAll(RE_MARCADOR)) {
+      const marcador = achado[0];
+      const nome = porMarcador.get(marcador) ?? marcador;
+      saida += texto.slice(ultimo, achado.index) + nome;
+      mapa.push({
+        inicio: achado.index,
+        fim: achado.index + marcador.length,
+        delta: nome.length - marcador.length,
+      });
+      ultimo = achado.index + marcador.length;
+    }
+    saida += texto.slice(ultimo);
+
+    const deslocar = (posicao) =>
+      mapa.reduce((deslocamento, troca) => {
+        return troca.fim <= posicao ? deslocamento + troca.delta : deslocamento;
+      }, 0);
+
+    const semOrigem = (Array.isArray(intervalos) ? intervalos : []).map((intervalo) => ({
+      inicio: intervalo.inicio + deslocar(intervalo.inicio),
+      fim: intervalo.fim + deslocar(intervalo.fim),
+    }));
+    return { texto: saida, semOrigem };
+  }
+
   return {
     nome,
+    nomeComAlvo,
+    rotuloDeBolsa,
     texto,
     carregarNomes,
     marcarDicionarioCarregado,
     garantirDicionario,
     reidratar,
+    reidratarTextoComIntervalos,
     // exposto para introspecção e testes; não vai ao modelo
     marcadores: porMarcador,
   };

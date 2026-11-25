@@ -79,11 +79,12 @@ describe('criarSessao', () => {
     });
     const resultado = await sessao.executar('listar_centros', {});
     expect(resultado.id).toBe('r1');
-    expect(resultado.erro).toContain('falhou de propósito');
+    expect(resultado.erro).toBe('Não foi possível carregar os centros. (http_4xx)');
+    expect(resultado.erro).not.toContain('falhou de propósito');
     expect(resultado.paraModelo).toBeUndefined();
   });
 
-  it('exceção da RPC também vira erro', async () => {
+  it('exceção da RPC também vira erro fixo', async () => {
     const { sessao } = montar({
       explicar_livre_v2: () => {
         throw new Error('sem rede');
@@ -91,13 +92,14 @@ describe('criarSessao', () => {
     });
     const resultado = await sessao.executar('explicar_livre', { project_id: '30.901' });
     expect(resultado.id).toBe('r1');
-    expect(resultado.erro).toContain('sem rede');
+    expect(resultado.erro).toBe('Não foi possível carregar a origem do saldo livre. (http_4xx)');
+    expect(resultado.erro).not.toContain('sem rede');
   });
 
   it('formato inesperado vira erro, não resultado vazio', async () => {
     const { sessao } = montar({ explicar_livre_v2: { data: { foo: 1 }, error: null } });
     const resultado = await sessao.executar('explicar_livre', { project_id: '30.901' });
-    expect(resultado.erro).toMatch(/Formato inesperado/);
+    expect(resultado.erro).toBe('Não foi possível carregar a origem do saldo livre. (formato)');
     expect(resultado.paraModelo).toBeUndefined();
   });
 });
@@ -138,5 +140,41 @@ describe('resolução do centro', () => {
     await sessao.executar('pendencias', { project_id: '30.902' });
     const resumos = chamadas.filter((chamada) => chamada.nome === 'resumo_projetos_v2');
     expect(resumos).toHaveLength(1);
+  });
+});
+
+describe('concorrência', () => {
+  it('Promise.all não mistura resultados e nós', async () => {
+    const respostas = respostasPadrao();
+    const rpc = async (nome) => {
+      if (nome === 'resumo_projetos_v2') await new Promise((r) => setTimeout(r, 5));
+      if (nome === 'listar_pendencias_v2') await new Promise((r) => setTimeout(r, 20));
+      return respostas[nome] ?? { data: null, error: { message: `sem fixture: ${nome}` } };
+    };
+    const sessao = criarSessao({ rpc, hoje: '2026-11-25' });
+    const [pendencias, centros] = await Promise.all([
+      sessao.executar('pendencias', { project_id: '30.901' }),
+      sessao.executar('listar_centros', {}),
+    ]);
+
+    const dadosPendencias = JSON.parse(pendencias.paraModelo);
+    const dadosCentros = JSON.parse(centros.paraModelo);
+    expect(dadosPendencias.nos.length).toBeGreaterThan(0);
+    expect(dadosCentros.nos.length).toBeGreaterThan(0);
+    for (const no of dadosPendencias.nos) expect(no.id.startsWith(`${pendencias.id}.`)).toBe(true);
+    for (const no of dadosCentros.nos) expect(no.id.startsWith(`${centros.id}.`)).toBe(true);
+  });
+
+  it('resultado com erro não publica nó nenhum', async () => {
+    const respostas = respostasPadrao();
+    respostas.listar_pendencias_v2 = { data: [null], error: null };
+    const sessao = criarSessao({
+      rpc: async (nome) => respostas[nome] ?? { data: null, error: { message: 'sem fixture' } },
+    });
+    const resultado = await sessao.executar('pendencias', { project_id: '30.901' });
+    expect(resultado.erro).toContain('(formato)');
+    expect(sessao.criarBloco({ tipo: 'numero', titulo: '', no: 'r1.1' }).erro).toContain(
+      'nó não encontrado'
+    );
   });
 });

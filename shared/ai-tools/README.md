@@ -37,16 +37,17 @@ sessao.reidratar(bloco);             // ⟦P1⟧ → nome, só no bloco da tela
   de negócio: livre, taxa, folha e projeção continuam nas RPCs.
 - **Falha nunca vira zero.** Erro de RPC, exceção ou formato inesperado voltam
   como `{ id, erro }`; nunca `0`, `[]` ou "sem dado".
-- **Dados pessoais.** Nome de bolsista vira `⟦Pn⟧`; CPF (com ou sem pontuação)
-  e e-mail saem de todo texto. O mapa vive só na memória da sessão e só
+- **Dados pessoais.** Nome de bolsista vira `⟦Pn⟧`; CPF (com espaço, ponto, hífen ou
+  barra) e e-mail saem de todo texto. O mapa vive só na memória da sessão e só
   `reidratar` o usa, nos blocos que vão à tela.
 - **Origem.** Cada valor numérico leva a melhor origem que a RPC oferece
   (`no`, `livre`, `ref`, `termo`, `calculo` ou `sem_documento`).
 
 ## O que não faz
 
-- Não chama `fetch`, não lê arquivo, não importa `node:` e não tem dependência:
-  roda no Worker da Cloudflare e no Node.
+- Não chama `fetch`, não lê arquivo, não importa `node:` e não tem dependência: o
+  pacote declara `"type": "module"` no próprio `package.json` e roda no Worker da
+  Cloudflare e no Node nativo (`node -e "import('./shared/ai-tools/index.js')"`).
 - Não guarda sessão em disco, KV ou log. O estado (resultados, nós, máscara)
   morre com a requisição.
 - Não decide se um número é "correto": lê a RPC e registra. Regra financeira no

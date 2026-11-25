@@ -1,13 +1,18 @@
 // bolsas — get_pedido_bolsas_v2 (contrato §4).
 //
-// Nome de pessoa é campo fechado: vira ⟦Pn⟧ e nunca entra no paraModelo.
-// CPF e e-mail não são lidos, mesmo que a RPC passe a devolvê-los. A origem é
-// sem_documento ("bolsa digitada, ainda sem documento") até a F3.
+// O filtro de visão é o mesmo em toda forma da chamada: só bolsas de centros
+// que `listar_centros` conhece. Com centro filtrado, `valor_vigente` global
+// não aparece como se fosse do centro; as bolsas do centro vêm à parte do
+// total global da pessoa. Nenhuma soma nova é feita no pacote.
+//
+// Nome de pessoa é campo fechado: vira ⟦Pn⟧ e nunca entra no paraModelo. CPF e
+// e-mail não são lidos, mesmo que a RPC passe a devolvê-los.
 
 import {
   chamarRpc,
   formatoInesperado,
   mini,
+  numeroOuNulo,
   registrarData,
   registrarMoeda,
   registrarNumero,
@@ -17,6 +22,50 @@ import {
 
 export const nome = 'bolsas';
 
+function bolsaValida(bolsa) {
+  return (
+    bolsa &&
+    typeof bolsa === 'object' &&
+    !Array.isArray(bolsa) &&
+    typeof bolsa.project_id === 'string' &&
+    bolsa.project_id !== '' &&
+    typeof bolsa.code === 'string' &&
+    numeroOuNulo(bolsa.valor) !== null &&
+    typeof bolsa.inicio === 'string' &&
+    typeof bolsa.fim === 'string' &&
+    typeof bolsa.status === 'string' &&
+    typeof bolsa.vigente_hoje === 'boolean'
+  );
+}
+
+function bolsistaValido(bolsista) {
+  return (
+    bolsista &&
+    typeof bolsista === 'object' &&
+    !Array.isArray(bolsista) &&
+    typeof bolsista.nome === 'string' &&
+    numeroOuNulo(bolsista.valor_vigente) !== null &&
+    (bolsista.equipe === undefined || bolsista.equipe === null || typeof bolsista.equipe === 'string') &&
+    Array.isArray(bolsista.bolsas) &&
+    bolsista.bolsas.every(bolsaValida)
+  );
+}
+
+function caixaValida(caixa) {
+  return (
+    caixa &&
+    typeof caixa === 'object' &&
+    !Array.isArray(caixa) &&
+    typeof caixa.nome === 'string' &&
+    Number.isInteger(caixa.meses) &&
+    Number.isInteger(caixa.pessoas) &&
+    numeroOuNulo(caixa.total_mensal) !== null &&
+    numeroOuNulo(caixa.total_periodo) !== null &&
+    Number.isInteger(caixa.itens_ocultos) &&
+    (caixa.itens === undefined || (Array.isArray(caixa.itens) && caixa.itens.every((item) => item && typeof item === 'object')))
+  );
+}
+
 export async function executar(ctx, args) {
   let centro = null;
   if (args && args.project_id !== undefined && args.project_id !== null && args.project_id !== '') {
@@ -25,10 +74,29 @@ export async function executar(ctx, args) {
     centro = resolvido.centro;
   }
 
+  let dadosCentros;
+  try {
+    dadosCentros = await ctx.carregarCentros();
+  } catch (erro) {
+    return {
+      erro: erro && erro.message ? erro.message : 'Não foi possível carregar os centros. (http_4xx)',
+    };
+  }
+  if (!dadosCentros || !Array.isArray(dadosCentros.centros)) {
+    return formatoInesperado('resumo_projetos_v2');
+  }
+  const visiveis = new Set(dadosCentros.centros.map((item) => item.id));
+
   const resposta = await chamarRpc(ctx, 'get_pedido_bolsas_v2');
   if (resposta.erro) return { erro: resposta.erro };
   const dados = resposta.dados;
-  if (!dados || typeof dados !== 'object' || !Array.isArray(dados.bolsistas)) {
+  if (
+    !dados ||
+    typeof dados !== 'object' ||
+    !Array.isArray(dados.bolsistas) ||
+    !dados.bolsistas.every(bolsistaValido) ||
+    (dados.caixas !== undefined && (!Array.isArray(dados.caixas) || !dados.caixas.every(caixaValida)))
+  ) {
     return formatoInesperado('get_pedido_bolsas_v2');
   }
 
@@ -41,27 +109,37 @@ export async function executar(ctx, args) {
   const bolsistas = [];
 
   for (const bolsista of dados.bolsistas) {
-    if (!bolsista || typeof bolsista !== 'object') continue;
-    const todas = Array.isArray(bolsista.bolsas) ? bolsista.bolsas : [];
-    const bolsas = centro ? todas.filter((bolsa) => bolsa && bolsa.project_id === centro.id) : todas;
-    if (centro && bolsas.length === 0) continue;
+    const bolsas = bolsista.bolsas.filter(
+      (bolsa) =>
+        visiveis.has(bolsa.project_id) && (centro ? bolsa.project_id === centro.id : true)
+    );
+    if (bolsas.length === 0) continue;
 
     const nomeMascarado = ctx.mascara.nome(bolsista.nome);
     if (!nomeMascarado) continue;
     const noNome = registrarTexto(ctx, nomeMascarado, 'Bolsista (mascarado)', origemBolsa);
     nos.push(noNome);
 
-    const saida = { nome: noNome.id, valor_vigente: null, equipe: null, bolsas: [] };
+    const saida = {
+      nome: noNome.id,
+      valor_vigente: null,
+      total_global: null,
+      equipe: null,
+      bolsas: [],
+    };
 
-    const noValorVigente = registrarMoeda(
+    const totalGlobal = registrarMoeda(
       ctx,
       bolsista.valor_vigente,
-      centro ? 'Valor vigente total (todos os centros)' : 'Valor vigente',
+      centro
+        ? 'Total vigente da pessoa (todos os centros)'
+        : 'Valor vigente (todos os centros)',
       origemBolsa
     );
-    if (noValorVigente) {
-      saida.valor_vigente = noValorVigente.id;
-      nos.push(noValorVigente);
+    if (totalGlobal) {
+      if (centro) saida.total_global = totalGlobal.id;
+      else saida.valor_vigente = totalGlobal.id;
+      nos.push(totalGlobal);
     }
 
     if (typeof bolsista.equipe === 'string' && bolsista.equipe) {
@@ -71,7 +149,6 @@ export async function executar(ctx, args) {
     }
 
     for (const bolsa of bolsas) {
-      if (!bolsa || typeof bolsa !== 'object') continue;
       const item = {
         centro: null,
         valor: null,
@@ -81,45 +158,39 @@ export async function executar(ctx, args) {
         vigente_hoje: null,
       };
 
-      if (bolsa.code) {
-        const no = registrarTexto(ctx, bolsa.code, 'Centro da bolsa', origemBolsa);
-        item.centro = no.id;
-        nos.push(no);
+      const noCentro = registrarTexto(ctx, bolsa.code, 'Centro da bolsa', origemBolsa);
+      item.centro = noCentro.id;
+      nos.push(noCentro);
+
+      const noValor = registrarMoeda(ctx, bolsa.valor, 'Valor mensal da bolsa', origemBolsa);
+      if (noValor) {
+        item.valor = noValor.id;
+        nos.push(noValor);
       }
-      if (typeof bolsa.valor === 'number' && Number.isFinite(bolsa.valor)) {
-        const no = registrarMoeda(ctx, bolsa.valor, 'Valor mensal da bolsa', origemBolsa);
-        item.valor = no.id;
-        nos.push(no);
+
+      const noInicio = registrarData(ctx, bolsa.inicio, 'Início da bolsa', origemBolsa);
+      if (noInicio) {
+        item.inicio = noInicio.id;
+        nos.push(noInicio);
       }
-      if (bolsa.inicio) {
-        const no = registrarData(ctx, bolsa.inicio, 'Início da bolsa', origemBolsa);
-        if (no) {
-          item.inicio = no.id;
-          nos.push(no);
-        }
+      const noFim = registrarData(ctx, bolsa.fim, 'Fim da bolsa', origemBolsa);
+      if (noFim) {
+        item.fim = noFim.id;
+        nos.push(noFim);
       }
-      if (bolsa.fim) {
-        const no = registrarData(ctx, bolsa.fim, 'Fim da bolsa', origemBolsa);
-        if (no) {
-          item.fim = no.id;
-          nos.push(no);
-        }
-      }
-      if (bolsa.status) {
-        const no = registrarTexto(ctx, bolsa.status, 'Situação da bolsa', origemBolsa);
-        item.status = no.id;
-        nos.push(no);
-      }
-      if (typeof bolsa.vigente_hoje === 'boolean') {
-        const no = registrarTexto(
-          ctx,
-          bolsa.vigente_hoje ? 'sim' : 'não',
-          'Vigente hoje',
-          origemBolsa
-        );
-        item.vigente_hoje = no.id;
-        nos.push(no);
-      }
+
+      const noStatus = registrarTexto(ctx, bolsa.status, 'Situação da bolsa', origemBolsa);
+      item.status = noStatus.id;
+      nos.push(noStatus);
+
+      const noVigente = registrarTexto(
+        ctx,
+        bolsa.vigente_hoje ? 'sim' : 'não',
+        'Vigente hoje',
+        origemBolsa
+      );
+      item.vigente_hoje = noVigente.id;
+      nos.push(noVigente);
 
       saida.bolsas.push(item);
     }
@@ -128,39 +199,48 @@ export async function executar(ctx, args) {
   }
 
   const caixas = [];
-  if (!centro && Array.isArray(dados.caixas)) {
-    for (const caixa of dados.caixas) {
-      if (!caixa || typeof caixa !== 'object') continue;
-      const item = { nome: null, meses: null, pessoas: null, total_mensal: null, total_periodo: null };
-      const origemCaixa = semDocumento('caixa do pedido de bolsas', consulta);
+  for (const caixa of dados.caixas ?? []) {
+    const item = {
+      nome: null,
+      meses: null,
+      pessoas: null,
+      total_mensal: null,
+      total_periodo: null,
+      itens_ocultos: null,
+    };
+    const origemCaixa = semDocumento('caixa do pedido de bolsas', consulta);
 
-      if (typeof caixa.nome === 'string') {
-        const no = registrarTexto(ctx, caixa.nome, 'Nome da caixa', origemCaixa);
-        item.nome = no.id;
-        nos.push(no);
-      }
-      const meses = registrarNumero(ctx, caixa.meses, 'Meses da caixa', origemCaixa);
-      if (meses) {
-        item.meses = meses.id;
-        nos.push(meses);
-      }
-      const pessoas = registrarNumero(ctx, caixa.pessoas, 'Pessoas na caixa', origemCaixa);
-      if (pessoas) {
-        item.pessoas = pessoas.id;
-        nos.push(pessoas);
-      }
-      const totalMensal = registrarMoeda(ctx, caixa.total_mensal, 'Total mensal da caixa', origemCaixa);
-      if (totalMensal) {
-        item.total_mensal = totalMensal.id;
-        nos.push(totalMensal);
-      }
-      const totalPeriodo = registrarMoeda(ctx, caixa.total_periodo, 'Total do período da caixa', origemCaixa);
-      if (totalPeriodo) {
-        item.total_periodo = totalPeriodo.id;
-        nos.push(totalPeriodo);
-      }
-      caixas.push(item);
+    const noNome = registrarTexto(ctx, caixa.nome, 'Nome da caixa', origemCaixa);
+    item.nome = noNome.id;
+    nos.push(noNome);
+
+    const meses = registrarNumero(ctx, caixa.meses, 'Meses da caixa', origemCaixa);
+    if (meses) {
+      item.meses = meses.id;
+      nos.push(meses);
     }
+    const pessoas = registrarNumero(ctx, caixa.pessoas, 'Pessoas na caixa', origemCaixa);
+    if (pessoas) {
+      item.pessoas = pessoas.id;
+      nos.push(pessoas);
+    }
+    const totalMensal = registrarMoeda(ctx, caixa.total_mensal, 'Total mensal da caixa', origemCaixa);
+    if (totalMensal) {
+      item.total_mensal = totalMensal.id;
+      nos.push(totalMensal);
+    }
+    const totalPeriodo = registrarMoeda(ctx, caixa.total_periodo, 'Total do período da caixa', origemCaixa);
+    if (totalPeriodo) {
+      item.total_periodo = totalPeriodo.id;
+      nos.push(totalPeriodo);
+    }
+    const ocultos = registrarNumero(ctx, caixa.itens_ocultos, 'Itens ocultos da caixa', origemCaixa);
+    if (ocultos) {
+      item.itens_ocultos = ocultos.id;
+      nos.push(ocultos);
+    }
+
+    caixas.push(item);
   }
 
   const total = registrarNumero(

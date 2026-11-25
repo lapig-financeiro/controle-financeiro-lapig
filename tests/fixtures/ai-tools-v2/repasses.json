@@ -12,12 +12,7 @@
       "data_prevista": null,
       "data_texto": "Após o relatório parcial",
       "valor": 350000,
-      "valor_texto": "350 mil",
-      "ref": {
-        "alvo_tabela": "plano_desembolsos",
-        "alvo_id": "00000000-0000-4000-8000-000000060201",
-        "campo": "valor"
-      }
+      "valor_texto": "350 mil"
     }
   ],
   "valor_total_plano": 600000,

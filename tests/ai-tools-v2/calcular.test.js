@@ -134,6 +134,40 @@ describe('calcular', () => {
     expect(resultado.erro).toContain('moeda ou numero');
   });
 
+  it('moeda com mais de 2 casas é recusada', async () => {
+    const sessao = montar([1.005, 0.2]);
+    const { um } = await livrosDosCentros(sessao);
+    const resultado = sessao.calcular({ op: 'soma', ids: [um.id, um.id] });
+    expect(resultado.erro).toContain('2 casas');
+  });
+
+  it('numero usa a maior escala e as partes fecham o total', async () => {
+    const resumo = fixture('resumo_projetos');
+    resumo.centros[0].pendencias_abertas = 1.005;
+    resumo.centros[1].pendencias_abertas = 1.005;
+    const sessao = criarSessao({
+      rpc: async (nome) => {
+        if (nome === 'resumo_projetos_v2') return { data: resumo, error: null };
+        if (nome === 'get_pedido_bolsas_v2') return { data: fixture('pedido_bolsas'), error: null };
+        return { data: null, error: { message: 'sem fixture' } };
+      },
+    });
+    const dados = JSON.parse((await sessao.executar('listar_centros', {})).paraModelo);
+    const um = acharNo(dados, 'Pendências abertas — 30.901');
+    const dois = acharNo(dados, 'Pendências abertas — 30.902');
+    const resultado = sessao.calcular({ op: 'soma', ids: [um.id, dois.id] });
+    const corpo = JSON.parse(resultado.paraModelo);
+    expect(corpo.resultado.unidade).toBe('numero');
+    expect(corpo.resultado.valor).toBe(2.01);
+
+    const bloco = sessao.criarBloco({ tipo: 'numero', titulo: '', no: resultado.id }).bloco;
+    expect(bloco.numero.origem.partes.map((parte) => parte.valor)).toEqual([1.005, 1.005]);
+    expect(bloco.numero.origem.partes.reduce((soma, parte) => soma + parte.valor, 0)).toBeCloseTo(
+      2.01,
+      10
+    );
+  });
+
   it('recusa id inexistente', async () => {
     const sessao = montar();
     const { um } = await livrosDosCentros(sessao);

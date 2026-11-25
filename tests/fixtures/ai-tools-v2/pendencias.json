@@ -9,7 +9,10 @@
       "conta": "7.1.3.99",
       "competencia": "2026-08-15",
       "descricao": "Contato: pessoa.dois@exemplo.test, CPF 98765432100",
-      "diferenca": -4250
+      "diferenca": -4250,
+      "cpf": 12345678909,
+      "nome": "Pessoa Exemplo Fora",
+      "chave_desconhecida": "Pessoa Exemplo Fora"
     },
     "situacao": "aberta",
     "origem": "sistema",

@@ -35,6 +35,7 @@ function montar(overrides = {}) {
 const PII = [
   'Pessoa Exemplo Um',
   'Pessoa Exemplo Dois',
+  'Pessoa Exemplo Fora',
   'Pessoa Um',
   'Pessoa Dois',
   '123.456.789-09',
@@ -76,6 +77,34 @@ describe('CPF e e-mail', () => {
     expect(marcado.texto).not.toContain('123.456.789-09');
     expect(marcado.texto).not.toContain('12345678909');
     expect(marcado.texto).not.toContain('pessoa.exemplo@exemplo.test');
+  });
+
+  it('mascara CPF com espaço, ponto, hífen e barra', async () => {
+    const { sessao } = montar();
+    for (const cpf of ['123.456.789-09', '12345678909', '123 456 789 09', '123/456/789/09', '123-456-789-09']) {
+      const marcado = sessao.marcarTexto(`CPF ${cpf}.`);
+      expect(marcado.texto, cpf).not.toContain('123');
+      expect(marcado.texto, cpf).toContain('***.***.***-**');
+    }
+  });
+});
+
+describe('árvore de bolsas', () => {
+  it('mascara o nome pelo alvo_id mesmo com dicionário vazio', async () => {
+    const { sessao } = montar({
+      get_pedido_bolsas_v2: { data: { bolsistas: [] }, error: null },
+    });
+    const resultado = await sessao.executar('explicar_livre', { project_id: '30.901' });
+    expect(resultado.erro).toBeUndefined();
+    expect(resultado.paraModelo).not.toContain('Pessoa Exemplo Um');
+    expect(resultado.paraModelo).not.toContain('Pessoa Exemplo Dois');
+
+    const dados = JSON.parse(resultado.paraModelo);
+    const compromisso = dados.nos.find((no) => no.rotulo.includes('11 meses × R$ 4.200,00'));
+    const folha = dados.nos.find((no) => no.rotulo.includes('1 mês × R$ 4.000,00'));
+    expect(compromisso.rotulo).toMatch(/^⟦P\d+⟧ — 11 meses/);
+    expect(folha.rotulo).toMatch(/^⟦P\d+⟧ — 1 mês/);
+    expect(compromisso.rotulo.split(' — ')[0]).toBe(folha.rotulo.split(' — ')[0]);
   });
 });
 
@@ -153,6 +182,48 @@ describe('todo paraModelo', () => {
     });
     const resultado = await sessao.executar('pendencias', { project_id: '30.901' });
     expect(resultado.erro).toContain('bolsistas');
+    expect(resultado.erro).toContain('http_4xx');
     expect(resultado.paraModelo).toBeUndefined();
+  });
+
+  it('erro de RPC não leva PII ao modelo, mesmo sem dicionário', async () => {
+    const { sessao } = montar({
+      get_termos_contrato_v2: {
+        data: null,
+        error: { status: 400, message: 'Falha para Pessoa Exemplo Um, CPF 123.456.789-09' },
+      },
+    });
+    const resultado = await sessao.executar('termos_contrato', { project_id: '30.901' });
+    expect(resultado.erro).toBe('Não foi possível carregar os termos do contrato. (http_4xx)');
+    expect(resultado.erro).not.toContain('Pessoa');
+    expect(resultado.erro).not.toContain('123');
+  });
+
+  it('timeout vira código tempo, sem texto bruto', async () => {
+    const { sessao } = montar({
+      listar_pendencias_v2: { data: null, error: { name: 'AbortError', message: 'timeout de 120s' } },
+    });
+    const resultado = await sessao.executar('pendencias', { project_id: '30.901' });
+    expect(resultado.erro).toBe('Não foi possível carregar as pendências. (tempo)');
+  });
+
+  it('a varredura de PII vale começando por termos_contrato', async () => {
+    const { sessao } = montar();
+    const saidas = [];
+    for (const [nome, argumentos] of [
+      ['termos_contrato', { project_id: '30.901' }],
+      ['pendencias', { project_id: '30.902' }],
+      ['bolsas', { project_id: '30.901' }],
+      ['explicar_livre', { project_id: '30.901' }],
+    ]) {
+      const resultado = await sessao.executar(nome, argumentos);
+      expect(resultado.erro, nome).toBeUndefined();
+      saidas.push({ nome, texto: resultado.paraModelo });
+    }
+    for (const pii of PII) {
+      for (const saida of saidas) {
+        expect(saida.texto, `${saida.nome} vazou ${pii}`).not.toContain(pii);
+      }
+    }
   });
 });

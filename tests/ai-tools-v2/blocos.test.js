@@ -53,7 +53,9 @@ describe('criarBloco numero', () => {
     expect(bloco.numero.unidade).toBe('moeda');
     expect(bloco.numero.rotulo).toBe('Livre — Centro Exemplo Um (30.901)');
     expect(bloco.numero.origem.tipo).toBe('livre');
-    expect(bloco.numero.contexto).toEqual({ valor: 'Centro Exemplo Um', unidade: 'texto' });
+    expect(bloco.numero.contexto.valor).toBe('Centro Exemplo Um');
+    expect(bloco.numero.contexto.unidade).toBe('texto');
+    expect(bloco.numero.contexto.origem.tipo).toBe('sem_documento');
   });
 
   it('recusa id inexistente', async () => {
@@ -166,6 +168,29 @@ describe('criarBloco tabela', () => {
     expect(
       sessao.criarBloco({ tipo: 'tabela', titulo: '', colunas, linhas: [linha] }).erro
     ).toContain('1 a 8 colunas');
+  });
+
+  it('recusa cabeçalho de coluna com número inventado e aceita código de centro', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const livre = porRotulo(dados, 'Livre — Centro Exemplo Um');
+    const codigo = porRotulo(dados, 'Código — Centro Exemplo Um');
+
+    const inventado = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: '',
+      colunas: ['Total R$ 500,00'],
+      linhas: [[livre.id]],
+    });
+    expect(inventado.erro).toContain('cabeçalho');
+
+    const centro = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: '',
+      colunas: ['Centro 30.901'],
+      linhas: [[codigo.id]],
+    });
+    expect(centro.erro).toBeUndefined();
   });
 
   it('aceita 50 linhas e 8 colunas', async () => {

@@ -49,66 +49,69 @@ export function origemTermo(projectId, termoId) {
   return { tipo: 'termo', project_id: projectId, termo_id: termoId };
 }
 
-/** Copia a árvore mascarando rótulos/notas soltos, sem tocar em ref/chave. */
-export function sanitizarArvore(no, mascara) {
-  if (!no || typeof no !== 'object') return no;
-  const saida = { ...no };
-  for (const campo of ['rotulo', 'nota', 'conta']) {
-    if (typeof saida[campo] === 'string') saida[campo] = mascara.texto(saida[campo]);
-  }
-  if (Array.isArray(saida.partes)) {
-    saida.partes = saida.partes.map((parte) => sanitizarArvore(parte, mascara));
-  }
-  return saida;
-}
-
 /** A forma que o modelo vê de um nó; sem origem, sem ref, sem uuid. */
 export function mini(no) {
   return { id: no.id, valor: no.valor, rotulo: no.rotulo, unidade: no.unidade };
 }
 
-export function mensagemDeErro(erro) {
-  if (typeof erro === 'string') return erro.trim();
-  if (erro && typeof erro.message === 'string') return erro.message.trim();
-  return '';
+const MENSAGENS_RPC = Object.freeze({
+  resumo_projetos_v2: 'Não foi possível carregar os centros.',
+  explicar_livre_v2: 'Não foi possível carregar a origem do saldo livre.',
+  situacao_centro_v2: 'Não foi possível carregar a situação do centro.',
+  get_repasses_v2: 'Não foi possível carregar os desembolsos.',
+  get_termos_contrato_v2: 'Não foi possível carregar os termos do contrato.',
+  listar_pendencias_v2: 'Não foi possível carregar as pendências.',
+  get_pedido_bolsas_v2: 'Não foi possível carregar o pedido de bolsas.',
+});
+
+export function mensagemRpc(nome) {
+  return MENSAGENS_RPC[nome] ?? 'Não foi possível concluir a consulta.';
+}
+
+/** Código curto e estável; o texto bruto da RPC nunca sai do pacote. */
+export function codigoDoErro(erro) {
+  const nome = String(erro?.name ?? '').toLowerCase();
+  const mensagem = String(erro?.message ?? erro ?? '').toLowerCase();
+  if (
+    nome.includes('abort') ||
+    nome.includes('timeout') ||
+    mensagem.includes('timeout') ||
+    mensagem.includes('timed out') ||
+    mensagem.includes('abort') ||
+    mensagem.includes('tempo esgotado')
+  ) {
+    return 'tempo';
+  }
+  const status = Number(erro?.status ?? erro?.statusCode ?? 0);
+  if (status === 408 || status === 504 || status === 524) return 'tempo';
+  return 'http_4xx';
 }
 
 /**
  * Chama a RPC injetada e normaliza { data, error }, exceção e retorno vazio.
- * Falha nunca vira zero nem lista vazia: vira `erro` para o modelo.
+ * A mensagem devolvida é fixa por consulta + código; o texto bruto do banco
+ * não chega ao modelo. Falha nunca vira zero nem lista vazia.
  */
 export async function chamarRpc(ctx, nome, args) {
   try {
     const resposta = await ctx.rpc(nome, args);
     if (!resposta || typeof resposta !== 'object') {
-      return { dados: null, erro: `Não foi possível consultar ${nome}.` };
+      return { dados: null, erro: `${mensagemRpc(nome)} (formato)` };
     }
     if (resposta.error) {
-      const detalhe = ctx.mascara ? ctx.mascara.texto(mensagemDeErro(resposta.error)) : mensagemDeErro(resposta.error);
-      return {
-        dados: null,
-        erro: detalhe
-          ? `Não foi possível consultar ${nome}: ${detalhe}`
-          : `Não foi possível consultar ${nome}.`,
-      };
+      return { dados: null, erro: `${mensagemRpc(nome)} (${codigoDoErro(resposta.error)})` };
     }
     if (resposta.data === null || resposta.data === undefined) {
-      return { dados: null, erro: `A consulta ${nome} não devolveu dados.` };
+      return { dados: null, erro: `${mensagemRpc(nome)} (formato)` };
     }
     return { dados: resposta.data, erro: null };
   } catch (erro) {
-    const detalhe = ctx.mascara ? ctx.mascara.texto(mensagemDeErro(erro)) : mensagemDeErro(erro);
-    return {
-      dados: null,
-      erro: detalhe
-        ? `Não foi possível consultar ${nome}: ${detalhe}`
-        : `Não foi possível consultar ${nome}.`,
-    };
+    return { dados: null, erro: `${mensagemRpc(nome)} (${codigoDoErro(erro)})` };
   }
 }
 
 export function formatoInesperado(nome) {
-  return { erro: `Formato inesperado em ${nome}.` };
+  return { erro: `${mensagemRpc(nome)} (formato)` };
 }
 
 /** Registra texto já mascarado; o modelo não vê o valor original. */

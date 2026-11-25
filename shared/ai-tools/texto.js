@@ -130,8 +130,11 @@ function intervalosProibidos(texto) {
   for (const m of texto.matchAll(/⟦P\d+⟧/g)) {
     intervalos.push({ inicio: m.index, fim: m.index + m[0].length });
   }
-  // Código de centro (30.109/78.116) não é número.
+  // Código de centro (30.109/78.116) não é número... a menos que venha com R$:
+  // aí é moeda, e o candidato de moeda tem de prevalecer.
   for (const m of texto.matchAll(/\b(?:30|78)\.\d{3}\b/g)) {
+    const antes = texto.slice(Math.max(0, m.index - 6), m.index);
+    if (/R\$\s?[-−]?\s*$/.test(antes)) continue;
     intervalos.push({ inicio: m.index, fim: m.index + m[0].length });
   }
   // Código de conta contábil (7.1.3.99) também não é número.
@@ -151,19 +154,17 @@ function citou(token, citados) {
     return citados.some((no) => {
       if (!no || no.unidade !== 'data') return false;
       const valor = String(no.valor ?? '').slice(0, 10);
-      if (token.iso && valor === token.iso) return true;
+      if (token.iso) return valor === token.iso;
       return Boolean(token.anoMes) && valor.slice(0, 7) === token.anoMes;
     });
   }
   if (token.tipo === 'percentual') {
     return citados.some((no) => no && no.unidade === 'percentual' && perto(no.valor, token.valor));
   }
-  return citados.some(
-    (no) =>
-      no &&
-      (no.unidade === 'moeda' || no.unidade === 'numero') &&
-      perto(no.valor, token.valor)
-  );
+  if (token.tipo === 'moeda') {
+    return citados.some((no) => no && no.unidade === 'moeda' && perto(no.valor, token.valor));
+  }
+  return citados.some((no) => no && no.unidade === 'numero' && perto(no.valor, token.valor));
 }
 
 /**

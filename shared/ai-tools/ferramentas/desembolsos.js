@@ -7,6 +7,7 @@ import {
   chamarRpc,
   formatoInesperado,
   mini,
+  numeroOuNulo,
   origemRef,
   registrarData,
   registrarMoeda,
@@ -21,9 +22,43 @@ function refValida(ref) {
   return (
     ref &&
     typeof ref === 'object' &&
+    !Array.isArray(ref) &&
     typeof ref.alvo_tabela === 'string' &&
+    ref.alvo_tabela.trim() !== '' &&
     typeof ref.alvo_id === 'string' &&
-    typeof ref.campo === 'string'
+    ref.alvo_id.trim() !== '' &&
+    typeof ref.campo === 'string' &&
+    ref.campo.trim() !== ''
+  );
+}
+
+function parcelaValida(parcela) {
+  return (
+    parcela &&
+    typeof parcela === 'object' &&
+    !Array.isArray(parcela) &&
+    typeof parcela.parcela === 'number' &&
+    Number.isFinite(parcela.parcela) &&
+    (parcela.data_prevista === undefined ||
+      parcela.data_prevista === null ||
+      typeof parcela.data_prevista === 'string') &&
+    (parcela.data_texto === undefined ||
+      parcela.data_texto === null ||
+      typeof parcela.data_texto === 'string') &&
+    (parcela.valor === undefined || parcela.valor === null || numeroOuNulo(parcela.valor) !== null) &&
+    (parcela.valor_texto === undefined ||
+      parcela.valor_texto === null ||
+      typeof parcela.valor_texto === 'string') &&
+    (parcela.ref === undefined || parcela.ref === null || refValida(parcela.ref))
+  );
+}
+
+function recursosValidos(recursos) {
+  if (recursos === undefined || recursos === null) return true;
+  if (typeof recursos !== 'object' || Array.isArray(recursos)) return false;
+  return (
+    (recursos.recebido === undefined || recursos.recebido === null || numeroOuNulo(recursos.recebido) !== null) &&
+    (recursos.a_receber === undefined || recursos.a_receber === null || numeroOuNulo(recursos.a_receber) !== null)
   );
 }
 
@@ -35,7 +70,19 @@ export async function executar(ctx, args) {
   const resposta = await chamarRpc(ctx, 'get_repasses_v2', { p_project_id: centro.id });
   if (resposta.erro) return { erro: resposta.erro };
   const dados = resposta.dados;
-  if (!dados || typeof dados !== 'object' || !Array.isArray(dados.parcelas)) {
+  if (
+    !dados ||
+    typeof dados !== 'object' ||
+    !Array.isArray(dados.parcelas) ||
+    !dados.parcelas.every(parcelaValida) ||
+    (dados.valor_total_plano !== undefined &&
+      dados.valor_total_plano !== null &&
+      numeroOuNulo(dados.valor_total_plano) === null) ||
+    (dados.data_balancete !== undefined &&
+      dados.data_balancete !== null &&
+      typeof dados.data_balancete !== 'string') ||
+    !recursosValidos(dados.recursos)
+  ) {
     return formatoInesperado('get_repasses_v2');
   }
 
@@ -45,7 +92,6 @@ export async function executar(ctx, args) {
   const parcelas = [];
 
   for (const parcela of dados.parcelas) {
-    if (!parcela || typeof parcela !== 'object') continue;
     const numeroParcela = parcela.parcela;
     const origemParcela = semDocumento('parcela do plano de trabalho', 'get_repasses_v2');
     const origemValor = refValida(parcela.ref)
@@ -86,10 +132,11 @@ export async function executar(ctx, args) {
       nos.push(no);
     }
 
-    if (typeof parcela.valor === 'number' && Number.isFinite(parcela.valor)) {
+    const valorParcela = numeroOuNulo(parcela.valor);
+    if (valorParcela !== null) {
       const no = registrarMoeda(
         ctx,
-        parcela.valor,
+        valorParcela,
         `Valor — parcela ${numeroParcela ?? '?'}`,
         origemValor
       );

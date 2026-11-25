@@ -59,7 +59,30 @@ export async function executar(ctx, args) {
   const resposta = await chamarRpc(ctx, 'get_termos_contrato_v2', { p_project_id: centro.id });
   if (resposta.erro) return { erro: resposta.erro };
   const dados = resposta.dados;
-  if (!dados || typeof dados !== 'object' || !dados.termos || typeof dados.termos !== 'object') {
+  if (
+    !dados ||
+    typeof dados !== 'object' ||
+    Array.isArray(dados) ||
+    !dados.termos ||
+    typeof dados.termos !== 'object' ||
+    Array.isArray(dados.termos) ||
+    typeof dados.vigencia_situacao !== 'string' ||
+    (dados.start_date_cadastro !== undefined &&
+      dados.start_date_cadastro !== null &&
+      typeof dados.start_date_cadastro !== 'string') ||
+    (dados.end_date_cadastro !== undefined &&
+      dados.end_date_cadastro !== null &&
+      typeof dados.end_date_cadastro !== 'string') ||
+    !Object.values(dados.termos).every(
+      (termo) =>
+        termo &&
+        typeof termo === 'object' &&
+        !Array.isArray(termo) &&
+        typeof termo.id === 'string' &&
+        termo.id !== '' &&
+        (typeof termo.valor === 'string' || Number.isFinite(termo.valor))
+    )
+  ) {
     return formatoInesperado('get_termos_contrato_v2');
   }
 
@@ -67,7 +90,6 @@ export async function executar(ctx, args) {
   const termos = {};
 
   for (const [chave, termo] of Object.entries(dados.termos)) {
-    if (!termo || typeof termo !== 'object' || typeof termo.id !== 'string') continue;
     const unidade = unidadeDoTermo(chave, termo);
     let valor;
     if (unidade === 'data') valor = String(termo.valor).slice(0, 10);

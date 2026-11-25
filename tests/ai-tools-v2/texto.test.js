@@ -13,11 +13,12 @@ function fixture(nome) {
   );
 }
 
-function montar() {
+function montar(overrides = {}) {
   const respostas = {
     resumo_projetos_v2: { data: fixture('resumo_projetos'), error: null },
     get_termos_contrato_v2: { data: fixture('termos_contrato'), error: null },
     get_pedido_bolsas_v2: { data: fixture('pedido_bolsas'), error: null },
+    ...overrides,
   };
   return criarSessao({
     rpc: async (nome) => respostas[nome] ?? { data: null, error: { message: `sem fixture: ${nome}` } },
@@ -105,5 +106,68 @@ describe('marcarTexto', () => {
     const marcado = sessao.marcarTexto('São 3 centros e R$ 1.234,56.');
     expect(marcado.semOrigem).toHaveLength(2);
     expect(marcado.semOrigem[0].inicio).toBeLessThan(marcado.semOrigem[1].inicio);
+  });
+
+  it('R$ 30.109 é moeda, mas 30.109 sem R$ é código de centro', async () => {
+    const resumo = fixture('resumo_projetos');
+    resumo.centros[0].livre = 30109;
+    const sessao = montar({ resumo_projetos_v2: { data: resumo, error: null } });
+    const dados = JSON.parse((await sessao.executar('listar_centros', {})).paraModelo);
+    const livre = acharNo(dados, 'Livre — Centro Exemplo Um');
+    sessao.criarBloco({ tipo: 'numero', titulo: '', no: livre.id });
+
+    expect(sessao.marcarTexto('O centro 30.109.').semOrigem).toEqual([]);
+    expect(sessao.marcarTexto('O valor é R$ 30.109,00.').semOrigem).toEqual([]);
+
+    const semCitacao = montar({ resumo_projetos_v2: { data: resumo, error: null } });
+    const marcado = semCitacao.marcarTexto('O valor é R$ 30.109,00.');
+    expect(marcado.semOrigem).toHaveLength(1);
+    expect(marcado.texto.slice(marcado.semOrigem[0].inicio, marcado.semOrigem[0].fim)).toBe(
+      'R$ 30.109,00'
+    );
+  });
+
+  it('data completa compara dia, mês e ano', async () => {
+    const { sessao, termos } = await preparar();
+    const inicio = acharNo(termos, 'Vigência — início');
+    sessao.criarBloco({ tipo: 'numero', titulo: '', no: inicio.id });
+
+    expect(sessao.marcarTexto('Vence em 31/12/2025.').semOrigem).toEqual([]);
+    expect(sessao.marcarTexto('Vence em dez/25.').semOrigem).toEqual([]);
+    expect(sessao.marcarTexto('Vence em 15/12/2025.').semOrigem).toHaveLength(1);
+  });
+
+  it('comparação de moeda respeita unidade e sinal', async () => {
+    const resumo = fixture('resumo_projetos');
+    resumo.centros[0].livre = -50;
+    const sessao = montar({ resumo_projetos_v2: { data: resumo, error: null } });
+    const dados = JSON.parse((await sessao.executar('listar_centros', {})).paraModelo);
+    const negativo = acharNo(dados, 'Livre — Centro Exemplo Um');
+    sessao.criarBloco({ tipo: 'numero', titulo: '', no: negativo.id });
+
+    expect(sessao.marcarTexto('O saldo é R$ -50,00.').semOrigem).toEqual([]);
+    expect(sessao.marcarTexto('O saldo é R$ 50,00.').semOrigem).toHaveLength(1);
+    expect(sessao.marcarTexto('O saldo é 50,00.').semOrigem).toHaveLength(1);
+
+    const total = dados.nos.find((no) => no.id === dados.total);
+    sessao.criarBloco({ tipo: 'numero', titulo: '', no: total.id });
+    expect(sessao.marcarTexto('São 3 centros.').semOrigem).toEqual([]);
+    expect(sessao.marcarTexto('São R$ 3,00.').semOrigem).toHaveLength(1);
+  });
+
+  it('reidratar recalcula os intervalos semOrigem', async () => {
+    const { sessao } = await preparar();
+    const bloco = sessao.criarBloco({
+      tipo: 'texto',
+      texto: 'Pessoa Exemplo Um deve R$ 500,00.',
+    }).bloco;
+    expect(bloco.texto.texto).not.toContain('Pessoa Exemplo Um');
+    const reidratado = sessao.reidratar(bloco);
+    expect(reidratado.texto.texto).toBe('Pessoa Exemplo Um deve R$ 500,00.');
+    const trecho = reidratado.texto.texto.slice(
+      reidratado.texto.semOrigem[0].inicio,
+      reidratado.texto.semOrigem[0].fim
+    );
+    expect(trecho).toBe('R$ 500,00');
   });
 });

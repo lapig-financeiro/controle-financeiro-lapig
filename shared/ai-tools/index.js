@@ -9,7 +9,7 @@ import { criarRegistro } from './nos.js';
 import { criarMascara } from './mascara.js';
 import { criarBlocos, criarCalculadora } from './blocos.js';
 import { marcarTexto as marcarTextoBase } from './texto.js';
-import { chamarRpc } from './ferramentas/comum.js';
+import { chamarRpc, mensagemRpc } from './ferramentas/comum.js';
 import { FERRAMENTAS } from './ferramentas/index.js';
 
 export const INSTRUCOES = `
@@ -199,7 +199,7 @@ export function criarSessao({ rpc, hoje } = {}) {
       const resposta = await chamarRpc(ctx, 'resumo_projetos_v2');
       if (resposta.erro) throw new Error(resposta.erro);
       if (!resposta.dados || !Array.isArray(resposta.dados.centros)) {
-        throw new Error('Formato inesperado em resumo_projetos_v2.');
+        throw new Error(`${mensagemRpc('resumo_projetos_v2')} (formato)`);
       }
       centrosCache = resposta.dados;
       return centrosCache;
@@ -252,20 +252,24 @@ export function criarSessao({ rpc, hoje } = {}) {
       return ferramenta.executar(ctx, args);
     }
 
-    const id = registro.iniciarResultado();
+    const escopo = registro.iniciarResultado();
+    const ctxExecucao = { ...ctx, registro: escopo };
     try {
-      const resultado = await ferramenta.executar(ctx, args);
+      const resultado = await ferramenta.executar(ctxExecucao, args);
       if (!resultado || typeof resultado !== 'object') {
-        return { id, erro: `A ferramenta ${nomeFerramenta} não devolveu resultado.` };
+        return { id: escopo.id, erro: `A ferramenta ${nomeFerramenta} não devolveu resultado. (formato)` };
       }
-      if (resultado.erro) return { id, erro: String(resultado.erro) };
+      if (resultado.erro) return { id: escopo.id, erro: String(resultado.erro) };
       if (!resultado.paraModelo) {
-        return { id, erro: `A ferramenta ${nomeFerramenta} não devolveu dados.` };
+        return { id: escopo.id, erro: `A ferramenta ${nomeFerramenta} não devolveu dados. (formato)` };
       }
-      return { id, paraModelo: JSON.stringify(resultado.paraModelo) };
+      registro.publicar(escopo);
+      return { id: escopo.id, paraModelo: JSON.stringify(resultado.paraModelo) };
     } catch (erro) {
-      const mensagem = erro && erro.message ? erro.message : 'Erro inesperado na ferramenta.';
-      return { id, erro: mascara.texto(mensagem) };
+      if (erro && typeof erro.codigo === 'string' && typeof erro.message === 'string') {
+        return { id: escopo.id, erro: `${erro.message} (${erro.codigo})` };
+      }
+      return { id: escopo.id, erro: `A ferramenta ${nomeFerramenta} falhou ao montar o resultado. (formato)` };
     }
   }
 
@@ -273,11 +277,31 @@ export function criarSessao({ rpc, hoje } = {}) {
     return marcarTextoBase(texto, { mascara, citados });
   }
 
+  function reidratar(bloco) {
+    const copia = mascara.reidratar(bloco);
+    if (
+      copia &&
+      copia.texto &&
+      bloco &&
+      bloco.texto &&
+      typeof bloco.texto.texto === 'string' &&
+      Array.isArray(bloco.texto.semOrigem)
+    ) {
+      const { texto, semOrigem } = mascara.reidratarTextoComIntervalos(
+        bloco.texto.texto,
+        bloco.texto.semOrigem
+      );
+      copia.texto.texto = texto;
+      copia.texto.semOrigem = semOrigem;
+    }
+    return copia;
+  }
+
   return {
     executar,
     criarBloco: (args) => blocos.criarBloco(args),
     calcular: (args) => calculadora.calcular(args),
     marcarTexto,
-    reidratar: (bloco) => mascara.reidratar(bloco),
+    reidratar,
   };
 }

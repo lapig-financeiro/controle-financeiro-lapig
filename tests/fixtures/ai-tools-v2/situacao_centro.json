@@ -20,7 +20,8 @@
       "nivel": "atenção",
       "texto": "Rubrica b — Serviços de Terceiros P. Jurídica: saldo livre R$ −14,34 por causa de R$ 14,34 de tarifa bancária sem previsão no plano.",
       "grupo_code": "b",
-      "valor": 14.34
+      "valor": 14.34,
+      "tarifa": 14.34
     }
   ]
 }

@@ -8,7 +8,7 @@
       "holder_id": "00000000-0000-4000-8000-000000070001",
       "nome": "Pessoa Exemplo Um",
       "equipe": "pastagem",
-      "valor_vigente": 4200,
+      "valor_vigente": 5000,
       "cpf": "123.456.789-09",
       "email": "pessoa.exemplo@exemplo.test",
       "bolsas": [
@@ -17,6 +17,16 @@
           "project_id": "00000000-0000-4000-8000-000000030901",
           "code": "30.901",
           "valor": 4200,
+          "inicio": "2026-09-01",
+          "fim": "2027-09-01",
+          "status": "active",
+          "vigente_hoje": true
+        },
+        {
+          "scholarship_id": "00000000-0000-4000-8000-000000040102",
+          "project_id": "00000000-0000-4000-8000-000000030904",
+          "code": "30.904",
+          "valor": 800,
           "inicio": "2026-09-01",
           "fim": "2027-09-01",
           "status": "active",
@@ -54,7 +64,7 @@
       "pessoas": 1,
       "total_mensal": 4200,
       "total_periodo": 50400,
-      "itens_ocultos": 0,
+      "itens_ocultos": 2,
       "itens": [
         {
           "holder_id": "00000000-0000-4000-8000-000000070001",

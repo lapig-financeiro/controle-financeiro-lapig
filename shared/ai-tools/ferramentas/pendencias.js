@@ -1,7 +1,11 @@
 // pendencias — listar_pendencias_v2 (contrato §4).
 //
 // Pendência não tem documento: a origem é sem_documento com o próprio motivo.
-// Texto livre (título, detalhe) passa pela máscara de nomes/CPF/e-mail.
+// `detalhe` passa por uma lista fechada de chaves conhecidas (as que o app e as
+// migrações gravam) e nunca vira nó quando a chave fala de pessoa ou o valor é
+// um número de 11 dígitos (CPF antigo).
+
+import { ehNumeroOnzeDigitos } from '../cpf.js';
 
 import {
   chamarRpc,
@@ -16,10 +20,45 @@ import {
 
 export const nome = 'pendencias';
 
+const CHAVES_DETALHE = new Set([
+  'conta',
+  'competencia',
+  'descricao',
+  'documento',
+  'rubrica',
+  'diferenca',
+  'quantidade',
+  'referencia',
+  'escopo',
+  'observacao',
+  'valor',
+  'tarifa',
+]);
+
+const CHAVE_SENSIVEL = /nome|cpf|e-?mail|pessoa|bolsista/i;
+
+function pendenciaValida(pendencia) {
+  return (
+    pendencia &&
+    typeof pendencia === 'object' &&
+    !Array.isArray(pendencia) &&
+    typeof pendencia.titulo === 'string' &&
+    typeof pendencia.tipo === 'string' &&
+    typeof pendencia.situacao === 'string' &&
+    (pendencia.code === undefined || pendencia.code === null || typeof pendencia.code === 'string') &&
+    (pendencia.criada_em === undefined ||
+      pendencia.criada_em === null ||
+      typeof pendencia.criada_em === 'string') &&
+    (pendencia.detalhe === undefined ||
+      pendencia.detalhe === null ||
+      (typeof pendencia.detalhe === 'object' && !Array.isArray(pendencia.detalhe)))
+  );
+}
+
 function registrarDetalhe(ctx, chave, valor, consulta) {
   const motivo = `detalhe da pendência (${chave})`;
   if (typeof valor === 'number' && Number.isFinite(valor)) {
-    const unidade = /valor|diferenca|saldo|montante/i.test(chave) ? 'moeda' : 'numero';
+    const unidade = /valor|diferenca|saldo|montante|tarifa/i.test(chave) ? 'moeda' : 'numero';
     return ctx.registro.registrar({
       valor,
       unidade,
@@ -51,7 +90,9 @@ export async function executar(ctx, args) {
     p_project_id: centro ? centro.id : null,
   });
   if (resposta.erro) return { erro: resposta.erro };
-  if (!Array.isArray(resposta.dados)) return formatoInesperado('listar_pendencias_v2');
+  if (!Array.isArray(resposta.dados) || !resposta.dados.every(pendenciaValida)) {
+    return formatoInesperado('listar_pendencias_v2');
+  }
 
   await ctx.mascara.garantirDicionario();
 
@@ -59,15 +100,14 @@ export async function executar(ctx, args) {
   const pendencias = [];
 
   for (const pendencia of resposta.dados) {
-    if (!pendencia || typeof pendencia !== 'object') continue;
     const consulta = 'listar_pendencias_v2';
     const motivoPendencia = semDocumento('pendência; o texto é o registro', consulta);
 
-    const titulo = registrarTexto(ctx, String(pendencia.titulo ?? ''), 'Título da pendência', motivoPendencia);
-    const tipo = registrarTexto(ctx, String(pendencia.tipo ?? ''), 'Tipo da pendência', motivoPendencia);
+    const titulo = registrarTexto(ctx, pendencia.titulo, 'Título da pendência', motivoPendencia);
+    const tipo = registrarTexto(ctx, pendencia.tipo, 'Tipo da pendência', motivoPendencia);
     const situacao = registrarTexto(
       ctx,
-      String(pendencia.situacao ?? ''),
+      pendencia.situacao,
       'Situação da pendência',
       motivoPendencia
     );
@@ -96,8 +136,10 @@ export async function executar(ctx, args) {
     }
 
     const detalhe = {};
-    if (pendencia.detalhe && typeof pendencia.detalhe === 'object' && !Array.isArray(pendencia.detalhe)) {
+    if (pendencia.detalhe && typeof pendencia.detalhe === 'object') {
       for (const [chave, valor] of Object.entries(pendencia.detalhe)) {
+        if (!CHAVES_DETALHE.has(chave) || CHAVE_SENSIVEL.test(chave)) continue;
+        if (ehNumeroOnzeDigitos(valor)) continue;
         const chaveSegura = ctx.mascara.texto(chave);
         if (!chaveSegura) continue;
         const no = registrarDetalhe(ctx, chaveSegura, valor, consulta);

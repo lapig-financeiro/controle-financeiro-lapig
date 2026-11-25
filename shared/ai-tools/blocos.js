@@ -95,7 +95,13 @@ export function criarBlocos({ registro, citados = [], mascara }) {
           unidade: no.unidade,
           rotulo: no.rotulo,
           origem: origemDoNo(no),
-          contexto: contexto ? { valor: contexto.valor, unidade: contexto.unidade } : null,
+          contexto: contexto
+            ? {
+                valor: contexto.valor,
+                unidade: contexto.unidade,
+                origem: origemDoNo(contexto),
+              }
+            : null,
         },
       };
       citar(citados, usados);
@@ -149,6 +155,11 @@ export function criarBlocos({ registro, citados = [], mascara }) {
     if (tituloComNumeroSemOrigem(titulo, citados, usados)) {
       return erro('o título tem número que não é valor de nó citado.');
     }
+    for (const coluna of colunas) {
+      if (tituloComNumeroSemOrigem(coluna.rotulo, citados, usados)) {
+        return erro('o cabeçalho da coluna tem número que não é valor de nó citado.');
+      }
+    }
 
     proximo += 1;
     const bloco = {
@@ -162,6 +173,17 @@ export function criarBlocos({ registro, citados = [], mascara }) {
   }
 
   return { criarBloco };
+}
+
+function casasDecimais(valor) {
+  const texto = String(valor);
+  if (/e/i.test(texto)) {
+    const [mantissa, expoente] = texto.toLowerCase().split('e');
+    const casas = (mantissa.split('.')[1] || '').length;
+    return Math.max(0, casas - Number(expoente));
+  }
+  const ponto = texto.indexOf('.');
+  return ponto === -1 ? 0 : texto.length - ponto - 1;
 }
 
 export function criarCalculadora({ registro, citados = [] }) {
@@ -219,14 +241,39 @@ export function criarCalculadora({ registro, citados = [] }) {
       sinais = nos.map((_, indice) => (op === 'diferenca' && indice > 0 ? -1 : 1));
     }
 
-    const centavos = nos.map((no, indice) => Math.round(no.valor * 100) * sinais[indice]);
-    const totalCentavos = centavos.reduce((soma, valor) => soma + valor, 0);
-    const valor = totalCentavos / 100;
+    let escala;
+    if (unidade === 'moeda') {
+      for (const no of nos) {
+        if (casasDecimais(no.valor) > 2) {
+          return erro('calcular recusa moeda com mais de 2 casas decimais.');
+        }
+      }
+      escala = 100;
+    } else {
+      const maxCasas = Math.max(...nos.map((no) => casasDecimais(no.valor)));
+      escala = 10 ** maxCasas;
+      if (!Number.isSafeInteger(escala)) {
+        return erro('calcular recusa escala excessiva para numero.');
+      }
+    }
+
+    const inteiros = nos.map((no) => Math.round(no.valor * escala));
+    if (!inteiros.every((valor) => Number.isSafeInteger(valor))) {
+      return erro('calcular recusa valores fora da faixa exata.');
+    }
+    const totalInteiro = inteiros.reduce(
+      (soma, valor, indice) => soma + valor * sinais[indice],
+      0
+    );
+    if (!Number.isSafeInteger(totalInteiro)) {
+      return erro('calcular recusa total fora da faixa exata.');
+    }
+    const valor = totalInteiro / escala;
 
     const partes = nos.map((no, indice) => ({
       id: no.id,
       sinal: sinais[indice],
-      valor: no.valor,
+      valor: inteiros[indice] / escala,
       rotulo: no.rotulo,
       origem: clonar(origemDoNo(no)),
     }));

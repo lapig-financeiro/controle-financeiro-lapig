@@ -3,37 +3,43 @@
 // Todo valor que uma ferramenta devolve vira um nó com id curto. O modelo vê
 // só { id, valor, rotulo, unidade }; a origem fica no registro, na memória da
 // sessão, e é o que o bloco leva para a tela.
+//
+// Cada execução tem o próprio escopo: os nós ficam pendentes até o resultado
+// inteiro ser validado e só então são publicados. Chamadas concorrentes não
+// trocam ids nem misturam nós.
 
 export function criarRegistro() {
   let resultado = 0;
-  let noDoResultado = 0;
   let calculo = 0;
-  let resultadoAtual = null;
   const porId = new Map();
   const ordem = [];
 
   function iniciarResultado() {
     resultado += 1;
-    noDoResultado = 0;
-    resultadoAtual = `r${resultado}`;
-    return resultadoAtual;
+    const escopo = {
+      id: `r${resultado}`,
+      pendentes: [],
+      registrar({ valor, unidade, rotulo, origem }) {
+        const no = {
+          id: `${escopo.id}.${escopo.pendentes.length + 1}`,
+          valor,
+          unidade,
+          rotulo: String(rotulo ?? ''),
+          origem: origem ?? null,
+        };
+        escopo.pendentes.push(no);
+        return no;
+      },
+    };
+    return escopo;
   }
 
-  function registrar({ valor, unidade, rotulo, origem }) {
-    if (!resultadoAtual) {
-      throw new Error('Nenhum resultado de ferramenta aberto para registrar o nó.');
+  function publicar(escopo) {
+    for (const no of escopo.pendentes) {
+      porId.set(no.id, no);
+      ordem.push(no);
     }
-    noDoResultado += 1;
-    const no = {
-      id: `${resultadoAtual}.${noDoResultado}`,
-      valor,
-      unidade,
-      rotulo: String(rotulo ?? ''),
-      origem: origem ?? null,
-    };
-    porId.set(no.id, no);
-    ordem.push(no);
-    return no;
+    escopo.pendentes = [];
   }
 
   function registrarCalculo({ valor, unidade, rotulo, origem }) {
@@ -60,11 +66,10 @@ export function criarRegistro() {
 
   return {
     iniciarResultado,
-    registrar,
+    publicar,
     registrarCalculo,
     obter,
     doResultado,
-    resultadoAtual: () => resultadoAtual,
     todos: () => [...ordem],
   };
 }

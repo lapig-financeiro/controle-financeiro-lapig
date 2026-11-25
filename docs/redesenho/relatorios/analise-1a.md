@@ -38,13 +38,13 @@ sintéticos de `dadosExemplo.js`. As chaves abaixo são as que o pacote lê; cha
 | RPC | Retorno usado | Origem que o pacote escolhe |
 |---|---|---|
 | `resumo_projetos_v2()` | `{ centros: [{ id, code, name, end_date, drive_folder_url, livre, situacao, data_referencia, pendencias_abertas, erro, responsaveis, motivos: [{ codigo, nivel, texto, grupo_code, valor, tarifa? }] }], ocultos, todos }` (069, linhas 464–509) | `livre` → `{ tipo: 'livre', project_id }`; vigência, situação, contagens e motivos → `sem_documento` |
-| `explicar_livre_v2(p_project_id)` | nó `{ rotulo, valor, tipo, chave, conta, sinal, ref, nota, partes: [nó] }`; `tipo` em `calculo/documento/legado/digitado`; `motivo` na raiz sem plano/balancete/números (070, linhas 856–859) | cada nó da árvore → `{ tipo: 'no', no: <nó com partes> }`; acima de 200 nós → `livre` |
-| `situacao_centro_v2(p_project_id)` | `{ situacao, motivos: [{ codigo, nivel, texto, grupo_code, valor }] }` (069, linha 564) | texto/nível → `sem_documento`; valor que casa com a árvore → `no`; sem árvore → `sem_documento` |
-| `get_repasses_v2(p_project_id)` | `{ parcelas: [{ parcela, data_prevista, data_texto, valor, valor_texto }], valor_total_plano, data_balancete, recursos: { recebido, a_receber } \| null }` (063, linhas 842–847) | `ref` se a linha trouxer (defensivo); hoje a RPC não traz → `sem_documento` |
+| `explicar_livre_v2(p_project_id)` | nó `{ rotulo, valor, tipo, chave, conta, sinal, ref, nota, partes: [nó] }`; `tipo` em `calculo/documento/legado/digitado`; `motivo` na raiz sem plano/balancete/números (070, linhas 856–859) | cada nó da árvore → `{ tipo: 'no', no: <nó com partes> }`; acima de 200 nós → `livre` com `chave`, ou `ref` quando a folha tem referência direta |
+| `situacao_centro_v2(p_project_id)` | `{ situacao, motivos: [{ codigo, nivel, texto, grupo_code, valor, tarifa? }] }` (069, linha 564) | `valor` (déficit) e `tarifa` → `sem_documento`; o saldo do grupo é ligado por `grupo_code` e vira `no`; texto/nível → `sem_documento` |
+| `get_repasses_v2(p_project_id)` | `{ parcelas: [{ parcela, data_prevista, data_texto, valor, valor_texto }], valor_total_plano, data_balancete, recursos: { recebido, a_receber } \| null }` (063, linhas 842–847) | hoje a RPC não traz `ref`: `sem_documento`; se uma linha trouxer `ref` completa, vira `ref` |
 | `get_termos_contrato_v2(p_project_id)` | `{ termos: { <termo>: { id, valor, regra, trecho, documento_nome, documento_url, documento_id, documento, pagina, nota, origem, autor, criado_em, conferido, conferido_em, versoes_anteriores } }, start_date_cadastro, end_date_cadastro, vigencia_situacao, vigencia_confere }` (067, linhas 397–411) | cada termo → `{ tipo: 'termo', project_id, termo_id }`; datas do cadastro e `vigencia_situacao` → `sem_documento` |
 | `listar_pendencias_v2(p_project_id default null)` | lista de `{ id, project_id, code, tipo, titulo, detalhe, situacao, origem, criada_em }` (063, linhas 433–476) | tudo → `sem_documento` (pendência); número de `detalhe` com chave de valor vira `moeda`, o resto `numero` |
-| `get_pedido_bolsas_v2()` | `{ centros: [{ id, code, name }], bolsistas: [{ holder_id, nome, equipe, valor_vigente, bolsas: [{ scholarship_id, project_id, code, valor, inicio, fim, status, vigente_hoje }] }], caixas: [{ id, nome, meses, criado_em, pessoas, total_mensal, total_periodo, itens_ocultos, itens: [{ holder_id, valor_mensal, valor_usado, nota }] }] }` (068, linhas 503–551) | nome → `⟦Pn⟧`; valores → `sem_documento` ("bolsa digitada, ainda sem documento"); CPF/e-mail não são lidos |
-| `get_origem_v2(p_alvo_tabela, p_alvo_id, p_campo)` | `{ tipo: 'documento' \| 'legado' \| 'digitado', valor, documento, fato, busca, nota }` (064/065) | **não é chamada pelo pacote**: é a RPC que a tela abre ao clicar na origem `ref`/`livre` |
+| `get_pedido_bolsas_v2()` | `{ centros: [{ id, code, name }], bolsistas: [{ holder_id, nome, equipe, valor_vigente, bolsas: [{ scholarship_id, project_id, code, valor, inicio, fim, status, vigente_hoje }] }], caixas: [{ id, nome, meses, criado_em, pessoas, total_mensal, total_periodo, itens_ocultos, itens: [{ holder_id, valor_mensal, valor_usado, nota }] }] }` (068, linhas 503–551) | nome → `⟦Pn⟧`; valores → `sem_documento`; o filtro de visão de `listar_centros` vale também sem `project_id`; com centro filtrado, as bolsas do centro ficam separadas do total global; `itens_ocultos` é preservado |
+| `get_origem_v2(p_alvo_tabela, p_alvo_id, p_campo)` | `{ tipo: 'documento' \| 'legado' \| 'digitado', valor, documento, fato, busca, nota }` (064/065) | **não é chamada pelo pacote**: a origem `ref` abre `get_origem_v2(ref)` → `Documento`; a origem `livre` primeiro chama `explicar_livre_v2(project_id)` e abre o `DeOndeVem`, e só a folha com `ref` chama `get_origem_v2` |
 
 Notas de formato:
 
@@ -63,22 +63,23 @@ Notas de formato:
 - `npm run lint`: **0 erros e 0 avisos** em `frontend/js/`, `mcp/`, `app/` e `shared/`.
 - `npm test` na raiz: **51 arquivos passando + 1 ignorado (52)**, **774 testes passando + 19 ignorados**
   (**793 no total**), incluindo os testes antigos.
-- Suíte nova `tests/ai-tools-v2`: **7 arquivos, 82 testes passando**:
-  - `sessao.test.js` (12): ids sequenciais, erro de RPC/exceção/formato, centro por código/id, centro
-    oculto/inexistente com o mesmo "não encontrado no seu acesso", cache da lista.
-  - `ferramentas.test.js` (26): caminho feliz e origem por tipo em cada ferramenta, árvore >200 nós,
-    motivo com e sem árvore, parcela com e sem `ref`, lista vazia honesta, erro de RPC em cada uma e
-    argumento inválido.
-  - `blocos.test.js` (14): número/tabela/texto, id inexistente, célula literal, unidades misturadas,
-    51 linhas, 9 colunas, 50 linhas/8 colunas, título com número inventado, id de bloco não consumido em
-    recusa.
-  - `calcular.test.js` (10): `0,1 + 0,2` exatamente `0,3`, diferença, sinais, origem `calculo` fechando
-    ao centavo, unidade `numero`, unidades diferentes, percentual, id inexistente, `op` inválida.
-  - `mascara.test.js` (8): nome completo, primeiro + último, CPF com/sem pontuação, e-mail,
-    `reidratar` só no bloco, varredura de **todos** os `paraModelo`, dicionário uma vez por sessão e
-    falha fechada quando o dicionário não carrega.
-  - `texto.test.js` (7): número citado × inventado, código de centro/conta, datas, percentual, moeda
-    negativa e resultado de `calcular`.
+- Suíte nova `tests/ai-tools-v2`: **7 arquivos, 106 testes passando na versão final (82 na 1ª rodada)**:
+  - `sessao.test.js` (14): ids sequenciais, erro de RPC/exceção/formato, centro por código/id, centro
+    oculto/inexistente com o mesmo "não encontrado no seu acesso", cache da lista e concorrência.
+  - `ferramentas.test.js` (36): caminho feliz e origem por tipo em cada ferramenta, árvore >200 nós,
+    motivo real de déficit/tarifa, lista vazia honesta, item nulo, erro de RPC em cada uma e argumento
+    inválido.
+  - `blocos.test.js` (15): número/tabela/texto, id inexistente, célula literal, unidades misturadas,
+    51 linhas, 9 colunas, 50 linhas/8 colunas, título e cabeçalho com número inventado, contextos e id
+    de bloco não consumido em recusa.
+  - `calcular.test.js` (12): `0,1 + 0,2` exatamente `0,3`, diferença, sinais, origem `calculo` fechando
+    ao centavo, unidade `numero`, escala de `numero`, moeda com 3 casas, unidades diferentes,
+    percentual, id inexistente, `op` inválida.
+  - `mascara.test.js` (13): nome completo, primeiro + último, CPF com espaço/ponto/hífen/barra,
+    e-mail, `reidratar` só no bloco, varredura de **todos** os `paraModelo`, dicionário uma vez por
+    sessão, falha fechada e erro sem PII começando por `termos_contrato`.
+  - `texto.test.js` (11): número citado × inventado, código de centro/conta, `R$ 30.109` × `30.109`,
+    datas completas, unidade/sinal, moeda negativa, resultado de `calcular` e `reidratar`.
   - `instrucoes.test.js` (5): quatro regras idênticas às do MCP (fonte lida como texto), regras da
     Análise e formato/descrição das nove especificações.
 
@@ -149,9 +150,110 @@ Fora do escopo desta tarefa (e não feitos):
 
 ## 7. Arquivos
 
-- `shared/ai-tools/index.js`, `nos.js`, `blocos.js`, `mascara.js`, `texto.js`, `README.md`
+- `shared/ai-tools/index.js`, `nos.js`, `blocos.js`, `mascara.js`, `texto.js`, `cpf.js`, `README.md`, `package.json`
 - `shared/ai-tools/ferramentas/` (9 ferramentas + `comum.js` + `index.js`)
-- `tests/ai-tools-v2/` (7 arquivos, 81 testes)
-- `tests/fixtures/ai-tools-v2/` (7 JSON sintéticos)
+- `tests/ai-tools-v2/` (7 arquivos, 106 testes na versão final; 82 na 1ª rodada)
+- `tests/fixtures/ai-tools-v2/` (8 JSON sintéticos)
 - `package.json` (só `shared/` no `lint`)
 - este relatório
+
+## 2ª rodada (25/11/2026) — revisão do GPT-6.2 Sol medium
+
+Os 12 achados da revisão foram aceitos e corrigidos. Esta seção é o retrato da rodada; a
+contagem final é **7 arquivos, 106 testes** em `tests/ai-tools-v2` e **798 testes passando +
+19 ignorados (817)** na raiz. `npm run lint`: 0 erros e 0 avisos.
+
+### O que mudou
+
+1. **Dados pessoais.** `cpf.js` implementa a mesma regra de `_tem_cpf`/`_mascarar_cpf` da
+   065 (3-3-3-2, vãos de 0 a 6 sem dígito/letra, DV da 052): CPF com espaço, ponto, hífen
+   ou barra é mascarado. Folha da árvore com `ref.alvo_tabela = 'scholarships'` troca o
+   nome por `⟦Pn⟧` no rótulo do modelo, estável pelo `alvo_id` e sem depender do
+   dicionário; o nó original com o nome só vai na `origem`. `pendencias` só aceita uma
+   lista fechada de chaves de `detalhe` (`conta`, `competencia`, `descricao`, `documento`,
+   `rubrica`, `diferenca`, `quantidade`, `referencia`, `escopo`, `observacao`, `valor`,
+   `tarifa`); chave com nome/cpf/e-mail/pessoa/bolsista e número de 11 dígitos são
+   descartados.
+2. **Erro de RPC.** `chamarRpc` devolve mensagem fixa por consulta + código
+   (`http_4xx`, `tempo` ou `formato`); o texto bruto do banco nunca sai do pacote. O
+   `catch` de `executar` só preserva mensagens com `codigo` definido pelo próprio pacote;
+   qualquer outra exceção vira erro genérico de formato. A varredura de PII cobre os
+   caminhos de erro e uma sessão que começa por `termos_contrato`, não por `listar_centros`.
+3. **Falha nunca vira sucesso.** `situacao: 'sem dado'` com motivo `falha` é erro explícito;
+   `centro.erro` em `listar_centros` cria `falhou: true` e o nó "consulta falhou", sem
+   livre; item `null`/inválido em lista e nó inválido na árvore são erro de formato, não
+   lista vazia. A árvore é validada inteira antes de registrar qualquer nó.
+4. **Motivos.** `situacao_centro` preserva `valor` (magnitude do déficit), `tarifa` e o
+   saldo assinado do grupo como campos distintos. O saldo é ligado à árvore por
+   `grupo_code` (não por igualdade de valor) e recebe origem `no`; déficit e tarifa ficam
+   `sem_documento` com o motivo literal. `listar_centros` também expõe `valor` e `tarifa`
+   separados.
+5. **Números no texto.** Cabeçalho de coluna com número inventado é recusado como o
+   título; `R$ 30.109` é moeda (código de centro só sem `R$`); data completa compara dia,
+   mês e ano; a comparação respeita unidade e sinal (moeda só com moeda, número só com
+   número, percentual só com percentual).
+6. **Clique na árvore grande.** Acima de 200 nós, a origem `livre` leva também `chave`;
+   folha com `ref` usa `{ tipo: 'ref', ref, nome }` direto ao documento. O `contexto` do
+   bloco número passou a levar a origem do nó de contexto.
+7. **`calcular` exato.** Moeda com mais de 2 casas é recusada; `numero` usa aritmética
+   inteira escalada pelo maior número de casas; as partes registradas são as mesmas que
+   fecharam o total.
+8. **Bolsas.** O filtro de visão de `listar_centros` vale também na chamada sem
+   `project_id`. Com centro filtrado, as bolsas do centro ficam em `bolsas` e o total
+   global da pessoa fica em `total_global`, com rótulo próprio; `valor_vigente` não é
+   reapresentado como se fosse do centro. `itens_ocultos` das caixas é preservado. Nenhuma
+   soma nova no pacote.
+9. **Concorrência.** Cada execução tem um escopo próprio; os nós só são publicados
+   depois de o resultado inteiro ser validado. `Promise.all` não mistura `r1.*` com
+   `r2.*`, e resultado com erro não deixa nó citável.
+10. **`reidratar`.** O texto e os intervalos `semOrigem` são recalculados juntos; o realce
+    de `⟦P1⟧ deve 500` continua em `500` depois da troca pelo nome.
+11. **Node direto.** `shared/ai-tools/package.json` declara `{ "type": "module",
+    "private": true }`. O comando `node -e "import('./shared/ai-tools/index.js')"` rodou
+    no Node nativo e devolveu `ok function function true` (exporta `criarSessao`,
+    `especificacoes` e `INSTRUCOES`).
+12. **Desembolso.** O fixture padrão voltou a ser fiel à 063 (sem `ref`), e o teste prova
+    `sem_documento` nas duas parcelas. Um segundo fixture (`repasses_ref.json`) tem a
+    referência completa no formato que `get_origem_v2` recebe; o teste confere
+    `alvo_tabela`, `alvo_id`, `campo` e o nome da parcela.
+
+### Contrato §3/§6
+
+O pacote passa a produzir três campos que o contrato ainda não listava; o Claude atualiza
+o contrato:
+
+- §3, origem `livre` de árvore acima de 200 nós: `{ tipo: 'livre', project_id, chave }`.
+- §3, folha de árvore acima de 200 nós com referência: `{ tipo: 'ref', ref, nome }` em vez
+  de `livre` (o clique vai direto ao documento).
+- §6, `numero.contexto`: `{ valor, unidade, origem }` (antes só valor e unidade).
+- Em `situacao_centro`, o `paraModelo` expõe `valor` (déficit), `saldo` (grupo, com origem
+  `no`) e `tarifa`; em `bolsas`, `total_global` (centro filtrado) e `itens_ocultos`.
+
+### Mutantes desta rodada (aplicados, testados e revertidos)
+
+| Item | Mutante | Teste que pegou | Falha observada |
+|---|---|---|---|
+| 1 | Rótulo de folha de bolsa sem `⟦Pn⟧` quando o dicionário está vazio | `mascara.test.js` — “mascara o nome pelo alvo_id mesmo com dicionário vazio” | `paraModelo` continha “Pessoa Exemplo Um” |
+| 1 | `detalhe` aceitando chave desconhecida | `ferramentas.test.js` — “descarta detalhe sensível/desconhecido” | `paraModelo` vazava “Pessoa Exemplo Fora” |
+| 2 | Erro de RPC devolvendo `error.message` cru | `mascara.test.js` — “erro de RPC não leva PII ao modelo” | erro veio “Falha: … Pessoa Exemplo Um, CPF …” |
+| 3 | `situacao: 'sem dado'` com `falha` virando sucesso | `ferramentas.test.js` — “situação sem dado … erro explícito” | `erro` veio `undefined` |
+| 3 | `centro.erro` ignorado em `listar_centros` | `ferramentas.test.js` — “centro com erro … falhou” | `falhou` veio `false` |
+| 4 | `tarifa` do motivo omitida | `ferramentas.test.js` — “motivo real de déficit e tarifa” | nó “Tarifa bancária” não existia |
+| 5 | Cabeçalho de coluna não validado | `blocos.test.js` — “recusa cabeçalho …” | bloco aceitou “Total R$ 500,00” sem nó |
+| 5 | Código de centro sempre proibido, mesmo com `R$` | `texto.test.js` — “R$ 30.109 é moeda …” | `semOrigem` marcou `[20,22]` em valor citado |
+| 5 | Data completa comparada só por mês/ano | `texto.test.js` — “data completa compara dia, mês e ano” | `15/12/2025` não foi marcado |
+| 5 | Moeda comparada por valor absoluto | `texto.test.js` — “comparação de moeda respeita unidade e sinal” | `R$ 50,00` virou “citado” pelo nó `−50` |
+| 5 | Moeda comparada com número | `texto.test.js` — “comparação de moeda respeita unidade e sinal” | `R$ 3,00` virou “citado” pelo nó número `3` |
+| 6 | Origem `livre` de árvore grande sem `chave` | `ferramentas.test.js` — “acima de 200 nós … chave e ref” | `origem.chave` veio `undefined` |
+| 6 | `contexto` sem origem | `blocos.test.js` / `ferramentas.test.js` | `contexto.origem` veio `undefined` |
+| 7 | `numero` arredondado em centavos | `calcular.test.js` — “numero usa a maior escala …” | total veio `2`, não `2.01` |
+| 8 | Sem filtro de visão em `bolsas` | `ferramentas.test.js` — “filtro de visão vale também sem project_id” | bolsista veio com 2 bolsas, incluindo `30.904` |
+| 8 | `itens_ocultos` omitido | `ferramentas.test.js` — “filtro de visão …” | nó de `itens_ocultos` veio `undefined` |
+| 8 | Total global exposto como `valor_vigente` no filtro | `ferramentas.test.js` — “com centro filtrado …” | `valor_vigente` veio `r1.2`, não `null` |
+| 9 | `registrar` usando id global em vez do escopo | `sessao.test.js` — “Promise.all não mistura …” | nó de `r1` veio com prefixo `r2` |
+| 10 | `reidratar` sem recalcular intervalos | `texto.test.js` — “reidratar recalcula …” | trecho destacado virou “mplo Um d” |
+| 11 | `package.json` do pacote em `commonjs` | `node -e "import('./shared/ai-tools/index.js')"` | `SyntaxError: Cannot use import statement outside a module` |
+| 12 | `desembolsos` sempre `sem_documento` | `ferramentas.test.js` — “com ref completa …” | origem veio `sem_documento`, não `ref` |
+
+Cada mutante foi revertido; na rodada final a suíte nova voltou a **106/106** e a raiz
+fechou em **798 passando + 19 ignorados**.
