@@ -61,7 +61,7 @@ function somarMeses(mes, quantidade) {
 }
 
 /** Resposta de um estado em que não há conta mês a mês para mostrar. */
-function respostaSemConta(estado, motivo) {
+function respostaSemConta(estado, motivo, folhaAtrasada = 0) {
   return {
     estado,
     motivo,
@@ -75,9 +75,33 @@ function respostaSemConta(estado, motivo) {
     sobra_orcamento: null,
     mes_mais_apertado: null,
     taxa_fracao: 0,
+    folha_atrasada: folhaAtrasada,
     atrasados: [],
     fora: [],
     avisos: [],
+  };
+}
+
+/**
+ * Folha paga depois da data do balancete (070). O banco já a somou em
+ * `compromissos_bolsas` e no livre; a projeção só precisa saber quanto
+ * ela tira do caixa e do orçamento no primeiro mês. Chave ausente,
+ * nula ou inválida vale zero, para a conta de hoje não mudar.
+ */
+function lerFolhaAtrasada(saldo) {
+  const bruto = saldo?.folha_atrasada;
+  if (!bruto || typeof bruto !== 'object' || Array.isArray(bruto)) {
+    return { valor: 0, balancete: null };
+  }
+  const valor = numero(bruto.valor);
+  if (valor === null || valor <= 0) return { valor: 0, balancete: null };
+  return {
+    ...bruto,
+    valor: r2(valor),
+    balancete:
+      typeof bruto.balancete === 'string' && DATA_RE.test(bruto.balancete.slice(0, 10))
+        ? bruto.balancete.slice(0, 10)
+        : null,
   };
 }
 
@@ -98,17 +122,34 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   if (!saldo || typeof saldo !== 'object') {
     return respostaSemConta('dado_incompleto', 'Não foi possível ler o saldo deste centro.');
   }
+  const folhaAtrasada = lerFolhaAtrasada(saldo);
   if (saldo.has_plano === false) {
-    return respostaSemConta('dado_incompleto', 'Este centro não tem plano de trabalho ativo.');
+    return respostaSemConta(
+      'dado_incompleto',
+      'Este centro não tem plano de trabalho ativo.',
+      folhaAtrasada.valor
+    );
   }
   if (!Array.isArray(saldo.bolsas_ativas)) {
-    return respostaSemConta('dado_incompleto', 'O saldo não trouxe as bolsas ativas.');
+    return respostaSemConta(
+      'dado_incompleto',
+      'O saldo não trouxe as bolsas ativas.',
+      folhaAtrasada.valor
+    );
   }
   if (typeof hoje !== 'string' || !DATA_RE.test(hoje)) {
-    return respostaSemConta('dado_incompleto', 'A data de hoje não foi informada para a conta.');
+    return respostaSemConta(
+      'dado_incompleto',
+      'A data de hoje não foi informada para a conta.',
+      folhaAtrasada.valor
+    );
   }
   if (!repasses || typeof repasses !== 'object') {
-    return respostaSemConta('dado_incompleto', 'Não foi possível ler os desembolsos do plano.');
+    return respostaSemConta(
+      'dado_incompleto',
+      'Não foi possível ler os desembolsos do plano.',
+      folhaAtrasada.valor
+    );
   }
 
   // ---------- Folha ----------
@@ -133,21 +174,27 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     ) {
       return respostaSemConta(
         'dado_incompleto',
-        'Há bolsa ativa sem valor mensal, sem número de meses ou sem data de término; a conta não pode tratar isso como zero.'
+        'Há bolsa ativa sem valor mensal, sem número de meses ou sem data de término; a conta não pode tratar isso como zero.',
+        folhaAtrasada.valor
       );
     }
     bolsas.push({ valor_mensal: valorMensal, meses, fim: fimBolsa });
   }
 
   if (bolsas.length === 0) {
-    return respostaSemConta('sem_bolsas', 'Nenhuma bolsa ativa para pagar na janela do balancete.');
+    return respostaSemConta(
+      'sem_bolsas',
+      'Nenhuma bolsa ativa para pagar na janela do balancete.',
+      folhaAtrasada.valor
+    );
   }
 
   const inicio = mesDeData(saldo.compromissos_inicio);
   if (!inicio) {
     return respostaSemConta(
       'dado_incompleto',
-      'O balancete não diz a partir de quando as bolsas contam; a projeção não pode começar.'
+      'O balancete não diz a partir de quando as bolsas contam; a projeção não pode começar.',
+      folhaAtrasada.valor
     );
   }
 
@@ -155,7 +202,8 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   if (!fimCentro) {
     return respostaSemConta(
       'dado_incompleto',
-      'A vigência do centro não está cadastrada; a projeção não pode terminar.'
+      'A vigência do centro não está cadastrada; a projeção não pode terminar.',
+      folhaAtrasada.valor
     );
   }
 
@@ -163,7 +211,8 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   if (!fimJanela) {
     return respostaSemConta(
       'dado_incompleto',
-      'O saldo não trouxe o fim da janela de compromissos; a conta não pode posicionar as bolsas.'
+      'O saldo não trouxe o fim da janela de compromissos; a conta não pode posicionar as bolsas.',
+      folhaAtrasada.valor
     );
   }
 
@@ -172,12 +221,15 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   const somaBolsas = r2(
     bolsas.reduce((soma, bolsa) => soma + bolsa.valor_mensal * bolsa.meses, 0)
   );
+  // O compromisso da janela da 070 já inclui a folha atrasada; comparar a
+  // soma das bolsas sem ela acusaria diferença em todo centro com 070.
+  const somaDaJanela = r2(somaBolsas + folhaAtrasada.valor);
   const compromissoBolsas = numero(saldo.compromissos_bolsas);
   if (compromissoBolsas === null) {
     avisos.push('O saldo não trouxe o compromisso de bolsas da janela.');
-  } else if (Math.abs(somaBolsas - compromissoBolsas) > 1) {
+  } else if (Math.abs(somaDaJanela - compromissoBolsas) > 1) {
     avisos.push(
-      `A soma das bolsas (${dinheiro(somaBolsas, { centavos: false })}) difere do compromisso da janela (${dinheiro(compromissoBolsas, { centavos: false })}).`
+      `A soma das bolsas${folhaAtrasada.valor > 0 ? ' e da folha atrasada' : ''} (${dinheiro(somaDaJanela, { centavos: false })}) difere do compromisso da janela (${dinheiro(compromissoBolsas, { centavos: false })}).`
     );
   }
 
@@ -200,7 +252,8 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   if (!fim || fim < inicio) {
     return respostaSemConta(
       'sem_bolsas',
-      'As bolsas cadastradas terminam antes do início da janela do balancete.'
+      'As bolsas cadastradas terminam antes do início da janela do balancete.',
+      folhaAtrasada.valor
     );
   }
 
@@ -413,6 +466,10 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   for (let indice = 0; indice < mesesConta.length; indice += 1) {
     const mes = mesesConta[indice];
     const folha = folhas[indice];
+    // A folha atrasada é dinheiro que já devia ter saído: no primeiro mês
+    // da conta ela sai do caixa antes de tudo e também abate o orçamento,
+    // que parte de previsto − realizado e não a vê.
+    const atrasadaDoMes = indice === 0 ? folhaAtrasada.valor : 0;
     const antes = usarCaixa
       ? r2((antesPorMes.get(mes) || []).reduce((soma, d) => soma + d.liquido, 0))
       : 0;
@@ -423,7 +480,7 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     let emContaAposFolha = null;
     let emContaFim = null;
     if (saldoConta !== null) {
-      saldoConta = r2(saldoConta + antes);
+      saldoConta = r2(saldoConta - atrasadaDoMes + antes);
       if (saldoConta < folha && mesFalta === null) {
         mesFalta = mes;
         faltaValor = r2(folha - saldoConta);
@@ -436,14 +493,15 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     // Orçamento: o limite é o mês em que o que sobrou do mês anterior
     // não paga mais uma folha. Um resto menor que a folha depois da
     // ÚLTIMA bolsa não é limite: não há outra folha para pagar.
-    if (orcamento < folha && mesOrcamento === null) {
+    if (r2(orcamento - atrasadaDoMes) < folha && mesOrcamento === null) {
       mesOrcamento = mes;
     }
-    orcamento = r2(orcamento - folha);
+    orcamento = r2(orcamento - atrasadaDoMes - folha);
 
     meses.push({
       mes,
       folha,
+      folha_atrasada: atrasadaDoMes,
       entra_antes: antes,
       entra_depois: depois,
       desembolsos: usarCaixa
@@ -533,6 +591,7 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     sobra_orcamento: r2(orcamento),
     mes_mais_apertado: mesMaisApertado,
     taxa_fracao: taxaFracao,
+    folha_atrasada: folhaAtrasada.valor,
     atrasados,
     fora,
     avisos,

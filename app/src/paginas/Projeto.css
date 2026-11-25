@@ -297,6 +297,12 @@ button.projeto__link-documento:focus-visible {
   color: var(--cor-texto-2);
 }
 
+.projeto__folha-atrasada-painel {
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
 .projeto__projecao {
   display: flex;
   flex-direction: column;

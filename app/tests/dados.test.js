@@ -590,7 +590,7 @@ describe('camada de dados', () => {
       const centrosPorId = new Map(resumoTodos.dados.centros.map((c) => [c.id, c]));
 
       const idsArvores = Object.keys(dadosExemplo.ARVORES_EXEMPLO);
-      expect(idsArvores.length).toBe(8);
+      expect(idsArvores.length).toBe(9);
 
       for (const projectId of idsArvores) {
         const centro = centrosPorId.get(projectId);

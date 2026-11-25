@@ -693,6 +693,97 @@ describe('Projeto — projeção das bolsas na tela', () => {
     );
     expect(cartaoBolsas().textContent).toContain('45.000');
   });
+
+  it('mostra a folha atrasada no 1º mês, explica a saída e não repete o aviso do banco', async () => {
+    const { saldo } = configurarPadrao();
+    saldo.compromissos_bolsas = 520000;
+    saldo.folha_atrasada = {
+      valor: 20000,
+      esperado: 20000,
+      visto: 0,
+      desde_balancete: '2026-10-15',
+      balancete: '2026-11-17',
+      mes_inicio: '2026-11-01',
+      mes_fim: '2026-11-01',
+    };
+    const avisoBanco =
+      'A folha de nov/26 foi paga depois do balancete de 17/11/2026 e não aparece nele: R$ 20.000,00 somados aos compromissos de bolsas.';
+    saldo.avisos = [avisoBanco];
+    explicarLivreMock.mockResolvedValue({ dados: null, erro: 'Sem árvore no teste.' });
+
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const ocorrencias = document.body.textContent.split(avisoBanco).length - 1;
+    expect(ocorrencias).toBe(1);
+
+    const detalhes = Array.from(document.querySelectorAll('details')).find(
+      (item) => item.querySelector('summary')?.textContent === 'Ver mês a mês em tabela'
+    );
+    detalhes.open = true;
+    await tick();
+
+    const cabecalhoTabela = Array.from(detalhes.querySelectorAll('th')).map(
+      (th) => th.textContent
+    );
+    expect(cabecalhoTabela).toContain('Folha atrasada (R$)');
+    const linhas = detalhes.querySelectorAll('tbody tr');
+    expect(linhas[0].textContent).toContain('20.000');
+    expect(linhas[1].textContent).not.toContain('20.000');
+
+    const detalhesConta = Array.from(document.querySelectorAll('details')).find(
+      (item) => item.querySelector('summary')?.textContent === 'Como a conta é feita'
+    );
+    const regras = detalhesConta.textContent;
+    expect(regras).toContain('A folha atrasada de');
+    expect(regras).toContain('20.000');
+    expect(regras).toContain('17/11/2026');
+    expect(regras).toContain('abate o orçamento de Bolsas');
+
+    const linhaPessoal = Array.from(
+      document.querySelectorAll('.abas__painel tbody tr')
+    ).find((linha) => linha.textContent.includes('Pessoal'));
+    linhaPessoal.querySelector('.tabela__gatilho').click();
+    await tick();
+
+    const painel = document.querySelector('.painel-lateral');
+    expect(painel.textContent).toContain('Cabe até');
+    expect(painel.textContent).toContain(
+      'de folha que ainda não apareceu no balancete de 17/11/2026'
+    );
+  });
+
+  it('sem folha atrasada, não cria a coluna nem a frase no painel', async () => {
+    configurarPadrao();
+    explicarLivreMock.mockResolvedValue({ dados: null, erro: 'Sem árvore no teste.' });
+
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const detalhes = Array.from(document.querySelectorAll('details')).find(
+      (item) => item.querySelector('summary')?.textContent === 'Ver mês a mês em tabela'
+    );
+    detalhes.open = true;
+    await tick();
+    const cabecalhoTabela = Array.from(detalhes.querySelectorAll('th')).map(
+      (th) => th.textContent
+    );
+    expect(cabecalhoTabela).not.toContain('Folha atrasada (R$)');
+
+    const detalhesConta = Array.from(document.querySelectorAll('details')).find(
+      (item) => item.querySelector('summary')?.textContent === 'Como a conta é feita'
+    );
+    expect(detalhesConta.textContent).not.toContain('A folha atrasada');
+
+    const linhaPessoal = Array.from(
+      document.querySelectorAll('.abas__painel tbody tr')
+    ).find((linha) => linha.textContent.includes('Pessoal'));
+    linhaPessoal.querySelector('.tabela__gatilho').click();
+    await tick();
+
+    const painel = document.querySelector('.painel-lateral');
+    expect(painel.textContent).not.toContain('ainda não apareceu no balancete');
+  });
 });
 
 describe('GraficoProjecao', () => {
