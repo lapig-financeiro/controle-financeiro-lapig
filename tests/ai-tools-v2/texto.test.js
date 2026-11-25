@@ -238,3 +238,35 @@ describe('números — conferência final da 4ª rodada', () => {
     expect(marcarNumeros('O centro 30.109 tem saldo.', [])).toEqual([]);
   });
 });
+
+describe('data mês/ano (MM/AAAA)', () => {
+  const data = (valor) => ({ unidade: 'data', valor });
+  function trechos(texto, semOrigem) {
+    return semOrigem.map((faixa) => texto.slice(faixa.inicio, faixa.fim));
+  }
+
+  it('reconhece MM/AAAA e casa com nó de data do mesmo ano-mês', () => {
+    expect(marcarNumeros('Vence em 09/2027.', [data('2027-09-30')])).toEqual([]);
+    expect(marcarNumeros('Vence em 10/2027.', [data('2027-09-30')])).toHaveLength(1);
+  });
+
+  it('11/2026 sem nó de data continua marcado como sem origem', () => {
+    const texto = 'O balancete cobre até 11/2026.';
+    const marcado = marcarNumeros(texto, []);
+    expect(trechos(texto, marcado)).toEqual(['11/2026']);
+  });
+
+  it('não quebra dd/mm/aaaa, 1/2 nem 30.109', () => {
+    expect(marcarNumeros('15/12/2025', [data('2025-12-15')])).toEqual([]);
+    expect(trechos('15/12/2025', marcarNumeros('15/12/2025', [data('2025-12-16')]))).toEqual([
+      '15/12/2025',
+    ]);
+    expect(trechos('32/01/2026', marcarNumeros('32/01/2026', [data('2026-01-15')]))).toEqual([
+      '32',
+      '01',
+      '2026',
+    ]);
+    expect(marcarNumeros('1/2', [data('2001-02-01')])).toHaveLength(2);
+    expect(marcarNumeros('O centro 30.109 tem saldo.', [])).toEqual([]);
+  });
+});

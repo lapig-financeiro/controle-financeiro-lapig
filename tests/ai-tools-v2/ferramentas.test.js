@@ -39,6 +39,35 @@ function acharNo(dados, parteDoRotulo) {
   return no;
 }
 
+/** 60 bolsistas vigentes, 2 bolsas cada, todas no 30.901 (dados sintéticos). */
+function pedidoGrande() {
+  const centro = '00000000-0000-4000-8000-000000030901';
+  const valores = [4200, 5200, 1500, 800, 1040];
+  const inicios = ['2026-03-01', '2026-09-01', '2025-04-01'];
+  const fins = ['2027-02-28', '2027-09-01', '2028-03-31'];
+  const equipes = ['pastagem', 'alertas', 'solos'];
+  const bolsistas = Array.from({ length: 60 }, (_, indice) => {
+    const bolsas = [0, 1].map((posicao) => ({
+      scholarship_id: `00000000-0000-4000-8000-00000004${String(indice).padStart(2, '0')}${posicao}`,
+      project_id: centro,
+      code: '30.901',
+      valor: valores[(indice + posicao) % valores.length],
+      inicio: inicios[(indice + posicao) % inicios.length],
+      fim: fins[(indice + posicao) % fins.length],
+      status: 'active',
+      vigente_hoje: true,
+    }));
+    return {
+      holder_id: `00000000-0000-4000-8000-00000007${String(indice).padStart(4, '0')}`,
+      nome: `Pessoa Sintética ${String(indice + 1).padStart(2, '0')}`,
+      equipe: equipes[indice % equipes.length],
+      valor_vigente: bolsas[0].valor + bolsas[1].valor,
+      bolsas,
+    };
+  });
+  return { centros: [], bolsistas, caixas: [] };
+}
+
 describe('listar_centros', () => {
   it('devolve centros, motivos e origem livre', async () => {
     const sessao = montar();
@@ -423,6 +452,33 @@ describe('desembolsos', () => {
     });
     expect(bloco.numero.origem.nome).toBe('Parcela 2');
   });
+
+  it('expõe o rendimento bruto do balancete ao lado de recebido e a receber', async () => {
+    const sessao = montar();
+    const dados = json(await sessao.executar('desembolsos', { project_id: '30.901' }));
+    expect(dados.recursos.recebido).toMatch(/^r1\./);
+    expect(dados.recursos.a_receber).toMatch(/^r1\./);
+    expect(dados.recursos.rendimento_bruto).toMatch(/^r1\./);
+
+    const rendimento = dados.nos.find((no) => no.id === dados.recursos.rendimento_bruto);
+    expect(rendimento.valor).toBe(12345.67);
+    expect(rendimento.unidade).toBe('moeda');
+    expect(rendimento.rotulo).toBe('Rendimento bruto de aplicação');
+
+    const bloco = sessao.criarBloco({ tipo: 'numero', titulo: '', no: rendimento.id }).bloco;
+    expect(bloco.numero.origem.tipo).toBe('sem_documento');
+    expect(bloco.numero.origem.motivo).toBe('rendimento lido do balancete vigente');
+    expect(bloco.numero.origem.consulta).toBe('get_repasses_v2');
+  });
+
+  it('rendimento não numérico é erro de formato, nunca zero', async () => {
+    const repasses = fixture('repasses');
+    repasses.recursos.rendimento_bruto = 'não é número';
+    const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
+    const resultado = await sessao.executar('desembolsos', { project_id: '30.901' });
+    expect(resultado.erro).toBe('Não foi possível carregar os desembolsos. (formato)');
+    expect(resultado.paraModelo).toBeUndefined();
+  });
 });
 
 describe('termos_contrato', () => {
@@ -520,7 +576,7 @@ describe('bolsas', () => {
     expect(resultado.paraModelo).not.toContain('Pessoa Exemplo Um');
     expect(resultado.paraModelo).not.toContain('123.456.789-09');
     expect(resultado.paraModelo).not.toContain('pessoa.exemplo@exemplo.test');
-    const valor = acharNo(dados, 'Valor mensal da bolsa');
+    const valor = acharNo(dados, 'Valor');
     expect(valor.valor).toBe(4200);
     const bloco = sessao.criarBloco({ tipo: 'numero', titulo: '', no: valor.id }).bloco;
     expect(bloco.numero.origem.tipo).toBe('sem_documento');
@@ -603,6 +659,50 @@ describe('bolsas', () => {
     expect(caixa.total_mensal).not.toBeNull();
     expect(caixa.total_periodo).not.toBeNull();
     expect(caixa.aviso).toBeNull();
+  });
+
+  it('por padrão só entram bolsas vigentes; quem não tem bolsa vigente no recorte não entra', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].bolsas[0].vigente_hoje = false;
+    pedido.bolsistas[0].bolsas[0].status = 'ended';
+    const sessao = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    const dados = json(await sessao.executar('bolsas', { project_id: '30.901' }));
+    expect(dados.bolsistas).toEqual([]);
+    expect(dados.nos.find((no) => no.id === dados.total).valor).toBe(0);
+  });
+
+  it('incluir_encerradas traz a bolsa antiga e o campo vigente_hoje', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].bolsas[0].vigente_hoje = false;
+    pedido.bolsistas[0].bolsas[0].status = 'ended';
+    const sessao = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    const dados = json(
+      await sessao.executar('bolsas', { project_id: '30.901', incluir_encerradas: true })
+    );
+    expect(dados.bolsistas).toHaveLength(1);
+    expect(dados.bolsistas[0].bolsas).toHaveLength(1);
+    const vigente = dados.nos.find((no) => no.id === dados.bolsistas[0].bolsas[0].vigente_hoje);
+    expect(vigente.valor).toBe('não');
+  });
+
+  it('incluir_encerradas precisa ser booleano', async () => {
+    const sessao = montar();
+    const resultado = await sessao.executar('bolsas', {
+      project_id: '30.901',
+      incluir_encerradas: 'sim',
+    });
+    expect(resultado.erro).toBe('O parâmetro incluir_encerradas deve ser true ou false.');
+    expect(resultado.paraModelo).toBeUndefined();
+  });
+
+  it('60 bolsistas vigentes com 2 bolsas cada num centro cabem em menos de 25.000 caracteres', async () => {
+    const sessao = montar({ get_pedido_bolsas_v2: { data: pedidoGrande(), error: null } });
+    const resultado = await sessao.executar('bolsas', { project_id: '30.901' });
+    expect(resultado.erro).toBeUndefined();
+    const dados = JSON.parse(resultado.paraModelo);
+    expect(dados.bolsistas).toHaveLength(60);
+    expect(dados.bolsistas[0].bolsas).toHaveLength(2);
+    expect(resultado.paraModelo.length).toBeLessThan(25000);
   });
 
   it('centro oculto não pode ser consultado', async () => {

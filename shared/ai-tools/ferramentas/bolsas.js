@@ -68,12 +68,49 @@ function caixaValida(caixa) {
   );
 }
 
+/**
+ * Registrador com memo por (unidade, rótulo, valor): a mesma informação repetida
+ * em bolsas diferentes vira um nó só. O valor e a origem são idênticos; o modelo
+ * cita o mesmo id em duas linhas sem ganhar nem perder nada.
+ */
+function criarRegistradorUnico(ctx) {
+  const feitos = new Map();
+
+  function unico(unidade, valor, rotulo, origem, registrar) {
+    const motivo = origem && typeof origem === 'object' ? String(origem.motivo ?? '') : '';
+    const chave = `${unidade}\u0000${rotulo}\u0000${String(valor)}\u0000${motivo}`;
+    if (feitos.has(chave)) return feitos.get(chave);
+    const no = registrar();
+    if (no) feitos.set(chave, no);
+    return no;
+  }
+
+  return {
+    texto: (valor, rotulo, origem) =>
+      unico('texto', valor, rotulo, origem, () => registrarTexto(ctx, valor, rotulo, origem)),
+    data: (valor, rotulo, origem) =>
+      unico('data', valor, rotulo, origem, () => registrarData(ctx, valor, rotulo, origem)),
+    moeda: (valor, rotulo, origem) =>
+      unico('moeda', valor, rotulo, origem, () => registrarMoeda(ctx, valor, rotulo, origem)),
+    numero: (valor, rotulo, origem) =>
+      unico('numero', valor, rotulo, origem, () => registrarNumero(ctx, valor, rotulo, origem)),
+  };
+}
+
 export async function executar(ctx, args) {
   let centro = null;
   if (args && args.project_id !== undefined && args.project_id !== null && args.project_id !== '') {
     const resolvido = await ctx.resolverCentro(args.project_id);
     if (resolvido.erro) return resolvido;
     centro = resolvido.centro;
+  }
+
+  let incluirEncerradas = false;
+  if (args && args.incluir_encerradas !== undefined) {
+    if (typeof args.incluir_encerradas !== 'boolean') {
+      return { erro: 'O parâmetro incluir_encerradas deve ser true ou false.' };
+    }
+    incluirEncerradas = args.incluir_encerradas;
   }
 
   let dadosCentros;
@@ -107,6 +144,7 @@ export async function executar(ctx, args) {
 
   const consulta = 'get_pedido_bolsas_v2';
   const origemBolsa = semDocumento('bolsa digitada, ainda sem documento', consulta);
+  const registrar = criarRegistradorUnico(ctx);
   const nos = [];
   const bolsistas = [];
   const bolsistaPorId = new Map(dados.bolsistas.map((bolsista) => [bolsista.holder_id, bolsista]));
@@ -114,13 +152,15 @@ export async function executar(ctx, args) {
   for (const bolsista of dados.bolsistas) {
     const bolsas = bolsista.bolsas.filter(
       (bolsa) =>
-        visiveis.has(bolsa.project_id) && (centro ? bolsa.project_id === centro.id : true)
+        visiveis.has(bolsa.project_id) &&
+        (centro ? bolsa.project_id === centro.id : true) &&
+        (incluirEncerradas || bolsa.vigente_hoje === true)
     );
     if (bolsas.length === 0) continue;
 
     const nomeMascarado = ctx.mascara.nome(bolsista.nome);
     if (!nomeMascarado) continue;
-    const noNome = registrarTexto(ctx, nomeMascarado, 'Bolsista (mascarado)', origemBolsa);
+    const noNome = registrar.texto(nomeMascarado, 'Bolsista', origemBolsa);
     nos.push(noNome);
 
     const ocultas = bolsista.bolsas.some(
@@ -136,21 +176,17 @@ export async function executar(ctx, args) {
     };
 
     if (ocultas) {
-      const noAviso = registrarTexto(
-        ctx,
+      const noAviso = registrar.texto(
         'inclui centros fora da sua visão; veja as bolsas uma a uma',
-        'Aviso — total',
+        'Aviso',
         semDocumento('total inclui centros fora da visão', consulta)
       );
       saida.aviso = noAviso.id;
       nos.push(noAviso);
     } else {
-      const totalGlobal = registrarMoeda(
-        ctx,
+      const totalGlobal = registrar.moeda(
         bolsista.valor_vigente,
-        centro
-          ? 'Total vigente da pessoa (todos os centros)'
-          : 'Valor vigente (todos os centros)',
+        'Total vigente',
         origemBolsa
       );
       if (totalGlobal) {
@@ -161,7 +197,7 @@ export async function executar(ctx, args) {
     }
 
     if (typeof bolsista.equipe === 'string' && bolsista.equipe) {
-      const noEquipe = registrarTexto(ctx, bolsista.equipe, 'Equipe', origemBolsa);
+      const noEquipe = registrar.texto(bolsista.equipe, 'Equipe', origemBolsa);
       saida.equipe = noEquipe.id;
       nos.push(noEquipe);
     }
@@ -173,42 +209,44 @@ export async function executar(ctx, args) {
         inicio: null,
         fim: null,
         status: null,
-        vigente_hoje: null,
       };
 
-      const noCentro = registrarTexto(ctx, bolsa.code, 'Centro da bolsa', origemBolsa);
+      const noCentro = registrar.texto(bolsa.code, 'Centro', origemBolsa);
       item.centro = noCentro.id;
       nos.push(noCentro);
 
-      const noValor = registrarMoeda(ctx, bolsa.valor, 'Valor mensal da bolsa', origemBolsa);
+      const noValor = registrar.moeda(bolsa.valor, 'Valor', origemBolsa);
       if (noValor) {
         item.valor = noValor.id;
         nos.push(noValor);
       }
 
-      const noInicio = registrarData(ctx, bolsa.inicio, 'Início da bolsa', origemBolsa);
+      const noInicio = registrar.data(bolsa.inicio, 'Início', origemBolsa);
       if (noInicio) {
         item.inicio = noInicio.id;
         nos.push(noInicio);
       }
-      const noFim = registrarData(ctx, bolsa.fim, 'Fim da bolsa', origemBolsa);
+      const noFim = registrar.data(bolsa.fim, 'Fim', origemBolsa);
       if (noFim) {
         item.fim = noFim.id;
         nos.push(noFim);
       }
 
-      const noStatus = registrarTexto(ctx, bolsa.status, 'Situação da bolsa', origemBolsa);
+      const noStatus = registrar.texto(bolsa.status, 'Situação', origemBolsa);
       item.status = noStatus.id;
       nos.push(noStatus);
 
-      const noVigente = registrarTexto(
-        ctx,
-        bolsa.vigente_hoje ? 'sim' : 'não',
-        'Vigente hoje',
-        origemBolsa
-      );
-      item.vigente_hoje = noVigente.id;
-      nos.push(noVigente);
+      // Por padrão só entram vigentes; o campo só carrega informação quando
+      // `incluir_encerradas` também traz as antigas.
+      if (incluirEncerradas) {
+        const noVigente = registrar.texto(
+          bolsa.vigente_hoje ? 'sim' : 'não',
+          'Vigente hoje',
+          origemBolsa
+        );
+        item.vigente_hoje = noVigente.id;
+        nos.push(noVigente);
+      }
 
       saida.bolsas.push(item);
     }
@@ -229,16 +267,16 @@ export async function executar(ctx, args) {
     };
     const origemCaixa = semDocumento('caixa do pedido de bolsas', consulta);
 
-    const noNome = registrarTexto(ctx, caixa.nome, 'Nome da caixa', origemCaixa);
+    const noNome = registrar.texto(caixa.nome, 'Caixa', origemCaixa);
     item.nome = noNome.id;
     nos.push(noNome);
 
-    const meses = registrarNumero(ctx, caixa.meses, 'Meses da caixa', origemCaixa);
+    const meses = registrar.numero(caixa.meses, 'Meses', origemCaixa);
     if (meses) {
       item.meses = meses.id;
       nos.push(meses);
     }
-    const pessoas = registrarNumero(ctx, caixa.pessoas, 'Pessoas na caixa', origemCaixa);
+    const pessoas = registrar.numero(caixa.pessoas, 'Pessoas', origemCaixa);
     if (pessoas) {
       item.pessoas = pessoas.id;
       nos.push(pessoas);
@@ -254,28 +292,27 @@ export async function executar(ctx, args) {
     });
 
     if (incluiFora) {
-      const noAviso = registrarTexto(
-        ctx,
+      const noAviso = registrar.texto(
         'inclui centros fora da sua visão; veja as bolsas uma a uma',
-        'Aviso — total da caixa',
+        'Aviso',
         semDocumento('total da caixa inclui centros fora da visão', consulta)
       );
       item.aviso = noAviso.id;
       nos.push(noAviso);
     } else {
-      const totalMensal = registrarMoeda(ctx, caixa.total_mensal, 'Total mensal da caixa', origemCaixa);
+      const totalMensal = registrar.moeda(caixa.total_mensal, 'Total mensal', origemCaixa);
       if (totalMensal) {
         item.total_mensal = totalMensal.id;
         nos.push(totalMensal);
       }
-      const totalPeriodo = registrarMoeda(ctx, caixa.total_periodo, 'Total do período da caixa', origemCaixa);
+      const totalPeriodo = registrar.moeda(caixa.total_periodo, 'Total do período', origemCaixa);
       if (totalPeriodo) {
         item.total_periodo = totalPeriodo.id;
         nos.push(totalPeriodo);
       }
     }
 
-    const ocultos = registrarNumero(ctx, caixa.itens_ocultos, 'Itens ocultos da caixa', origemCaixa);
+    const ocultos = registrar.numero(caixa.itens_ocultos, 'Itens ocultos', origemCaixa);
     if (ocultos) {
       item.itens_ocultos = ocultos.id;
       nos.push(ocultos);
@@ -284,20 +321,21 @@ export async function executar(ctx, args) {
     caixas.push(item);
   }
 
-  const total = registrarNumero(
-    ctx,
+  const total = registrar.numero(
     bolsistas.length,
-    'Bolsistas listados',
+    'Bolsistas',
     semDocumento('contagem da lista', consulta)
   );
   if (total) nos.push(total);
+
+  const nosUnicos = [...new Map(nos.map((no) => [no.id, no])).values()];
 
   return {
     paraModelo: {
       total: total ? total.id : null,
       bolsistas,
       caixas,
-      nos: nos.map(mini),
+      nos: nosUnicos.map(mini),
     },
   };
 }

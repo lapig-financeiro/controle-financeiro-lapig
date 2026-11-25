@@ -19,6 +19,7 @@
   "data_balancete": "2026-10-15",
   "recursos": {
     "recebido": 250000,
+    "rendimento_bruto": 12345.67,
     "a_receber": 350000
   }
 }

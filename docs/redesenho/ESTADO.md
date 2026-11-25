@@ -137,9 +137,10 @@ Decisões tomadas durante as revisões (não rediscutir):
   ressalva de que já está no saldo) e instruir o modelo a não especular quando o dado falta.
 
 **Próximo passo, nesta ordem:**
-1. Rodada curta de correção (DeepSeek executando + Sol revisando): `desembolsos` com rendimento; `bolsas` com
-   recorte; data `mm/aaaa` no `texto.js`; decidir se esgotar as rodadas depois de blocos válidos ainda é `erro`.
-   Republicar o Worker e repetir as 3 perguntas (`teste-console.js` em `manutencao.json`).
+1. Rodada curta de correção: `desembolsos` com rendimento; `bolsas` com recorte; data `mm/aaaa` no `texto.js`;
+   esgotar as rodadas depois de blocos válidos vira `erro incompleta` (decisão tomada). **Feita no worktree
+   `redesenho/analise-1-a` em 25/11** (relatório em `analise-1a.md`, seção "Rodada pós-teste real"); falta
+   republicar o Worker e repetir as 3 perguntas (`teste-console.js` em `manutencao.json`).
 2. Push do master e nova tentativa do deploy do Pages (o conserto dos leitores de 25/11 ainda não está no ar).
 3. Etapa 2: tela `#/analise` (com o Worker no CSP) + 071 `projecao_bolsas_v2` + ferramenta de dinheiro em conta e
    plano com `ref`.

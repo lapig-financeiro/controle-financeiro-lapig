@@ -57,7 +57,9 @@ Regras da Análise:
    ressalva que muda a leitura; não enumera campo por campo.
 
 8. Sem dado, diga que não há e por quê. Ferramenta que falha volta como erro:
-   nunca trate o erro como zero, lista vazia ou "sem dado".
+   nunca trate o erro como zero, lista vazia ou "sem dado". Quando o dado pedido
+   não vem de nenhuma ferramenta, diga que não está disponível e não suponha
+   onde ele estaria nem por quê.
 
 9. Nome de pessoa aparece como ⟦P1⟧. Não tente adivinhar, escrever ou completar
    o nome; a tela troca o marcador pelo valor real para quem tem acesso.
@@ -105,7 +107,7 @@ export function especificacoes() {
     ),
     ferramenta(
       'desembolsos',
-      'Parcelas do plano ativo, valor total, data do balancete e recursos recebidos/a receber do centro.',
+      'Parcelas do plano ativo, valor total, data do balancete e recursos recebidos/a receber e rendimento bruto do centro. O rendimento bruto já está incluído no saldo disponível do balancete e nunca se soma de novo.',
       { project_id: PARAMETRO_CENTRO },
       ['project_id']
     ),
@@ -122,8 +124,14 @@ export function especificacoes() {
     ),
     ferramenta(
       'bolsas',
-      'Bolsistas e bolsas visíveis (valor, início, fim, situação) e as caixas do pedido. Totais globais só quando não incluem centro fora da visão.',
-      { project_id: PARAMETRO_CENTRO }
+      'Bolsistas e bolsas visíveis (valor, início, fim, situação) e as caixas do pedido. Por padrão só bolsas vigentes hoje; incluir_encerradas traz também as antigas. Totais globais só quando não incluem centro fora da visão.',
+      {
+        project_id: PARAMETRO_CENTRO,
+        incluir_encerradas: {
+          type: 'boolean',
+          description: 'Se true, inclui bolsas já encerradas (padrão: false, só as vigentes hoje).',
+        },
+      }
     ),
     ferramenta(
       'criar_bloco',

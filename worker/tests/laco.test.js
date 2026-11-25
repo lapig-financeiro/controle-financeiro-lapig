@@ -345,6 +345,43 @@ describe('tetos e falhas', () => {
     expect(emitir.eventos.at(-2).dados.mensagem).toContain('8 rodadas');
   });
 
+  it('com bloco emitido, esgotar as rodadas vira erro incompleta com a mensagem fixa', async () => {
+    const respostas = [
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [chamada('criar_bloco', { tipo: 'texto', texto: 'ok' })],
+        },
+      },
+      ...Array.from({ length: 20 }, () => ({
+        message: { role: 'assistant', content: '', tool_calls: [chamada('listar_centros')] },
+      })),
+    ];
+    const { sessao } = sessaoFalsa();
+    const emitir = emissorFalso();
+    const modelo = modeloFalso(respostas);
+
+    const r = await executarLaco({ ...BASE, sessao, chamarModelo: modelo, emitir });
+
+    expect(modelo.chamadas).toHaveLength(8);
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('incompleta');
+    const nomes = emitir.eventos.map((e) => e.nome);
+    expect(nomes).toContain('bloco');
+    expect(nomes).not.toContain('texto');
+    expect(emitir.eventos.at(-2)).toEqual({
+      nome: 'erro',
+      dados: {
+        codigo: 'incompleta',
+        mensagem:
+          'A resposta ficou incompleta: parei em 8 rodadas. Os blocos acima estão certos; ' +
+          'para o resto, faça uma pergunta mais específica.',
+      },
+    });
+    expect(nomes.at(-1)).toBe('fim');
+  });
+
   it('resultado acima de 60.000 chars volta erro curto ao modelo', async () => {
     const gigante = 'x'.repeat(60_001);
     const respostas = [

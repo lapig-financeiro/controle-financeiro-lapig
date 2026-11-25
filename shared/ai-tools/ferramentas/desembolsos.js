@@ -58,7 +58,10 @@ function recursosValidos(recursos) {
   if (typeof recursos !== 'object' || Array.isArray(recursos)) return false;
   return (
     (recursos.recebido === undefined || recursos.recebido === null || numeroOuNulo(recursos.recebido) !== null) &&
-    (recursos.a_receber === undefined || recursos.a_receber === null || numeroOuNulo(recursos.a_receber) !== null)
+    (recursos.a_receber === undefined || recursos.a_receber === null || numeroOuNulo(recursos.a_receber) !== null) &&
+    (recursos.rendimento_bruto === undefined ||
+      recursos.rendimento_bruto === null ||
+      numeroOuNulo(recursos.rendimento_bruto) !== null)
   );
 }
 
@@ -178,6 +181,7 @@ export async function executar(ctx, args) {
 
   let recebido = null;
   let aReceber = null;
+  let rendimentoBruto = null;
   if (dados.recursos && typeof dados.recursos === 'object') {
     const noRecebido = registrarMoeda(
       ctx,
@@ -191,6 +195,12 @@ export async function executar(ctx, args) {
       'Recursos a receber',
       semDocumento('recursos lidos do balancete vigente', 'get_repasses_v2')
     );
+    const noRendimento = registrarMoeda(
+      ctx,
+      dados.recursos.rendimento_bruto,
+      'Rendimento bruto de aplicação',
+      semDocumento('rendimento lido do balancete vigente', 'get_repasses_v2')
+    );
     if (noRecebido) {
       recebido = noRecebido.id;
       nos.push(noRecebido);
@@ -199,6 +209,10 @@ export async function executar(ctx, args) {
       aReceber = noAReceber.id;
       nos.push(noAReceber);
     }
+    if (noRendimento) {
+      rendimentoBruto = noRendimento.id;
+      nos.push(noRendimento);
+    }
   }
 
   return {
@@ -206,7 +220,10 @@ export async function executar(ctx, args) {
       parcelas,
       valor_total_plano: total ? total.id : null,
       data_balancete: dataBalancete ? dataBalancete.id : null,
-      recursos: dados.recursos && typeof dados.recursos === 'object' ? { recebido, a_receber: aReceber } : null,
+      recursos:
+        dados.recursos && typeof dados.recursos === 'object'
+          ? { recebido, a_receber: aReceber, rendimento_bruto: rendimentoBruto }
+          : null,
       nos: nos.map(mini),
     },
   };

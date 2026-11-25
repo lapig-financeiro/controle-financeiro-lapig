@@ -142,10 +142,13 @@ Resposta `text/event-stream`, eventos `event: <nome>\ndata: <json>`:
 | `bloco` | o bloco reidratado (§6) |
 | `texto` | `{ texto, semOrigem }`, a resposta final curta |
 | `fim` | `{ rodadas, ms }` |
-| `erro` | `{ codigo: 'sem_login' \| 'sem_permissao' \| 'limite' \| 'modelo' \| 'tempo' \| 'interno', mensagem }` |
+| `erro` | `{ codigo: 'sem_login' \| 'sem_permissao' \| 'limite' \| 'modelo' \| 'tempo' \| 'interno' \| 'incompleta', mensagem }` |
 
 - Autenticação: `GET /auth/v1/user` com o JWT; papel lido de `app_users` com o mesmo JWT (como o app). Só
   `admin` (variável `ANALISE_PAPEIS`, padrão `admin`). Sem `service_role`.
+- Quando as 8 rodadas acabam e já houve ao menos um bloco emitido, o encerramento é `erro` com código
+  `incompleta` e a mensagem fixa "A resposta ficou incompleta: parei em 8 rodadas. Os blocos acima estão
+  certos; para o resto, faça uma pergunta mais específica." Sem bloco emitido, continua `interno`.
 - Modelo: `POST https://ollama.com/api/chat`, `model` = `ANALISE_MODELO` (padrão
   `deepseek-v4.1-flash:cloud`), `think: 'high'` (se a API recusar o nível para esse modelo, `think: true`;
   o Claude confere com uma chamada real no fim da Etapa 1), `stream: false` por rodada,

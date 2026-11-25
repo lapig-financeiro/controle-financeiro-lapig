@@ -37,6 +37,15 @@ export const TETO_POR_CHAMADA_MS = 90_000;
 /** Erro de ferramenta não vira romance na tela nem no contexto do modelo. */
 export const MAX_ERRO_CHARS = 500;
 
+/**
+ * Encerramento quando as rodadas acabam DEPOIS de ao menos um bloco válido: a
+ * resposta continua incompleta (não vira sucesso), mas o que já saiu presta.
+ * Mensagem fixa: o número de rodadas do contrato é 8.
+ */
+export const MENSAGEM_INCOMPLETA =
+  'A resposta ficou incompleta: parei em 8 rodadas. Os blocos acima estão certos; ' +
+  'para o resto, faça uma pergunta mais específica.';
+
 /** Erro que o chamador do modelo usa para dizer POR QUE falhou. */
 export class ErroModelo extends Error {
   constructor(mensagem, codigo = 'modelo') {
@@ -182,6 +191,7 @@ export async function executarLaco({
 
   let rodadas = 0;
   let ferramentas = 0;
+  let blocosEmitidos = 0;
   estado.rodadas = 0;
   estado.ferramentas = 0;
 
@@ -332,6 +342,9 @@ export async function executarLaco({
       // Chegou ao teto de rodadas ainda pedindo ferramenta: não adianta
       // executar a última leva (o resultado não voltaria ao modelo).
       if (rodadas >= limites.rodadas) {
+        if (blocosEmitidos > 0) {
+          return await encerrarComErro('incompleta', MENSAGEM_INCOMPLETA);
+        }
         return await encerrarComErro(
           'interno',
           `O modelo não chegou a uma resposta em ${limites.rodadas} rodadas. ` +
@@ -420,6 +433,7 @@ export async function executarLaco({
 
           await emitirPasso(nome, 'fim');
           await emitir('bloco', blocoTela);
+          blocosEmitidos += 1;
           const recibo = saida.bloco?.id ? { id: saida.bloco.id } : { ok: true };
           mensagens.push(mensagemDeTool(chamada, nome, recibo));
           continue;
@@ -486,6 +500,9 @@ export async function executarLaco({
       }
     }
 
+    if (blocosEmitidos > 0) {
+      return await encerrarComErro('incompleta', MENSAGEM_INCOMPLETA);
+    }
     return await encerrarComErro(
       'interno',
       `O modelo não chegou a uma resposta em ${limites.rodadas} rodadas. ` +

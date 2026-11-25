@@ -35,6 +35,12 @@ describe('INSTRUCOES', () => {
     expect(INSTRUCOES).toContain('Número só por "criar_bloco" ou "calcular"');
     expect(INSTRUCOES).toContain('⟦P1⟧');
   });
+
+  it('proíbe especular quando o dado não vem de nenhuma ferramenta', () => {
+    const texto = INSTRUCOES.replace(/\s+/g, ' ');
+    expect(texto).toContain('não está disponível');
+    expect(texto).toContain('não suponha onde ele estaria nem por quê');
+  });
 });
 
 describe('especificacoes', () => {

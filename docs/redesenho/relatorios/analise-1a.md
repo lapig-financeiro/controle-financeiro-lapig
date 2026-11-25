@@ -450,3 +450,78 @@ conferido com 5 sementes) achou mais um caso na mesma hora: ocorrências **sobre
 
 Propriedade travada: toda palavra que faz parte de uma ocorrência de nome do dicionário (completo ou primeiro +
 último, sem acento, palavra inteira) some do texto que vai ao modelo; só ficam as outras. Pacote: 136 testes.
+
+## Rodada pós-teste real (25/11/2026)
+
+As quatro correções do pacote e o encerramento do Worker vieram do primeiro teste real (3 perguntas, ver
+ESTADO). Todo item começou pelo teste: ele rodou contra o código **sem** a correção, falhou pelo motivo
+registrado abaixo, e só então a correção entrou. `mascara.js` não foi tocado, as fixtures continuam sintéticas
+e não houve push, deploy nem chamada à produção.
+
+| Item | Teste que falha sem a correção | Falha observada antes |
+|---|---|---|
+| 1. Rendimento | `ferramentas.test.js` — "expõe o rendimento bruto..." | `recursos.rendimento_bruto` vinha `undefined` |
+| 1. Rendimento | `ferramentas.test.js` — "rendimento não numérico é erro de formato..." | string aceita; nenhum erro |
+| 2. Bolsas | `ferramentas.test.js` — "por padrão só entram bolsas vigentes..." | bolsista só com bolsa encerrada continuava na lista |
+| 2. Bolsas | `ferramentas.test.js` — "incluir_encerradas precisa ser booleano" | parâmetro string aceito em silêncio |
+| 2. Bolsas | `ferramentas.test.js` — "60 bolsistas ... menos de 25.000 caracteres" | `paraModelo` com **91.059** caracteres |
+| 3. Data mês/ano | `texto.test.js` — "reconhece MM/AAAA..." | `09/2027` virava dois números (`09`, `2027`) |
+| 3. Data mês/ano | `texto.test.js` — "11/2026 sem nó..." | dois intervalos (`11` e `2026`), não `11/2026` |
+| 4. Instrução | `instrucoes.test.js` — "proíbe especular..." | frase nova ausente |
+| Worker | `laco.test.js` — "com bloco emitido, esgotar as rodadas..." | código `interno`, não `incompleta` |
+
+### 1. `desembolsos` com o rendimento bruto
+
+A `get_repasses_v2` devolve `recursos.rendimento_bruto` e o pacote o descartava. Agora ele vira nó de moeda
+**"Rendimento bruto de aplicação"**, ao lado de `recebido` e `a_receber` em `paraModelo.recursos`, com origem
+`sem_documento` (`motivo: "rendimento lido do balancete vigente"`, `consulta: "get_repasses_v2"`). O tipo é
+validado como os outros dois: valor não numérico é erro de formato, nunca zero. A fixture `repasses.json` ganhou
+`rendimento_bruto: 12345.67` (sintético; o 30.099 real tinha R$ 31.040,69) e a `description` da ferramenta diz que o
+rendimento **já está incluído no saldo disponível do balancete e nunca se soma de novo**.
+
+### 2. `bolsas` enxuta
+
+- Novo parâmetro opcional **`incluir_encerradas`** (boolean, padrão `false`). Por padrão só entram bolsas com
+  `vigente_hoje === true`; a pessoa sem bolsa vigente no recorte não entra. O nó "Vigente hoje" só existe quando
+  o parâmetro é `true` (no padrão seria sempre "sim").
+- Rótulos de nó curtos: "Bolsista", "Total vigente", "Centro", "Valor", "Início", "Fim", "Situação", "Caixa",
+  "Meses", "Pessoas", "Total mensal", "Total do período", "Itens ocultos", "Aviso", "Bolsistas".
+- **Nó repetido vira um nó só**: o registrador da ferramenta memoiza por `(unidade, rótulo, valor, motivo)`. Duas
+  bolsas com o mesmo valor, as mesmas datas ou o mesmo status citam o mesmo id; a origem (sempre
+  `sem_documento`) é idêntica. Isso não vale entre ferramentas nem entre execuções.
+- Medição: fixture sintético de **60 bolsistas vigentes, 2 bolsas cada, todas no 30.901**, com 5 faixas de valor,
+  3 faixas de data e 3 equipes. `paraModelo` fechou em **21.348 caracteres e 82 nós** (antes: **91.059**), abaixo
+  da meta de 25.000. Com valor e data únicos em cada bolsa o resultado cresce (cada combinação nova vira nó);
+  o fixture segue o padrão real de folha, em que valores e vigências se repetem.
+- Os testes atuais de máscara e de centros ocultos continuam passando. Um deles procurava o nó pelo rótulo
+  antigo "Valor mensal da bolsa"; a busca passou a "Valor" por causa do rótulo curto, mantidas as asserções de
+  PII.
+
+### 3. Data `MM/AAAA` no texto
+
+`marcarNumeros` reconhece `MM/AAAA` (mês 01–12, ano 1900–2999) como candidato de **data** com `anoMes`, casado
+com nó de unidade `data` do mesmo ano-mês. `11/2026` sem nó citado vira **um** trecho sem origem (antes eram dois
+números); `dd/mm/aaaa` continua ganhando a sobreposição e comparando dia, mês e ano; `1/2` continua dois números;
+`30.109` continua código de centro.
+
+### 4. Instrução: sem dado, não especular
+
+Na regra 8 de `INSTRUCOES`: "Quando o dado pedido não vem de nenhuma ferramenta, diga que não está disponível e
+não suponha onde ele estaria nem por quê." O teste novo normaliza os espaços do texto antes de procurar a frase
+(ela atravessa quebras de linha do template).
+
+### Worker: `erro incompleta` depois de blocos válidos
+
+Em `worker/src/laco.js`, quando as 8 rodadas acabam e já houve ao menos um bloco emitido, o encerramento continua
+`erro` (a resposta está incompleta; não vira sucesso), mas com código **`incompleta`** e a mensagem fixa "A
+resposta ficou incompleta: parei em 8 rodadas. Os blocos acima estão certos; para o resto, faça uma pergunta mais
+específica." Sem bloco emitido, segue `interno` com a mensagem de hoje. O contrato §7 ganhou o código e a regra.
+Teste novo: bloco na 1ª rodada + ferramentas até a 8ª → `incompleta` e mensagem exata; o teste antigo (sem bloco)
+continua exigindo `interno`.
+
+### Testes desta rodada
+
+- `tests/ai-tools-v2`: **146 testes** (antes 136; +10: 6 em `ferramentas`, 3 em `texto`, 1 em `instrucoes`).
+- Raiz: **838 passando + 19 ignorados (857)**.
+- Worker: **118** (antes 117).
+- `npm run lint`: 0 erros e 0 avisos.
