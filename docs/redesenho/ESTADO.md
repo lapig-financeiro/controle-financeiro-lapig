@@ -136,14 +136,27 @@ Decisões tomadas durante as revisões (não rediscutir):
   que não havia rendimento e especulou que ele estaria "misturado" ao recebido. Corrigir: expor o rendimento (com a
   ressalva de que já está no saldo) e instruir o modelo a não especular quando o dado falta.
 
+**Rodada pós-teste (25/11)**: DeepSeek executou (`94daca9`), Sol revisou, Claude corrigiu os achados (`e9d88b6`,
+e um ajuste menor depois): `desembolsos` com rendimento bruto; `bolsas` com recorte (padrão = vigentes **e futuras
+não canceladas**; `incluir_encerradas` traz todas) — 30.111 caiu de >60 mil para ~21 mil caracteres; `MM/AAAA` como
+data; regra 8 "sem dado, não especular"; erro `incompleta` quando as rodadas acabam depois de bloco aceito; número
+vindo de texto só se for decimal simples (`"0x0"` virava R$ 0). Worker republicado (versão `e202b294`).
+
+**Segundo teste real (25/11), as 3 perguntas sem erro:**
+- 30.109 livre: R$ 514.864,60 (= oráculo), 12 s, texto sem número sem origem.
+- 30.111 bolsas: 28 s, 5 rodadas. As 71 bolsas vigentes terminam em 31/12/2026 (confere com o oráculo), antes do
+  fim da vigência (31/01/2027); saldo da rubrica Bolsas depois de realizado, comprometido e folha atrasada
+  R$ 86.893,92 (conta de nós da RPC). Ainda não é projeção: isso é a 071.
+- 30.099 rendimento: R$ 31.040,69 (= oráculo), com a ressalva de que já está no saldo. 4 s.
+
+Para a Etapa 2 (visto nas respostas): **tabela sem coluna de rótulo** — como toda célula tem de ser nó, o modelo
+põe um número na coluna "Grupo"/"Linha" e repete valores; o contrato precisa de rótulo de linha (texto de nó da
+árvore, ex. o nome da rubrica). O texto final às vezes vem em lista markdown, contra a regra das 3 frases.
+
 **Próximo passo, nesta ordem:**
-1. Rodada curta de correção: `desembolsos` com rendimento; `bolsas` com recorte; data `mm/aaaa` no `texto.js`;
-   esgotar as rodadas depois de blocos válidos vira `erro incompleta` (decisão tomada). **Feita no worktree
-   `redesenho/analise-1-a` em 25/11** (relatório em `analise-1a.md`, seção "Rodada pós-teste real"); falta
-   republicar o Worker e repetir as 3 perguntas (`teste-console.js` em `manutencao.json`).
-2. Push do master e nova tentativa do deploy do Pages (o conserto dos leitores de 25/11 ainda não está no ar).
-3. Etapa 2: tela `#/analise` (com o Worker no CSP) + 071 `projecao_bolsas_v2` + ferramenta de dinheiro em conta e
-   plano com `ref`.
+1. Push do master e nova tentativa do deploy do Pages (o conserto dos leitores de 25/11 ainda não está no ar).
+2. Etapa 2: tela `#/analise` (com o Worker no CSP do `app/vite.config.js`) + rótulo de linha nas tabelas + 071
+   `projecao_bolsas_v2` + ferramenta de dinheiro em conta e plano com `ref`.
 
 ## Dívidas técnicas conhecidas
 Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeçalho de cada `.sql`). Ficam:
