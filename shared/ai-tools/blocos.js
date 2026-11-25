@@ -156,8 +156,8 @@ export function criarBlocos({ registro, citados = [], mascara }) {
       return erro('o título tem número que não é valor de nó citado.');
     }
     for (const coluna of colunas) {
-      if (tituloComNumeroSemOrigem(coluna.rotulo, citados, usados)) {
-        return erro('o cabeçalho da coluna tem número que não é valor de nó citado.');
+      if (/\d/.test(coluna.rotulo)) {
+        return erro('o cabeçalho da coluna não pode ter número.');
       }
     }
 
@@ -184,6 +184,13 @@ function casasDecimais(valor) {
   }
   const ponto = texto.indexOf('.');
   return ponto === -1 ? 0 : texto.length - ponto - 1;
+}
+
+function inteiroBigInt(valor, casas) {
+  const fixo = Number(valor).toFixed(casas);
+  if (/e/i.test(fixo)) throw new Error('fora da faixa');
+  const digitos = fixo.replace('.', '').replace(/^\+/, '');
+  return BigInt(digitos);
 }
 
 export function criarCalculadora({ registro, citados = [] }) {
@@ -242,38 +249,46 @@ export function criarCalculadora({ registro, citados = [] }) {
     }
 
     let escala;
+    let casas;
     if (unidade === 'moeda') {
       for (const no of nos) {
         if (casasDecimais(no.valor) > 2) {
           return erro('calcular recusa moeda com mais de 2 casas decimais.');
         }
       }
+      casas = 2;
       escala = 100;
     } else {
-      const maxCasas = Math.max(...nos.map((no) => casasDecimais(no.valor)));
-      escala = 10 ** maxCasas;
+      casas = Math.max(...nos.map((no) => casasDecimais(no.valor)));
+      escala = 10 ** casas;
       if (!Number.isSafeInteger(escala)) {
         return erro('calcular recusa escala excessiva para numero.');
       }
     }
 
-    const inteiros = nos.map((no) => Math.round(no.valor * escala));
-    if (!inteiros.every((valor) => Number.isSafeInteger(valor))) {
+    let inteiros;
+    try {
+      inteiros = nos.map((no) => inteiroBigInt(no.valor, casas));
+    } catch {
       return erro('calcular recusa valores fora da faixa exata.');
     }
-    const totalInteiro = inteiros.reduce(
-      (soma, valor, indice) => soma + valor * sinais[indice],
-      0
-    );
-    if (!Number.isSafeInteger(totalInteiro)) {
-      return erro('calcular recusa total fora da faixa exata.');
+    if (!inteiros.every((valor) => Number.isSafeInteger(Number(valor)))) {
+      return erro('calcular recusa valores fora da faixa exata.');
     }
-    const valor = totalInteiro / escala;
+
+    const totalInteiro = inteiros.reduce(
+      (soma, valor, indice) => soma + valor * BigInt(sinais[indice]),
+      0n
+    );
+    if (!Number.isSafeInteger(Number(totalInteiro))) {
+      return erro('calcular recusa total fora da faixa segura.');
+    }
+    const valor = Number(totalInteiro) / escala;
 
     const partes = nos.map((no, indice) => ({
       id: no.id,
       sinal: sinais[indice],
-      valor: inteiros[indice] / escala,
+      valor: Number(inteiros[indice]) / escala,
       rotulo: no.rotulo,
       origem: clonar(origemDoNo(no)),
     }));

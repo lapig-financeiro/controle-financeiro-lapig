@@ -168,6 +168,56 @@ describe('calcular', () => {
     );
   });
 
+  it('BigInt mantém o intermediário e o resultado dentro da faixa segura', async () => {
+    const resumo = fixture('resumo_projetos');
+    resumo.centros[0].pendencias_abertas = 9007199254740991;
+    resumo.centros[1].pendencias_abertas = 2;
+    resumo.centros[2].pendencias_abertas = 9007199254740991;
+    const sessao = criarSessao({
+      rpc: async (nome) => {
+        if (nome === 'resumo_projetos_v2') return { data: resumo, error: null };
+        if (nome === 'get_pedido_bolsas_v2') return { data: fixture('pedido_bolsas'), error: null };
+        return { data: null, error: { message: 'sem fixture' } };
+      },
+    });
+    const dados = JSON.parse((await sessao.executar('listar_centros', {})).paraModelo);
+    const um = acharNo(dados, 'Pendências abertas — 30.901');
+    const dois = acharNo(dados, 'Pendências abertas — 30.902');
+    const tres = acharNo(dados, 'Pendências abertas — 30.903');
+    const resultado = sessao.calcular({
+      op: 'soma',
+      ids: [um.id, dois.id, tres.id],
+      sinais: [1, 1, -1],
+    });
+    expect(resultado.erro).toBeUndefined();
+    expect(JSON.parse(resultado.paraModelo).resultado.valor).toBe(2);
+
+    const bloco = sessao.criarBloco({ tipo: 'numero', titulo: '', no: resultado.id }).bloco;
+    expect(bloco.numero.origem.partes.map((parte) => parte.valor)).toEqual([
+      9007199254740991,
+      2,
+      9007199254740991,
+    ]);
+  });
+
+  it('resultado fora da faixa segura é erro', async () => {
+    const resumo = fixture('resumo_projetos');
+    resumo.centros[0].pendencias_abertas = 9007199254740991;
+    resumo.centros[1].pendencias_abertas = 2;
+    const sessao = criarSessao({
+      rpc: async (nome) => {
+        if (nome === 'resumo_projetos_v2') return { data: resumo, error: null };
+        if (nome === 'get_pedido_bolsas_v2') return { data: fixture('pedido_bolsas'), error: null };
+        return { data: null, error: { message: 'sem fixture' } };
+      },
+    });
+    const dados = JSON.parse((await sessao.executar('listar_centros', {})).paraModelo);
+    const um = acharNo(dados, 'Pendências abertas — 30.901');
+    const dois = acharNo(dados, 'Pendências abertas — 30.902');
+    const resultado = sessao.calcular({ op: 'soma', ids: [um.id, dois.id] });
+    expect(resultado.erro).toContain('faixa segura');
+  });
+
   it('recusa id inexistente', async () => {
     const sessao = montar();
     const { um } = await livrosDosCentros(sessao);

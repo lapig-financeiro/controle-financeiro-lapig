@@ -9,7 +9,6 @@ import { ehNumeroOnzeDigitos } from '../cpf.js';
 
 import {
   chamarRpc,
-  ehDataIso,
   formatoInesperado,
   mini,
   registrarData,
@@ -56,26 +55,15 @@ function pendenciaValida(pendencia) {
 }
 
 function registrarDetalhe(ctx, chave, valor, consulta) {
+  if (typeof valor !== 'number' || !Number.isFinite(valor)) return null;
   const motivo = `detalhe da pendência (${chave})`;
-  if (typeof valor === 'number' && Number.isFinite(valor)) {
-    const unidade = /valor|diferenca|saldo|montante|tarifa/i.test(chave) ? 'moeda' : 'numero';
-    return ctx.registro.registrar({
-      valor,
-      unidade,
-      rotulo: `Detalhe — ${chave}`,
-      origem: semDocumento(motivo, consulta),
-    });
-  }
-  if (typeof valor === 'string') {
-    if (ehDataIso(valor)) {
-      return registrarData(ctx, valor, `Detalhe — ${chave}`, semDocumento(motivo, consulta));
-    }
-    return registrarTexto(ctx, valor, `Detalhe — ${chave}`, semDocumento(motivo, consulta));
-  }
-  if (typeof valor === 'boolean') {
-    return registrarTexto(ctx, valor ? 'sim' : 'não', `Detalhe — ${chave}`, semDocumento(motivo, consulta));
-  }
-  return null;
+  const unidade = /valor|diferenca|saldo|montante|tarifa/i.test(chave) ? 'moeda' : 'numero';
+  return ctx.registro.registrar({
+    valor,
+    unidade,
+    rotulo: `Detalhe — ${chave}`,
+    origem: semDocumento(motivo, consulta),
+  });
 }
 
 export async function executar(ctx, args) {

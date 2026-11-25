@@ -9,6 +9,7 @@ import { criarRegistro } from './nos.js';
 import { criarMascara } from './mascara.js';
 import { criarBlocos, criarCalculadora } from './blocos.js';
 import { marcarTexto as marcarTextoBase } from './texto.js';
+import { ehErroPacote } from './erros.js';
 import { chamarRpc, mensagemRpc } from './ferramentas/comum.js';
 import { FERRAMENTAS } from './ferramentas/index.js';
 
@@ -98,7 +99,7 @@ export function especificacoes() {
     ),
     ferramenta(
       'situacao_centro',
-      'Situação e motivos de um centro. O valor de um motivo reaproveita a árvore do livre quando casa com ela.',
+      'Situação e motivos de um centro; déficit, saldo do grupo e tarifa separados, com origem no quando a árvore tem o nó.',
       { project_id: PARAMETRO_CENTRO },
       ['project_id']
     ),
@@ -121,7 +122,7 @@ export function especificacoes() {
     ),
     ferramenta(
       'bolsas',
-      'Bolsistas e bolsas (valor, início, fim, situação) e as caixas do pedido. Nome de pessoa vem mascarado; sem CPF nem e-mail.',
+      'Bolsistas e bolsas visíveis (valor, início, fim, situação) e as caixas do pedido. Totais globais só quando não incluem centro fora da visão.',
       { project_id: PARAMETRO_CENTRO }
     ),
     ferramenta(
@@ -266,8 +267,13 @@ export function criarSessao({ rpc, hoje } = {}) {
       registro.publicar(escopo);
       return { id: escopo.id, paraModelo: JSON.stringify(resultado.paraModelo) };
     } catch (erro) {
-      if (erro && typeof erro.codigo === 'string' && typeof erro.message === 'string') {
-        return { id: escopo.id, erro: `${erro.message} (${erro.codigo})` };
+      const codigosProprios = new Set(['http_4xx', 'tempo', 'formato']);
+      if (
+        ehErroPacote(erro) &&
+        codigosProprios.has(erro.codigo) &&
+        typeof erro.mensagemFixa === 'string'
+      ) {
+        return { id: escopo.id, erro: `${erro.mensagemFixa} (${erro.codigo})` };
       }
       return { id: escopo.id, erro: `A ferramenta ${nomeFerramenta} falhou ao montar o resultado. (formato)` };
     }

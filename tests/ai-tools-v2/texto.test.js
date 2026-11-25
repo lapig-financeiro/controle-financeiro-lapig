@@ -155,6 +155,25 @@ describe('marcarTexto', () => {
     expect(sessao.marcarTexto('São R$ 3,00.').semOrigem).toHaveLength(1);
   });
 
+  it('sinal negativo entra no candidato e na comparação', async () => {
+    const { sessao, centros } = await preparar();
+    const total = centros.nos.find((no) => no.id === centros.total);
+    sessao.criarBloco({ tipo: 'numero', titulo: '', no: total.id });
+    expect(sessao.marcarTexto('-3').semOrigem).toHaveLength(1);
+    expect(sessao.marcarTexto('3').semOrigem).toEqual([]);
+
+    const termos = fixture('termos_contrato');
+    termos.termos.taxa_total.valor = -7;
+    const outra = montar({ get_termos_contrato_v2: { data: termos, error: null } });
+    const dadosTaxa = JSON.parse(
+      (await outra.executar('termos_contrato', { project_id: '30.901' })).paraModelo
+    );
+    const taxa = acharNo(dadosTaxa, 'Taxa total');
+    outra.criarBloco({ tipo: 'numero', titulo: '', no: taxa.id });
+    expect(outra.marcarTexto('-7%').semOrigem).toEqual([]);
+    expect(outra.marcarTexto('7%').semOrigem).toHaveLength(1);
+  });
+
   it('reidratar recalcula os intervalos semOrigem', async () => {
     const { sessao } = await preparar();
     const bloco = sessao.criarBloco({

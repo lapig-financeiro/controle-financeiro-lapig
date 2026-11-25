@@ -14,7 +14,6 @@ import {
   mini,
   numeroOuNulo,
   origemNo,
-  origemRef,
 } from './comum.js';
 
 export const nome = 'explicar_livre';
@@ -80,9 +79,8 @@ export async function executar(ctx, args) {
   const nos = [];
   const estrutura = {};
 
-  function origemDoNo(no, rotulo) {
+  function origemDoNo(no) {
     if (!modoGrande) return origemNo(no);
-    if (refValida(no.ref)) return origemRef(no.ref, String(no.rotulo ?? ''));
     return {
       tipo: 'livre',
       project_id: centro.id,
@@ -104,7 +102,7 @@ export async function executar(ctx, args) {
       valor,
       unidade,
       rotulo,
-      origem: origemDoNo(no, rotulo),
+      origem: origemDoNo(no),
     });
     const ramo = {
       sinal: no.sinal === -1 ? -1 : 1,

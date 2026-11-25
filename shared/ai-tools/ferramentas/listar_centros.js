@@ -82,6 +82,7 @@ export async function executar(ctx) {
     const consulta = 'resumo_projetos_v2';
     const origemCadastro = semDocumento('cadastro do projeto', consulta);
     const falhou = centro.erro !== null && centro.erro !== undefined && centro.erro !== '';
+    const motivosFalharam = (centro.motivos ?? []).some((motivo) => motivo.codigo === 'falha');
 
     const noCodigo = registrarTexto(ctx, codigo, `Código — ${nomeCentro}`, origemCadastro);
     const noNome = registrarTexto(ctx, nomeCentro, `Nome do centro ${codigo}`, origemCadastro);
@@ -99,6 +100,8 @@ export async function executar(ctx) {
       situacao: noSituacao.id,
       falhou,
       falha: null,
+      motivos_falharam: motivosFalharam,
+      falha_motivos: null,
       livre: null,
       vigencia: null,
       data_referencia: null,
@@ -115,6 +118,17 @@ export async function executar(ctx) {
       );
       item.falha = noFalha.id;
       nos.push(noFalha);
+    }
+
+    if (motivosFalharam) {
+      const noFalhaMotivos = registrarTexto(
+        ctx,
+        'motivos falharam',
+        `Falha nos motivos — ${codigo}`,
+        semDocumento('cálculo dos motivos falhou', consulta)
+      );
+      item.falha_motivos = noFalhaMotivos.id;
+      nos.push(noFalhaMotivos);
     }
 
     const livre = numeroOuNulo(centro.livre);

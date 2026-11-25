@@ -27,7 +27,9 @@ function montar(overrides = {}) {
   const chamadas = [];
   const rpc = async (nome, args) => {
     chamadas.push({ nome, args });
-    return respostas[nome] ?? { data: null, error: { message: `sem fixture: ${nome}` } };
+    const resposta = respostas[nome];
+    if (typeof resposta === 'function') return resposta(args);
+    return resposta ?? { data: null, error: { message: `sem fixture: ${nome}` } };
   };
   return { sessao: criarSessao({ rpc, hoje: '2026-11-25' }), chamadas };
 }
@@ -106,6 +108,47 @@ describe('árvore de bolsas', () => {
     expect(folha.rotulo).toMatch(/^⟦P\d+⟧ — 1 mês/);
     expect(compromisso.rotulo.split(' — ')[0]).toBe(folha.rotulo.split(' — ')[0]);
   });
+
+  it('reconstrói o rótulo pelo sufixo e não vaza nome com " — "', async () => {
+    const arvore = {
+      rotulo: 'Livre',
+      valor: 1,
+      tipo: 'calculo',
+      chave: 'livre',
+      partes: [
+        {
+          rotulo: 'Pessoa — Exemplo Um — 11 meses × R$ 4.200,00',
+          valor: 46200,
+          tipo: 'digitado',
+          chave: 'linha:b-1',
+          ref: { alvo_tabela: 'scholarships', alvo_id: 'alvo-1', campo: 'amount' },
+          partes: [],
+        },
+        {
+          rotulo: 'Pessoa — Exemplo Dois',
+          valor: 1,
+          tipo: 'digitado',
+          chave: 'linha:b-2',
+          ref: { alvo_tabela: 'scholarships', alvo_id: 'alvo-2', campo: 'amount' },
+          partes: [],
+        },
+      ],
+    };
+    const { sessao } = montar({
+      get_pedido_bolsas_v2: { data: { bolsistas: [] }, error: null },
+      explicar_livre_v2: { data: arvore, error: null },
+    });
+    const resultado = await sessao.executar('explicar_livre', { project_id: '30.901' });
+    expect(resultado.erro).toBeUndefined();
+    expect(resultado.paraModelo).not.toContain('Exemplo Um');
+    expect(resultado.paraModelo).not.toContain('Exemplo Dois');
+
+    const dados = JSON.parse(resultado.paraModelo);
+    const primeiro = dados.nos.find((no) => no.rotulo.includes('11 meses × R$ 4.200,00'));
+    const segundo = dados.nos.find((no) => no.rotulo === '⟦P2⟧');
+    expect(primeiro.rotulo).toMatch(/^⟦P\d+⟧ — 11 meses × R\$ 4\.200,00$/);
+    expect(segundo).toBeTruthy();
+  });
 });
 
 describe('reidratar', () => {
@@ -181,8 +224,9 @@ describe('todo paraModelo', () => {
       get_pedido_bolsas_v2: { data: null, error: { message: 'sem acesso ao pedido' } },
     });
     const resultado = await sessao.executar('pendencias', { project_id: '30.901' });
-    expect(resultado.erro).toContain('bolsistas');
-    expect(resultado.erro).toContain('http_4xx');
+    expect(resultado.erro).toBe(
+      'Não foi possível carregar a lista de pessoas para proteger os nomes. (http_4xx)'
+    );
     expect(resultado.paraModelo).toBeUndefined();
   });
 
@@ -205,6 +249,23 @@ describe('todo paraModelo', () => {
     });
     const resultado = await sessao.executar('pendencias', { project_id: '30.901' });
     expect(resultado.erro).toBe('Não foi possível carregar as pendências. (tempo)');
+  });
+
+  it('rejeição externa do dicionário não passa código nem mensagem', async () => {
+    const { sessao } = montar({
+      get_pedido_bolsas_v2: () => {
+        const erro = new Error('Nome Sintético Fora');
+        erro.codigo = 'http_4xx';
+        erro.mensagemFixa = 'Nome Sintético Fora';
+        return Promise.reject(erro);
+      },
+    });
+    const resultado = await sessao.executar('pendencias', { project_id: '30.901' });
+    expect(resultado.erro).toBe(
+      'Não foi possível carregar a lista de pessoas para proteger os nomes. (http_4xx)'
+    );
+    expect(resultado.erro).not.toContain('Nome Sintético Fora');
+    expect(resultado.erro).not.toContain('http_4xx (http_4xx)');
   });
 
   it('a varredura de PII vale começando por termos_contrato', async () => {

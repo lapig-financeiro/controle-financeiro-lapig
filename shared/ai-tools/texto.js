@@ -92,31 +92,31 @@ function coletarCandidatos(texto) {
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'moeda', valor });
   }
 
-  for (const m of texto.matchAll(/\b\d+(?:[.,]\d+)?\s?%/g)) {
+  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])[-−]?\d+(?:[.,]\d+)?\s?%/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'percentual', valor });
   }
 
-  for (const m of texto.matchAll(/\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b/g)) {
+  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])[-−]?\d{1,3}(?:\.\d{3})+(?:,\d+)?\b/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'numero', valor });
   }
 
-  for (const m of texto.matchAll(/\b\d+,\d+\b/g)) {
+  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])[-−]?\d+,\d+\b/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'numero', valor });
   }
 
-  for (const m of texto.matchAll(/\b\d+\.\d{1,2}\b/g)) {
+  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])[-−]?\d+\.\d{1,2}\b/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'numero', valor });
   }
 
-  for (const m of texto.matchAll(/\b\d+\b/g)) {
+  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])[-−]?\d+\b/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'numero', valor });

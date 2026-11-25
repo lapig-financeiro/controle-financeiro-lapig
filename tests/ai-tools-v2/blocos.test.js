@@ -170,7 +170,7 @@ describe('criarBloco tabela', () => {
     ).toContain('1 a 8 colunas');
   });
 
-  it('recusa cabeçalho de coluna com número inventado e aceita código de centro', async () => {
+  it('recusa cabeçalho de coluna com qualquer dígito', async () => {
     const sessao = montar();
     const dados = await dadosDosCentros(sessao);
     const livre = porRotulo(dados, 'Livre — Centro Exemplo Um');
@@ -190,7 +190,7 @@ describe('criarBloco tabela', () => {
       colunas: ['Centro 30.901'],
       linhas: [[codigo.id]],
     });
-    expect(centro.erro).toBeUndefined();
+    expect(centro.erro).toContain('cabeçalho');
   });
 
   it('aceita 50 linhas e 8 colunas', async () => {
@@ -249,5 +249,19 @@ describe('ids dos blocos', () => {
     const segundo = sessao.criarBloco({ tipo: 'numero', titulo: '', no: livre.id }).bloco;
     expect(primeiro.id).toBe('b1');
     expect(segundo.id).toBe('b2');
+  });
+
+  it('aceita célula de texto que reproduz o motivo da RPC sem remarcar', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const motivo = porRotulo(dados, 'Motivo — 30.902');
+    const bloco = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: '',
+      colunas: ['Motivo'],
+      linhas: [[motivo.id]],
+    }).bloco;
+    expect(bloco.tabela.linhas[0][0].valor).toBe(motivo.valor);
+    expect(bloco.tabela.linhas[0][0].origem.tipo).toBe('sem_documento');
   });
 });

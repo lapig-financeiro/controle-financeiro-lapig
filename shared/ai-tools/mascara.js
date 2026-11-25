@@ -6,6 +6,7 @@
 // `reidratar`, que troca marcadores nos blocos que vão à tela.
 
 import { mascararCpf } from './cpf.js';
+import { criarErroPacote, ehErroPacote } from './erros.js';
 
 const RE_MARCADOR = /⟦P(\d+)⟧/g;
 const RE_EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -109,15 +110,16 @@ export function criarMascara({ rpc } = {}) {
   }
 
   /**
-   * Rótulo de folha de bolsa da árvore: "Nome — N meses × R$ X" vira
-   * "⟦Pn⟧ — N meses × R$ X". O nome original fica só na origem do nó.
+   * Rótulo de folha de bolsa da árvore: o sufixo é reconhecido pelo fim
+   * ("— N meses × R$ X"); tudo o que vem antes vira ⟦Pn⟧. Se o sufixo não
+   * casar, o modelo vê só o marcador, nunca o texto original.
    */
   function rotuloDeBolsa(rotulo, alvoId) {
     const texto = String(rotulo ?? '');
-    const separador = texto.indexOf(' — ');
-    const nome = separador >= 0 ? texto.slice(0, separador) : texto;
-    const sufixo = separador >= 0 ? texto.slice(separador) : '';
-    return `${nomeComAlvo(nome, alvoId)}${sufixo}`;
+    const achado = texto.match(/(.*?)(\s*—\s*\d+\s+m[eê]s(?:es)?\s+×\s+R\$\s*[\d.,]+)\s*$/u);
+    if (!achado) return nomeComAlvo(texto, alvoId);
+    const nome = achado[1].trim();
+    return `${nomeComAlvo(nome, alvoId)}${achado[2]}`;
   }
 
   /** Carrega nomes de uma resposta de get_pedido_bolsas_v2. */
@@ -137,30 +139,27 @@ export function criarMascara({ rpc } = {}) {
   }
 
   /**
-   * Carrega o dicionário uma vez por sessão. Se a RPC falhar, a ferramenta de
-   * texto livre falha fechada: sem a lista de nomes não há como garantir que
-   * nenhum nome de bolsista vai ao modelo. CPF e e-mail continuam saindo.
+   * Carrega o dicionário uma vez por sessão. Qualquer erro ou rejeição do
+   * adaptador vira a mensagem fixa do pacote; o texto bruto não sai daqui.
    */
   async function garantirDicionario() {
     if (carregado) return;
     if (carregando) return carregando;
     carregando = (async () => {
+      const mensagem = 'Não foi possível carregar a lista de pessoas para proteger os nomes.';
       try {
         const resposta = await rpc('get_pedido_bolsas_v2');
         if (!resposta || resposta.error) {
-          const mensagem = 'Não foi possível carregar a lista de bolsistas para mascarar nomes.';
-          const falha = new Error(mensagem);
-          falha.codigo = 'http_4xx';
-          throw falha;
+          throw criarErroPacote('http_4xx', mensagem);
         }
         if (!resposta.data || !Array.isArray(resposta.data.bolsistas)) {
-          const mensagem = 'Não foi possível carregar a lista de bolsistas para mascarar nomes.';
-          const falha = new Error(mensagem);
-          falha.codigo = 'formato';
-          throw falha;
+          throw criarErroPacote('formato', mensagem);
         }
         carregarNomes(resposta.data.bolsistas);
         carregado = true;
+      } catch (erro) {
+        if (ehErroPacote(erro)) throw erro;
+        throw criarErroPacote('http_4xx', mensagem);
       } finally {
         carregando = null;
       }

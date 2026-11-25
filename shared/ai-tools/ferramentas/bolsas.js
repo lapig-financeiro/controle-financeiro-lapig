@@ -43,6 +43,8 @@ function bolsistaValido(bolsista) {
     bolsista &&
     typeof bolsista === 'object' &&
     !Array.isArray(bolsista) &&
+    typeof bolsista.holder_id === 'string' &&
+    bolsista.holder_id !== '' &&
     typeof bolsista.nome === 'string' &&
     numeroOuNulo(bolsista.valor_vigente) !== null &&
     (bolsista.equipe === undefined || bolsista.equipe === null || typeof bolsista.equipe === 'string') &&
@@ -107,6 +109,7 @@ export async function executar(ctx, args) {
   const origemBolsa = semDocumento('bolsa digitada, ainda sem documento', consulta);
   const nos = [];
   const bolsistas = [];
+  const bolsistaPorId = new Map(dados.bolsistas.map((bolsista) => [bolsista.holder_id, bolsista]));
 
   for (const bolsista of dados.bolsistas) {
     const bolsas = bolsista.bolsas.filter(
@@ -120,26 +123,39 @@ export async function executar(ctx, args) {
     const noNome = registrarTexto(ctx, nomeMascarado, 'Bolsista (mascarado)', origemBolsa);
     nos.push(noNome);
 
+    const ocultas = bolsista.bolsas.some((bolsa) => !visiveis.has(bolsa.project_id));
     const saida = {
       nome: noNome.id,
       valor_vigente: null,
       total_global: null,
+      aviso: null,
       equipe: null,
       bolsas: [],
     };
 
-    const totalGlobal = registrarMoeda(
-      ctx,
-      bolsista.valor_vigente,
-      centro
-        ? 'Total vigente da pessoa (todos os centros)'
-        : 'Valor vigente (todos os centros)',
-      origemBolsa
-    );
-    if (totalGlobal) {
-      if (centro) saida.total_global = totalGlobal.id;
-      else saida.valor_vigente = totalGlobal.id;
-      nos.push(totalGlobal);
+    if (ocultas) {
+      const noAviso = registrarTexto(
+        ctx,
+        'inclui centros fora da sua visão; veja as bolsas uma a uma',
+        'Aviso — total',
+        semDocumento('total inclui centros fora da visão', consulta)
+      );
+      saida.aviso = noAviso.id;
+      nos.push(noAviso);
+    } else {
+      const totalGlobal = registrarMoeda(
+        ctx,
+        bolsista.valor_vigente,
+        centro
+          ? 'Total vigente da pessoa (todos os centros)'
+          : 'Valor vigente (todos os centros)',
+        origemBolsa
+      );
+      if (totalGlobal) {
+        if (centro) saida.total_global = totalGlobal.id;
+        else saida.valor_vigente = totalGlobal.id;
+        nos.push(totalGlobal);
+      }
     }
 
     if (typeof bolsista.equipe === 'string' && bolsista.equipe) {
@@ -207,6 +223,7 @@ export async function executar(ctx, args) {
       total_mensal: null,
       total_periodo: null,
       itens_ocultos: null,
+      aviso: null,
     };
     const origemCaixa = semDocumento('caixa do pedido de bolsas', consulta);
 
@@ -224,16 +241,35 @@ export async function executar(ctx, args) {
       item.pessoas = pessoas.id;
       nos.push(pessoas);
     }
-    const totalMensal = registrarMoeda(ctx, caixa.total_mensal, 'Total mensal da caixa', origemCaixa);
-    if (totalMensal) {
-      item.total_mensal = totalMensal.id;
-      nos.push(totalMensal);
+
+    const incluiFora = (caixa.itens ?? []).some((entrada) => {
+      const pessoa = bolsistaPorId.get(entrada.holder_id);
+      if (!pessoa) return true;
+      return pessoa.bolsas.some((bolsa) => !visiveis.has(bolsa.project_id));
+    });
+
+    if (incluiFora) {
+      const noAviso = registrarTexto(
+        ctx,
+        'inclui centros fora da sua visão; veja as bolsas uma a uma',
+        'Aviso — total da caixa',
+        semDocumento('total da caixa inclui centros fora da visão', consulta)
+      );
+      item.aviso = noAviso.id;
+      nos.push(noAviso);
+    } else {
+      const totalMensal = registrarMoeda(ctx, caixa.total_mensal, 'Total mensal da caixa', origemCaixa);
+      if (totalMensal) {
+        item.total_mensal = totalMensal.id;
+        nos.push(totalMensal);
+      }
+      const totalPeriodo = registrarMoeda(ctx, caixa.total_periodo, 'Total do período da caixa', origemCaixa);
+      if (totalPeriodo) {
+        item.total_periodo = totalPeriodo.id;
+        nos.push(totalPeriodo);
+      }
     }
-    const totalPeriodo = registrarMoeda(ctx, caixa.total_periodo, 'Total do período da caixa', origemCaixa);
-    if (totalPeriodo) {
-      item.total_periodo = totalPeriodo.id;
-      nos.push(totalPeriodo);
-    }
+
     const ocultos = registrarNumero(ctx, caixa.itens_ocultos, 'Itens ocultos da caixa', origemCaixa);
     if (ocultos) {
       item.itens_ocultos = ocultos.id;

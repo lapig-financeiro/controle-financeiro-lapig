@@ -118,6 +118,33 @@ describe('listar_centros', () => {
     expect(blocoValor.numero.origem.tipo).toBe('sem_documento');
     expect(blocoTarifa.numero.origem.tipo).toBe('sem_documento');
   });
+
+  it('motivo falha marca motivos_falharam e mantém livre e situação válidos', async () => {
+    const resumo = fixture('resumo_projetos');
+    const alvo = resumo.centros.find((centro) => centro.code === '30.902');
+    alvo.erro = null;
+    alvo.livre = 19400;
+    alvo.situacao = 'atenção';
+    alvo.motivos = [
+      {
+        codigo: 'falha',
+        nivel: 'info',
+        texto: 'Não foi possível calcular os motivos deste centro.',
+        grupo_code: null,
+        valor: null,
+      },
+    ];
+    const sessao = montar({ resumo_projetos_v2: { data: resumo, error: null } });
+    const dados = json(await sessao.executar('listar_centros', {}));
+    const centro = dados.centros.find(
+      (item) => dados.nos.find((no) => no.id === item.codigo).valor === '30.902'
+    );
+    expect(centro.falhou).toBe(false);
+    expect(centro.motivos_falharam).toBe(true);
+    expect(dados.nos.find((no) => no.id === centro.falha_motivos).valor).toBe('motivos falharam');
+    expect(dados.nos.find((no) => no.id === centro.livre).valor).toBe(19400);
+    expect(dados.nos.find((no) => no.id === centro.situacao).valor).toBe('atenção');
+  });
 });
 
 describe('explicar_livre', () => {
@@ -136,7 +163,7 @@ describe('explicar_livre', () => {
     expect(bloco.numero.origem.no.partes).toHaveLength(3);
   });
 
-  it('acima de 200 nós usa origem livre com chave e ref direta da folha', async () => {
+  it('acima de 200 nós usa origem livre com chave em todo nó, nunca ref direto', async () => {
     const grande = {
       rotulo: 'Livre para gastar',
       valor: 1,
@@ -173,12 +200,8 @@ describe('explicar_livre', () => {
     const bloco1 = sessao.criarBloco({ tipo: 'numero', titulo: '', no: parte1.id }).bloco;
     const bloco2 = sessao.criarBloco({ tipo: 'numero', titulo: '', no: parte2.id }).bloco;
     expect(bloco1.numero.origem).toMatchObject({ tipo: 'livre', chave: 'parte:1' });
-    expect(bloco2.numero.origem.tipo).toBe('ref');
-    expect(bloco2.numero.origem.ref).toEqual({
-      alvo_tabela: 'plano_desembolsos',
-      alvo_id: '00000000-0000-4000-8000-000000060201',
-      campo: 'valor',
-    });
+    expect(bloco2.numero.origem).toMatchObject({ tipo: 'livre', chave: 'parte:2' });
+    expect(bloco2.numero.origem.ref).toBeUndefined();
   });
 
   it('recusa nó inválido na árvore', async () => {
@@ -227,6 +250,19 @@ describe('situacao_centro', () => {
     const arvore = fixture('explicar_livre');
     const grupoB = arvore.partes.find((parte) => parte.chave === 'grupo:b');
     grupoB.valor = -50;
+    const realizadoB = grupoB.partes.find((parte) => parte.chave === 'rubrica:b.pj:realizado');
+    realizadoB.partes.push({
+      rotulo: '7.1.3.05.01.00054 — TARIFA BANCARIA',
+      valor: 60,
+      tipo: 'documento',
+      chave: 'linha:bl-901-tarifa',
+      ref: {
+        alvo_tabela: 'balancete_lancamentos',
+        alvo_id: '00000000-0000-4000-8000-000000050199',
+        campo: 'saldo_atual',
+      },
+      partes: [],
+    });
     const sessao = montar({
       explicar_livre_v2: { data: arvore, error: null },
       situacao_centro_v2: {
@@ -259,6 +295,11 @@ describe('situacao_centro', () => {
     expect(blocoSaldo.numero.origem.tipo).toBe('no');
     expect(blocoSaldo.numero.origem.no.chave).toBe('grupo:b');
     expect(blocoSaldo.numero.origem.no.valor).toBe(-50);
+
+    const blocoTarifa = sessao.criarBloco({ tipo: 'numero', titulo: '', no: tarifa.id }).bloco;
+    expect(blocoTarifa.numero.origem.tipo).toBe('no');
+    expect(blocoTarifa.numero.origem.no.chave).toBe('linha:bl-901-tarifa');
+    expect(blocoTarifa.numero.origem.no.ref.campo).toBe('saldo_atual');
   });
 
   it('sem árvore, avisa que a árvore faltou e deixa o valor sem_documento', async () => {
@@ -381,7 +422,7 @@ describe('pendencias', () => {
     expect(resultado.paraModelo).not.toContain('98765432100');
     expect(resultado.paraModelo).not.toContain('pessoa.dois@exemplo.test');
     const detalhe = dados.pendencias[0].detalhe;
-    expect(Object.keys(detalhe).sort()).toEqual(['competencia', 'conta', 'descricao', 'diferenca']);
+    expect(Object.keys(detalhe)).toEqual(['diferenca']);
   });
 
   it('sem project_id passa null para a RPC', async () => {
@@ -436,7 +477,7 @@ describe('bolsas', () => {
     expect(bloco.numero.origem.tipo).toBe('sem_documento');
   });
 
-  it('o filtro de visão vale também sem project_id, e o total global fica separado', async () => {
+  it('o filtro de visão vale também sem project_id, e o total com centro oculto não é exposto', async () => {
     const sessao = montar();
     const dados = json(await sessao.executar('bolsas', {}));
     expect(dados.bolsistas).toHaveLength(2);
@@ -447,25 +488,45 @@ describe('bolsas', () => {
     expect(pessoaUm.bolsas).toHaveLength(1);
     const centro = dados.nos.find((no) => no.id === pessoaUm.bolsas[0].centro);
     expect(centro.valor).toBe('30.901');
-    const vigente = dados.nos.find((no) => no.id === pessoaUm.valor_vigente);
-    expect(vigente.valor).toBe(5000);
+    expect(pessoaUm.valor_vigente).toBeNull();
     expect(pessoaUm.total_global).toBeNull();
+    const aviso = dados.nos.find((no) => no.id === pessoaUm.aviso);
+    expect(aviso.valor).toContain('fora da sua visão');
 
     const caixas = dados.caixas[0];
+    expect(caixas.total_mensal).toBeNull();
+    expect(caixas.total_periodo).toBeNull();
+    const avisoCaixa = dados.nos.find((no) => no.id === caixas.aviso);
+    expect(avisoCaixa.valor).toContain('fora da sua visão');
     const ocultos = dados.nos.find((no) => no.id === caixas.itens_ocultos);
     expect(ocultos.valor).toBe(2);
   });
 
-  it('com centro filtrado, não chama o total global de valor do centro', async () => {
+  it('com centro filtrado, total global com centro oculto também fica null', async () => {
     const sessao = montar();
     const dados = json(await sessao.executar('bolsas', { project_id: '30.901' }));
     const pessoa = dados.bolsistas[0];
     expect(pessoa.valor_vigente).toBeNull();
-    const total = dados.nos.find((no) => no.id === pessoa.total_global);
-    expect(total.valor).toBe(5000);
-    expect(total.rotulo).toContain('todos os centros');
+    expect(pessoa.total_global).toBeNull();
+    const aviso = dados.nos.find((no) => no.id === pessoa.aviso);
+    expect(aviso.valor).toContain('fora da sua visão');
     const centro = dados.nos.find((no) => no.id === pessoa.bolsas[0].centro);
     expect(centro.valor).toBe('30.901');
+  });
+
+  it('sem bolsa em centro oculto, o total global continua disponível', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].bolsas = pedido.bolsistas[0].bolsas.filter(
+      (bolsa) => bolsa.project_id !== '00000000-0000-4000-8000-000000030904'
+    );
+    pedido.bolsistas[0].valor_vigente = 4200;
+    const sessao = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    const dados = json(await sessao.executar('bolsas', { project_id: '30.901' }));
+    const pessoa = dados.bolsistas[0];
+    expect(pessoa.total_global).not.toBeNull();
+    const total = dados.nos.find((no) => no.id === pessoa.total_global);
+    expect(total.valor).toBe(4200);
+    expect(pessoa.aviso).toBeNull();
   });
 
   it('centro oculto não pode ser consultado', async () => {
