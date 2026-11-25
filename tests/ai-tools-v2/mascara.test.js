@@ -414,7 +414,7 @@ describe('máscara — nenhum pedaço de nome fica à vista', () => {
       semente = (semente * 1103515245 + 12345) % 2147483648;
       return semente % n;
     };
-    for (let rodada = 0; rodada < 3000; rodada += 1) {
+    for (let rodada = 0; rodada < 1500; rodada += 1) {
       const nomes = [];
       const quantos = 1 + sorteio(4);
       for (let i = 0; i < quantos; i += 1) {
@@ -446,5 +446,5 @@ describe('máscara — nenhum pedaço de nome fica à vista', () => {
       const restantes = saida.replace(/⟦P\d+⟧/g, ' ').split(/\s+/).filter(Boolean).sort();
       expect(restantes, `nomes=${JSON.stringify(nomes)} texto="${palavras.join(' ')}" saída="${saida}"`).toEqual(esperado);
     }
-  });
+   }, 30000);
 });

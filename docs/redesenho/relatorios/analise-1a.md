@@ -444,7 +444,7 @@ Pacote: 134 testes.
 
 Um alto: com três nomes sobrepostos em cadeia, a sobra do terceiro (`Helena`) era descartada por cruzar outra sobra.
 Correção: as sobras saem da **cobertura de todos os trechos de uma vez** (segmentos entre os cortes), disjuntas dos
-escolhidos por construção. O teste novo de propriedade (3000 dicionários e textos aleatórios, com e sem acento,
+escolhidos por construção. O teste novo de propriedade (1500 dicionários e textos aleatórios por rodada da suíte; 3000, com e sem acento,
 conferido com 5 sementes) achou mais um caso na mesma hora: ocorrências **sobrepostas do mesmo nome**
 (`Inês Ines Inês` com `Ines Ines`) não eram achadas; a busca agora recomeça uma posição depois de cada achado.
 
