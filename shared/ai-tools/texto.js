@@ -86,7 +86,7 @@ function coletarCandidatos(texto) {
     });
   }
 
-  for (const m of texto.matchAll(/R\$\s?[-−]?\d{1,3}(?:\.\d{3})*(?:[.,]\d{1,2})?/g)) {
+  for (const m of texto.matchAll(/R\$\s?[-−]?\d+(?:\.\d{3})*(?:[.,]\d{1,2})?/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'moeda', valor });
@@ -134,7 +134,7 @@ function intervalosProibidos(texto) {
   // aí é moeda, e o candidato de moeda tem de prevalecer.
   for (const m of texto.matchAll(/\b(?:30|78)\.\d{3}\b/g)) {
     const antes = texto.slice(Math.max(0, m.index - 6), m.index);
-    if (/R\$\s?[-−]?\s*$/.test(antes)) continue;
+    if (/(?:R\$\s*[+\-−]?|[+\-−])\s*$/.test(antes)) continue;
     intervalos.push({ inicio: m.index, fim: m.index + m[0].length });
   }
   // Código de conta contábil (7.1.3.99) também não é número.

@@ -79,16 +79,17 @@ export async function executar(ctx, args) {
   const nos = [];
   const estrutura = {};
 
-  function origemDoNo(no) {
+  function origemDoNo(no, caminho) {
     if (!modoGrande) return origemNo(no);
     return {
       tipo: 'livre',
       project_id: centro.id,
       chave: typeof no.chave === 'string' ? no.chave : null,
+      caminho: [...caminho],
     };
   }
 
-  function registrar(no) {
+  function registrar(no, caminho = []) {
     const rotulo =
       no.ref && no.ref.alvo_tabela === 'scholarships'
         ? ctx.mascara.rotuloDeBolsa(no.rotulo, no.ref.alvo_id)
@@ -102,7 +103,7 @@ export async function executar(ctx, args) {
       valor,
       unidade,
       rotulo,
-      origem: origemDoNo(no),
+      origem: origemDoNo(no, caminho),
     });
     const ramo = {
       sinal: no.sinal === -1 ? -1 : 1,
@@ -112,10 +113,10 @@ export async function executar(ctx, args) {
     estrutura[registrado.id] = ramo;
     nos.push(mini(registrado));
 
-    for (const parte of no.partes) {
-      const filho = registrar(parte);
+    no.partes.forEach((parte, indice) => {
+      const filho = registrar(parte, [...caminho, indice]);
       ramo.partes.push(filho.id);
-    }
+    });
     return registrado;
   }
 

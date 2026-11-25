@@ -103,6 +103,18 @@ describe('criarBloco numero', () => {
     });
     expect(comProprio.erro).toBeUndefined();
   });
+
+  it('código de centro com sinal no título é número, não exceção', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const livre = porRotulo(dados, 'Livre — Centro Exemplo Um');
+    const resultado = sessao.criarBloco({
+      tipo: 'numero',
+      titulo: 'Desconto -30.109',
+      no: livre.id,
+    });
+    expect(resultado.erro).toContain('número');
+  });
 });
 
 describe('criarBloco tabela', () => {

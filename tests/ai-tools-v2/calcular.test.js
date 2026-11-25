@@ -218,6 +218,14 @@ describe('calcular', () => {
     expect(resultado.erro).toContain('faixa segura');
   });
 
+  it('converte pela string decimal, sem toFixed, e mantém o centavo', async () => {
+    const sessao = montar([90071992547409.9, 90071992547409]);
+    const { um, dois } = await livrosDosCentros(sessao);
+    const resultado = sessao.calcular({ op: 'diferenca', ids: [um.id, dois.id] });
+    expect(resultado.erro).toBeUndefined();
+    expect(JSON.parse(resultado.paraModelo).resultado.valor).toBe(0.9);
+  });
+
   it('recusa id inexistente', async () => {
     const sessao = montar();
     const { um } = await livrosDosCentros(sessao);

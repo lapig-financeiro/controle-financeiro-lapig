@@ -199,9 +199,59 @@ describe('explicar_livre', () => {
     const parte2 = dados.nos.find((no) => no.rotulo === 'Parte 2');
     const bloco1 = sessao.criarBloco({ tipo: 'numero', titulo: '', no: parte1.id }).bloco;
     const bloco2 = sessao.criarBloco({ tipo: 'numero', titulo: '', no: parte2.id }).bloco;
-    expect(bloco1.numero.origem).toMatchObject({ tipo: 'livre', chave: 'parte:1' });
-    expect(bloco2.numero.origem).toMatchObject({ tipo: 'livre', chave: 'parte:2' });
+    expect(bloco1.numero.origem).toMatchObject({ tipo: 'livre', chave: 'parte:1', caminho: [0] });
+    expect(bloco2.numero.origem).toMatchObject({ tipo: 'livre', chave: 'parte:2', caminho: [1] });
     expect(bloco2.numero.origem.ref).toBeUndefined();
+  });
+
+  it('duas folhas com a mesma chave têm caminhos diferentes na árvore grande', async () => {
+    const folhas = [
+      {
+        rotulo: 'Compromisso regular — 1 mês × R$ 1.500,00',
+        valor: 1500,
+        tipo: 'digitado',
+        chave: 'linha:bolsa-1',
+        ref: { alvo_tabela: 'scholarships', alvo_id: 'bolsa-1', campo: 'amount' },
+        partes: [],
+      },
+      {
+        rotulo: 'Folha atrasada — 1 mês × R$ 1.000,00',
+        valor: 1000,
+        tipo: 'digitado',
+        chave: 'linha:bolsa-1',
+        ref: { alvo_tabela: 'scholarships', alvo_id: 'bolsa-1', campo: 'amount' },
+        partes: [],
+      },
+    ];
+    const grande = {
+      rotulo: 'Livre',
+      valor: 1,
+      tipo: 'calculo',
+      chave: 'livre',
+      partes: [
+        { rotulo: 'Pessoal', valor: 1, tipo: 'calculo', chave: 'grupo:a', partes: folhas },
+        ...Array.from({ length: 199 }, (_, indice) => ({
+          rotulo: `Ramo ${indice + 1}`,
+          valor: 1,
+          tipo: 'calculo',
+          chave: `ramo:${indice + 1}`,
+          partes: [],
+        })),
+      ],
+    };
+    const sessao = montar({ explicar_livre_v2: { data: grande, error: null } });
+    const dados = json(await sessao.executar('explicar_livre', { project_id: '30.901' }));
+    const regular = dados.nos.find((no) => no.rotulo.includes('1.500,00'));
+    const atrasada = dados.nos.find((no) => no.rotulo.includes('1.000,00'));
+    const origemRegular = sessao.criarBloco({ tipo: 'numero', titulo: '', no: regular.id }).bloco
+      .numero.origem;
+    const origemAtrasada = sessao.criarBloco({ tipo: 'numero', titulo: '', no: atrasada.id }).bloco
+      .numero.origem;
+
+    expect(origemRegular.chave).toBe('linha:bolsa-1');
+    expect(origemAtrasada.chave).toBe('linha:bolsa-1');
+    expect(origemRegular.caminho).toEqual([0, 0]);
+    expect(origemAtrasada.caminho).toEqual([0, 1]);
   });
 
   it('recusa nó inválido na árvore', async () => {
@@ -297,9 +347,8 @@ describe('situacao_centro', () => {
     expect(blocoSaldo.numero.origem.no.valor).toBe(-50);
 
     const blocoTarifa = sessao.criarBloco({ tipo: 'numero', titulo: '', no: tarifa.id }).bloco;
-    expect(blocoTarifa.numero.origem.tipo).toBe('no');
-    expect(blocoTarifa.numero.origem.no.chave).toBe('linha:bl-901-tarifa');
-    expect(blocoTarifa.numero.origem.no.ref.campo).toBe('saldo_atual');
+    expect(blocoTarifa.numero.origem.tipo).toBe('sem_documento');
+    expect(blocoTarifa.numero.origem.motivo).toContain('a RPC não devolve as linhas');
   });
 
   it('sem árvore, avisa que a árvore faltou e deixa o valor sem_documento', async () => {
@@ -527,6 +576,33 @@ describe('bolsas', () => {
     const total = dados.nos.find((no) => no.id === pessoa.total_global);
     expect(total.valor).toBe(4200);
     expect(pessoa.aviso).toBeNull();
+  });
+
+  it('bolsa antiga em centro oculto não suprime o total vigente', async () => {
+    const pedido = fixture('pedido_bolsas');
+    const antiga = pedido.bolsistas[0].bolsas.find(
+      (bolsa) => bolsa.project_id === '00000000-0000-4000-8000-000000030904'
+    );
+    antiga.vigente_hoje = false;
+    antiga.status = 'ended';
+    pedido.bolsistas[0].valor_vigente = 4200;
+    const sessao = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    const dados = json(await sessao.executar('bolsas', { project_id: '30.901' }));
+    const pessoa = dados.bolsistas[0];
+    expect(pessoa.total_global).not.toBeNull();
+    expect(dados.nos.find((no) => no.id === pessoa.total_global).valor).toBe(4200);
+    expect(pessoa.aviso).toBeNull();
+  });
+
+  it('item de caixa com valor mensal digitado não suprime os totais', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.caixas[0].itens[0].valor_mensal = 500;
+    const sessao = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    const dados = json(await sessao.executar('bolsas', {}));
+    const caixa = dados.caixas[0];
+    expect(caixa.total_mensal).not.toBeNull();
+    expect(caixa.total_periodo).not.toBeNull();
+    expect(caixa.aviso).toBeNull();
   });
 
   it('centro oculto não pode ser consultado', async () => {

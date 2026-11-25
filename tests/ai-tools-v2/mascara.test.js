@@ -68,6 +68,26 @@ describe('máscara de nomes', () => {
     expect(dois.texto).toBe('⟦P2⟧');
     expect(outraVez.texto).toBe('⟦P1⟧');
   });
+
+  it('normaliza NBSP, tab, dois espaços, maiúsculas e acentos', async () => {
+    const { sessao } = montar();
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const marcado = sessao.marcarTexto(
+      'PESSOA\u00a0EXEMPLO\tUM e Pessoa  Exemplo Um; pessoa exemplo um'
+    );
+    expect(marcado.texto).not.toContain('Pessoa');
+    expect(marcado.texto).not.toContain('PESSOA');
+    expect(marcado.texto.match(/⟦P\d+⟧/g)).toHaveLength(3);
+  });
+
+  it('compara sem acento nos dois sentidos', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].nome = 'João Exemplo';
+    const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const marcado = sessao.marcarTexto('JOAO EXEMPLO');
+    expect(marcado.texto).toBe('⟦P1⟧');
+  });
 });
 
 describe('CPF e e-mail', () => {

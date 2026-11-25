@@ -123,7 +123,9 @@ export async function executar(ctx, args) {
     const noNome = registrarTexto(ctx, nomeMascarado, 'Bolsista (mascarado)', origemBolsa);
     nos.push(noNome);
 
-    const ocultas = bolsista.bolsas.some((bolsa) => !visiveis.has(bolsa.project_id));
+    const ocultas = bolsista.bolsas.some(
+      (bolsa) => !visiveis.has(bolsa.project_id) && bolsa.vigente_hoje === true
+    );
     const saida = {
       nome: noNome.id,
       valor_vigente: null,
@@ -243,9 +245,12 @@ export async function executar(ctx, args) {
     }
 
     const incluiFora = (caixa.itens ?? []).some((entrada) => {
+      if (entrada.valor_mensal !== null && entrada.valor_mensal !== undefined) return false;
       const pessoa = bolsistaPorId.get(entrada.holder_id);
       if (!pessoa) return true;
-      return pessoa.bolsas.some((bolsa) => !visiveis.has(bolsa.project_id));
+      return pessoa.bolsas.some(
+        (bolsa) => !visiveis.has(bolsa.project_id) && bolsa.vigente_hoje === true
+      );
     });
 
     if (incluiFora) {

@@ -55,38 +55,6 @@ function arvoreValida(no, profundidade = 0) {
   return no.partes.every((parte) => arvoreValida(parte, profundidade + 1));
 }
 
-function normalizarConta(texto) {
-  return String(texto ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase();
-}
-
-function ehLinhaTarifa(no) {
-  if (!no || !no.ref || no.ref.alvo_tabela !== 'balancete_lancamentos') return false;
-  if (no.ref.campo !== 'saldo_atual') return false;
-  const rotulo = normalizarConta(no.rotulo);
-  return (
-    rotulo.includes('7.1.3.05.01.00054') ||
-    rotulo.includes('SERVICOS BANCARIOS') ||
-    rotulo.includes('TARIFA BANCARIA')
-  );
-}
-
-function tarifaDaArvore(grupo, valor) {
-  if (!grupo || !Array.isArray(grupo.partes)) return null;
-  const encontrados = [];
-  const visitar = (no) => {
-    if (!no || typeof no !== 'object') return;
-    const valorNo = numeroOuNulo(no.valor);
-    if (ehLinhaTarifa(no) && valorNo !== null && Math.abs(valorNo - valor) <= 0.005) {
-      encontrados.push(no);
-    }
-    for (const parte of Array.isArray(no.partes) ? no.partes : []) visitar(parte);
-  };
-  visitar(grupo);
-  return encontrados.length === 1 ? encontrados[0] : null;
-}
 
 export async function executar(ctx, args) {
   const resolvido = await ctx.resolverCentro(args && args.project_id);
@@ -177,27 +145,15 @@ export async function executar(ctx, args) {
 
     const tarifa = numeroOuNulo(motivo.tarifa);
     if (tarifa !== null) {
-      const linhaTarifa = grupo ? tarifaDaArvore(grupo, tarifa) : null;
-      if (linhaTarifa) {
-        const noTarifa = ctx.registro.registrar({
-          valor: numeroOuNulo(linhaTarifa.valor),
-          unidade: 'moeda',
-          rotulo: `Tarifa bancária — ${codigo}`,
-          origem: origemNo(linhaTarifa),
-        });
+      const noTarifa = registrarMoeda(
+        ctx,
+        tarifa,
+        `Tarifa bancária — ${codigo}`,
+        semDocumento('tarifa bancária: a RPC não devolve as linhas', 'situacao_centro_v2')
+      );
+      if (noTarifa) {
         saida.tarifa = noTarifa.id;
         nos.push(noTarifa);
-      } else {
-        const noTarifa = registrarMoeda(
-          ctx,
-          tarifa,
-          `Tarifa bancária — ${codigo}`,
-          origemLiteral
-        );
-        if (noTarifa) {
-          saida.tarifa = noTarifa.id;
-          nos.push(noTarifa);
-        }
       }
     }
 

@@ -10,17 +10,60 @@ import { criarErroPacote, ehErroPacote } from './erros.js';
 
 const RE_MARCADOR = /⟦P(\d+)⟧/g;
 const RE_EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-const BORDA = '0-9A-Za-zÀ-ÖØ-öø-ÿ';
+const ESPACO_UNICODE = /[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/u;
 
 function normalizarNome(valor) {
   return String(valor ?? '')
     .normalize('NFC')
-    .replace(/\s+/g, ' ')
+    .replace(/[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/gu, ' ')
     .trim();
 }
 
+/**
+ * Texto comparável (NFC, espaços Unicode colapsados, minúsculas e sem acento)
+ * com o mapa de cada caractere de volta para o texto original. É o mapa que
+ * permite trocar o trecho original — inclusive com NBSP/tab — por ⟦Pn⟧.
+ */
+function normalizarComparavel(valor) {
+  const original = String(valor ?? '');
+  let texto = '';
+  const mapa = [];
+  let deslocamento = 0;
+  for (const caractere of Array.from(original.normalize('NFC'))) {
+    const inicio = deslocamento;
+    const fim = deslocamento + caractere.length;
+    deslocamento = fim;
+
+    if (ESPACO_UNICODE.test(caractere)) {
+      if (texto.endsWith(' ')) {
+        const ultimo = mapa[mapa.length - 1];
+        if (ultimo) ultimo.fim = fim;
+      } else {
+        texto += ' ';
+        mapa.push({ inicio, fim });
+      }
+      continue;
+    }
+
+    const decomposto = caractere
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    if (decomposto === '') {
+      const ultimo = mapa[mapa.length - 1];
+      if (ultimo) ultimo.fim = fim;
+      continue;
+    }
+    for (const base of Array.from(decomposto)) {
+      texto += base;
+      mapa.push({ inicio, fim });
+    }
+  }
+  return { texto, mapa };
+}
+
 function chaveDoNome(valor) {
-  return normalizarNome(valor).toLocaleLowerCase('pt-BR');
+  return normalizarComparavel(normalizarNome(valor)).texto;
 }
 
 function escaparRegex(valor) {
@@ -55,7 +98,7 @@ export function criarMascara({ rpc } = {}) {
     const marcador = `⟦P${++proximo}⟧`;
     porNome.set(chaveDoNome(nome), marcador);
     porMarcador.set(marcador, nome);
-    nomesParaBusca.push({ nome, marcador });
+    nomesParaBusca.push({ nome, marcador, chave: chaveDoNome(nome) });
     return marcador;
   }
 
@@ -74,7 +117,7 @@ export function criarMascara({ rpc } = {}) {
     const chave = chaveDoNome(curto);
     if (chave.length < 3 || porNome.has(chave)) return;
     porNome.set(chave, marcador);
-    nomesParaBusca.push({ nome: curto, marcador });
+    nomesParaBusca.push({ nome: curto, marcador, chave });
   }
 
   /**
@@ -92,7 +135,7 @@ export function criarMascara({ rpc } = {}) {
         if (!porNome.has(chave)) porNome.set(chave, marcador);
         if (!porMarcador.has(marcador)) porMarcador.set(marcador, nome);
         if (!nomesParaBusca.some((item) => item.nome === nome && item.marcador === marcador)) {
-          nomesParaBusca.push({ nome, marcador });
+          nomesParaBusca.push({ nome, marcador, chave: chaveDoNome(nome) });
         }
       }
       return marcador;
@@ -172,11 +215,29 @@ export function criarMascara({ rpc } = {}) {
   }
 
   function substituirNome(texto, item) {
+    const chave = item.chave ?? chaveDoNome(item.nome);
+    if (!chave) return texto;
+    const { texto: comparavel, mapa } = normalizarComparavel(texto);
     const padrao = new RegExp(
-      `(^|[^${BORDA}])(${escaparRegex(item.nome)})(?=$|[^${BORDA}])`,
-      'giu'
+      `(^|[^0-9a-z])(${escaparRegex(chave)})(?=$|[^0-9a-z])`,
+      'g'
     );
-    return texto.replace(padrao, (_, antes) => `${antes}${item.marcador}`);
+    const trechos = [];
+    for (const achado of comparavel.matchAll(padrao)) {
+      const inicioComparavel = achado.index + achado[1].length;
+      const fimComparavel = inicioComparavel + achado[2].length;
+      if (fimComparavel > mapa.length) continue;
+      const inicio = mapa[inicioComparavel].inicio;
+      const fim = mapa[fimComparavel - 1].fim;
+      if (trechos.length > 0 && inicio < trechos[trechos.length - 1].fim) continue;
+      trechos.push({ inicio, fim });
+    }
+    let saida = texto;
+    for (let indice = trechos.length - 1; indice >= 0; indice -= 1) {
+      const trecho = trechos[indice];
+      saida = saida.slice(0, trecho.inicio) + item.marcador + saida.slice(trecho.fim);
+    }
+    return saida;
   }
 
   /** Sanitiza qualquer texto livre: CPF, e-mail e nomes conhecidos. */

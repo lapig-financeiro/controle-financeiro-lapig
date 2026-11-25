@@ -127,6 +127,24 @@ describe('marcarTexto', () => {
     );
   });
 
+  it('milhar sem ponto em moeda é um único candidato', async () => {
+    const resumo = fixture('resumo_projetos');
+    resumo.centros[0].livre = 120;
+    resumo.centros[0].pendencias_abertas = 0;
+    const sessao = montar({ resumo_projetos_v2: { data: resumo, error: null } });
+    const dados = JSON.parse((await sessao.executar('listar_centros', {})).paraModelo);
+    const livre = acharNo(dados, 'Livre — Centro Exemplo Um');
+    const pendencias = acharNo(dados, 'Pendências abertas — 30.901');
+    sessao.criarBloco({ tipo: 'numero', titulo: '', no: livre.id });
+    sessao.criarBloco({ tipo: 'numero', titulo: '', no: pendencias.id });
+
+    const marcado = sessao.marcarTexto('O valor é R$ 1200.');
+    expect(marcado.semOrigem).toHaveLength(1);
+    expect(marcado.texto.slice(marcado.semOrigem[0].inicio, marcado.semOrigem[0].fim)).toBe(
+      'R$ 1200'
+    );
+  });
+
   it('data completa compara dia, mês e ano', async () => {
     const { sessao, termos } = await preparar();
     const inicio = acharNo(termos, 'Vigência — início');

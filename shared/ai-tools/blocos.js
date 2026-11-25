@@ -187,10 +187,24 @@ function casasDecimais(valor) {
 }
 
 function inteiroBigInt(valor, casas) {
-  const fixo = Number(valor).toFixed(casas);
-  if (/e/i.test(fixo)) throw new Error('fora da faixa');
-  const digitos = fixo.replace('.', '').replace(/^\+/, '');
-  return BigInt(digitos);
+  const texto = String(valor);
+  const achado = texto.match(/^([+-]?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i);
+  if (!achado) throw new Error('forma decimal');
+  const sinal = achado[1] === '-' ? -1n : 1n;
+  const parteInteira = achado[2];
+  const parteDecimal = achado[3] || '';
+  const expoente = Number(achado[4] || 0);
+  const potencia = expoente - parteDecimal.length + casas;
+  const digitos = parteInteira + parteDecimal;
+
+  if (potencia >= 0) {
+    return sinal * BigInt(digitos + '0'.repeat(potencia));
+  }
+
+  const divisor = 10n ** BigInt(-potencia);
+  const numero = BigInt(digitos);
+  if (numero % divisor !== 0n) throw new Error('fora da escala');
+  return sinal * (numero / divisor);
 }
 
 export function criarCalculadora({ registro, citados = [] }) {

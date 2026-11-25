@@ -38,8 +38,8 @@ sintéticos de `dadosExemplo.js`. As chaves abaixo são as que o pacote lê; cha
 | RPC | Retorno usado | Origem que o pacote escolhe |
 |---|---|---|
 | `resumo_projetos_v2()` | `{ centros: [{ id, code, name, end_date, drive_folder_url, livre, situacao, data_referencia, pendencias_abertas, erro, responsaveis, motivos: [{ codigo, nivel, texto, grupo_code, valor, tarifa? }] }], ocultos, todos }` (069, linhas 464–509) | `livre` → `{ tipo: 'livre', project_id }`; vigência, situação, contagens e motivos → `sem_documento` |
-| `explicar_livre_v2(p_project_id)` | nó `{ rotulo, valor, tipo, chave, conta, sinal, ref, nota, partes: [nó] }`; `tipo` em `calculo/documento/legado/digitado`; `motivo` na raiz sem plano/balancete/números (070, linhas 856–859) | cada nó da árvore → `{ tipo: 'no', no: <nó com partes> }`; acima de 200 nós → **todo nó** `{ tipo: 'livre', project_id, chave }` (nunca `ref` direto) |
-| `situacao_centro_v2(p_project_id)` | `{ situacao, motivos: [{ codigo, nivel, texto, grupo_code, valor, tarifa? }] }` (069, linha 564) | `valor` (déficit) → `sem_documento`; `tarifa` → `no` da linha da tarifa quando a árvore tem exatamente esse nó, senão `sem_documento`; saldo do grupo ligado por `grupo_code` → `no`; texto/nível → `sem_documento` |
+| `explicar_livre_v2(p_project_id)` | nó `{ rotulo, valor, tipo, chave, conta, sinal, ref, nota, partes: [nó] }`; `tipo` em `calculo/documento/legado/digitado`; `motivo` na raiz sem plano/balancete/números (070, linhas 856–859) | cada nó da árvore → `{ tipo: 'no', no: <nó com partes> }`; acima de 200 nós → **todo nó** `{ tipo: 'livre', project_id, chave, caminho }` (nunca `ref` direto) |
+| `situacao_centro_v2(p_project_id)` | `{ situacao, motivos: [{ codigo, nivel, texto, grupo_code, valor, tarifa? }] }` (069, linha 564) | `valor` (déficit) e `tarifa` → `sem_documento` (a RPC não devolve as linhas da tarifa); saldo do grupo ligado por `grupo_code` → `no`; texto/nível → `sem_documento` |
 | `get_repasses_v2(p_project_id)` | `{ parcelas: [{ parcela, data_prevista, data_texto, valor, valor_texto }], valor_total_plano, data_balancete, recursos: { recebido, a_receber } \| null }` (063, linhas 842–847) | hoje a RPC não traz `ref`: `sem_documento`; se uma linha trouxer `ref` completa, vira `ref` |
 | `get_termos_contrato_v2(p_project_id)` | `{ termos: { <termo>: { id, valor, regra, trecho, documento_nome, documento_url, documento_id, documento, pagina, nota, origem, autor, criado_em, conferido, conferido_em, versoes_anteriores } }, start_date_cadastro, end_date_cadastro, vigencia_situacao, vigencia_confere }` (067, linhas 397–411) | cada termo → `{ tipo: 'termo', project_id, termo_id }`; datas do cadastro e `vigencia_situacao` → `sem_documento` |
 | `listar_pendencias_v2(p_project_id default null)` | lista de `{ id, project_id, code, tipo, titulo, detalhe, situacao, origem, criada_em }` (063, linhas 433–476) | tudo → `sem_documento` (pendência); número de `detalhe` com chave de valor vira `moeda`, o resto `numero` |
@@ -61,25 +61,27 @@ Notas de formato:
 ## 3. Testes
 
 - `npm run lint`: **0 erros e 0 avisos** em `frontend/js/`, `mcp/`, `app/` e `shared/`.
-- `npm test` na raiz: **51 arquivos passando + 1 ignorado (52)**, **806 testes passando + 19 ignorados**
-  (**825 no total**), incluindo os testes antigos.
-- Suíte nova `tests/ai-tools-v2`: **7 arquivos, 114 testes passando na versão final (82 na 1ª rodada e 106 na 2ª)**:
+- `npm test` na raiz: **51 arquivos passando + 1 ignorado (52)**, **814 testes passando + 19 ignorados**
+  (**833 no total**), incluindo os testes antigos.
+- Suíte nova `tests/ai-tools-v2`: **7 arquivos, 122 testes passando na versão final (82/106/114 nas rodadas anteriores)**:
   - `sessao.test.js` (14): ids sequenciais, erro de RPC/exceção/formato, centro por código/id, centro
     oculto/inexistente com o mesmo "não encontrado no seu acesso", cache da lista e concorrência.
-  - `ferramentas.test.js` (38): caminho feliz e origem por tipo em cada ferramenta, árvore >200 nós,
-    motivo real de déficit/tarifa, `motivos_falharam`, lista vazia honesta, item nulo, erro de RPC em
-    cada uma e argumento inválido.
-  - `blocos.test.js` (16): número/tabela/texto, id inexistente, célula literal, unidades misturadas,
+  - `ferramentas.test.js` (41): caminho feliz e origem por tipo em cada ferramenta, árvore >200 nós
+    com `caminho`, motivo real de déficit/tarifa, `motivos_falharam`, lista vazia honesta, item nulo,
+    erro de RPC em cada uma e argumento inválido.
+  - `blocos.test.js` (17): número/tabela/texto, id inexistente, célula literal, unidades misturadas,
     51 linhas, 9 colunas, 50 linhas/8 colunas, título e cabeçalho com número, contextos, célula de
     texto da RPC e id de bloco não consumido em recusa.
-  - `calcular.test.js` (14): `0,1 + 0,2` exatamente `0,3`, diferença, sinais, origem `calculo` fechando
+  - `calcular.test.js` (15): `0,1 + 0,2` exatamente `0,3`, diferença, sinais, origem `calculo` fechando
     ao centavo, unidade `numero`, escala de `numero`, moeda com 3 casas, unidades diferentes,
-    percentual, id inexistente, `op` inválida, BigInt e faixa segura.
-  - `mascara.test.js` (15): nome completo, primeiro + último, CPF com espaço/ponto/hífen/barra,
+    percentual, id inexistente, `op` inválida, BigInt, faixa segura e string decimal.
+  - `mascara.test.js` (17): nome completo, primeiro + último, CPF com espaço/ponto/hífen/barra,
     e-mail, `reidratar` só no bloco, varredura de **todos** os `paraModelo`, dicionário uma vez por
-    sessão, falha fechada, erro externo sem PII, rótulo de bolsa com ` — ` e sem sufixo.
-  - `texto.test.js` (12): número citado × inventado, código de centro/conta, `R$ 30.109` × `30.109`,
-    datas completas, unidade/sinal, moeda negativa, sinal `-`/`−`, resultado de `calcular` e `reidratar`.
+    sessão, falha fechada, erro externo sem PII, rótulo de bolsa com ` — `/sem sufixo e normalização
+    Unicode/acentos.
+  - `texto.test.js` (13): número citado × inventado, código de centro/conta, `R$ 30.109` × `30.109`,
+    milhar sem ponto, datas completas, unidade/sinal, moeda negativa, sinal `-`/`−`, resultado de
+    `calcular` e `reidratar`.
   - `instrucoes.test.js` (5): quatro regras idênticas às do MCP (fonte lida como texto), regras da
     Análise e formato/descrição das nove especificações.
 
@@ -152,7 +154,7 @@ Fora do escopo desta tarefa (e não feitos):
 
 - `shared/ai-tools/index.js`, `nos.js`, `blocos.js`, `mascara.js`, `texto.js`, `cpf.js`, `erros.js`, `README.md`, `package.json`
 - `shared/ai-tools/ferramentas/` (9 ferramentas + `comum.js` + `index.js`)
-- `tests/ai-tools-v2/` (7 arquivos, 114 testes na versão final; 82 na 1ª, 106 na 2ª)
+- `tests/ai-tools-v2/` (7 arquivos, 122 testes na versão final; 82/106/114 nas anteriores)
 - `tests/fixtures/ai-tools-v2/` (8 JSON sintéticos)
 - `package.json` (só `shared/` no `lint`)
 - este relatório
@@ -223,15 +225,16 @@ contagem final é **7 arquivos, 106 testes** em `tests/ai-tools-v2` e **798 test
 O pacote passa a produzir três campos que o contrato ainda não listava; o Claude atualiza
 o contrato:
 
-- §3, origem `livre` de árvore acima de 200 nós: `{ tipo: 'livre', project_id, chave }`.
-- §3, folha de árvore acima de 200 nós: **sempre** `{ tipo: 'livre', project_id, chave }`,
+- §3, origem `livre` de árvore acima de 200 nós: `{ tipo: 'livre', project_id, chave, caminho }`.
+- §3, folha de árvore acima de 200 nós: **sempre** `{ tipo: 'livre', project_id, chave, caminho }`,
   nunca `ref` direto (a 3ª rodada corrigiu a proposta anterior; o valor da folha é
-  amount × meses, não o `amount` do campo referenciado).
+  amount × meses, não o `amount` do campo referenciado). O `caminho` (índices das partes
+  desde a raiz) distingue folhas com a mesma `chave`.
 - §6, `numero.contexto`: `{ valor, unidade, origem }` (antes só valor e unidade).
 - Em `situacao_centro`, o `paraModelo` expõe `valor` (déficit), `saldo` (grupo, com origem
-  `no`) e `tarifa` (origem `no` quando a linha da tarifa está na árvore); em `listar_centros`,
-  `motivos_falharam`/`falha_motivos`; em `bolsas`, `total_global` (centro filtrado),
-  `aviso` (total com centro oculto) e `itens_ocultos`.
+  `no`) e `tarifa` (sempre `sem_documento` até a RPC devolver as linhas); em
+  `listar_centros`, `motivos_falharam`/`falha_motivos`; em `bolsas`, `total_global`
+  (centro filtrado), `aviso` (total com centro oculto vigente) e `itens_ocultos`.
 
 ### Mutantes desta rodada (aplicados, testados e revertidos)
 
@@ -292,11 +295,10 @@ segue funcionando (`node -e "import('./shared/ai-tools/index.js')"`: `ok functio
    vindo da RPC fica como está (decisão: o texto é da RPC), com origem `sem_documento`.
 5. **`listar_centros`.** Motivo `falha` da 069 marca `motivos_falharam: true` e cria o nó
    “motivos falharam”; `livre` e `situação` válidos continuam disponíveis.
-6. **Tarifa.** Se a árvore tem exatamente a linha da tarifa (conta `7.1.3.05.01.00054` ou
-   descrição normalizada `SERVICOS BANCARIOS`/`TARIFA BANCARIA`, com `ref` para
-   `balancete_lancamentos.saldo_atual` e o mesmo valor), a tarifa usa origem `no` daquele
-   nó; senão `sem_documento`. Total do plano fica `sem_documento` nesta etapa: a 063 não
-   devolve o id do plano ativo; vira ferramenta nova na Etapa 2.
+6. **Tarifa.** A 3ª rodada tentou ligar a tarifa à linha da árvore; a 4ª rodada
+   removeu essa lógica: a tarifa sai sempre `sem_documento` com o motivo “tarifa
+   bancária: a RPC não devolve as linhas”. Total do plano fica `sem_documento` nesta
+   etapa: a 063 não devolve o id do plano ativo; vira ferramenta nova na Etapa 2.
 7. **Bolsas.** Se a pessoa tem qualquer bolsa em centro fora da visão, `valor_vigente` e
    `total_global` ficam `null`, com nó de aviso “inclui centros fora da sua visão; veja as
    bolsas uma a uma”; as bolsas visíveis continuam uma a uma. Caixas que incluam pessoa
@@ -336,3 +338,60 @@ A 2ª rodada propôs `ref` direto para folha grande; a 3ª rodada corrige: **tod
 `listar_centros` com `motivos_falharam`/`falha_motivos`; `bolsas` com `total_global`,
 `aviso` e `itens_ocultos`. O total do plano segue `sem_documento` até a ferramenta da
 Etapa 2.
+
+## 4ª rodada (25/11/2026) — última rodada curta
+
+Os 6 achados da conferência da 3ª rodada foram corrigidos. **7 arquivos, 122 testes** em
+`tests/ai-tools-v2`; **814 testes passando + 19 ignorados (833)** na raiz. `npm run lint`:
+0 erros e 0 avisos. Node direto segue: `node -e "import('./shared/ai-tools/index.js')"` →
+`ok function 9`.
+
+### O que mudou
+
+1. **Máscara normalizada.** Dicionário e texto passam pela mesma normalização antes da
+   busca: NFC, espaços Unicode (NBSP, tab, etc.) viram um espaço, espaços repetidos viram
+   um, e a comparação ignora maiúsculas e acentos. A troca usa o mapa de posições e
+   substitui o trecho **original** (inclusive com NBSP/tab) por `⟦Pn⟧`. Teste cobre NBSP,
+   tab, dois espaços, maiúsculas e acentos nos dois sentidos.
+2. **Caminho na árvore grande.** Cada origem `livre` leva `chave` e `caminho` (índices das
+   partes desde a raiz). Duas folhas com a mesma `chave` (`linha:<id>` na 070) saem com
+   caminhos diferentes.
+3. **Tarifa.** O pacote não tenta mais casar rótulo/valor da linha. A tarifa sai sempre
+   `sem_documento` com o motivo “tarifa bancária: a RPC não devolve as linhas”; a lógica
+   de classificação pertence à RPC. O total do plano segue `sem_documento` (a 063 não
+   devolve o id do plano ativo; ferramenta nova na Etapa 2).
+4. **Números.** A exceção de código de centro vale só para `30.xxx`/`78.xxx` sem sinal e
+   sem `R$`; `-30.109` é número (e título com ele sem nó é recusado). Moeda aceita milhar
+   sem ponto (`R$ 1200`, `R$ 1200,50`) como um único candidato, sem dividir em `R$ 120` +
+   `0`.
+5. **Bolsas.** Só bolsa **vigente** (`vigente_hoje`) em centro oculto suprime o total da
+   pessoa; bolsa antiga não. Caixa só tem os totais suprimidos se algum item usa o valor
+   vigente (`valor_mensal` nulo) de pessoa nessa condição; item com valor mensal digitado
+   não suprime.
+6. **`calcular`.** A conversão para centavos usa a string decimal (`String(n)`, com
+   tratamento de notação exponencial), nunca `toFixed`. `90071992547409,90 −
+   90071992547409,00` devolve `0,90`, e os intermediários continuam em BigInt.
+
+### Mutantes desta rodada (aplicados, testados e revertidos)
+
+| Item | Mutante | Teste que pegou | Falha observada |
+|---|---|---|---|
+| 1 | Máscara voltando à busca exata (sem normalizar texto) | `mascara.test.js` — “normaliza NBSP, tab, dois espaços…” | “PESSOA NBSP EXEMPLO TAB UM” não foi mascarado |
+| 2 | Origem `livre` sem `caminho` | `ferramentas.test.js` — “duas folhas com a mesma chave…” | `caminho` veio `undefined` |
+| 3 | Tarifa apontando para o grupo (`origem no`) | `ferramentas.test.js` — “motivo real de déficit e tarifa” | tarifa veio `no`, não `sem_documento` |
+| 4 | Exceção de código de centro aceitando sinal | `blocos.test.js` — “código de centro com sinal no título” | `Desconto -30.109` foi aceito |
+| 4 | Moeda voltando a `\d{1,3}` | `texto.test.js` — “milhar sem ponto em moeda” | `R$ 1200` não foi marcado |
+| 5 | Qualquer bolsa oculta suprime o total | `ferramentas.test.js` — “bolsa antiga em centro oculto…” | total veio `null` |
+| 5 | Qualquer item de caixa com bolsa oculta suprime | `ferramentas.test.js` — “item de caixa com valor mensal digitado…” | totais vieram `null` |
+| 6 | Conversão por `toFixed` | `calcular.test.js` — “converte pela string decimal” | resultado veio `0,91`, não `0,90` |
+
+Cada mutante foi revertido; a suíte nova fechou em **122/122** e a raiz em **814 passando
++ 19 ignorados**.
+
+### Contrato §3/§6 — 4ª rodada
+
+- §3, `livre` acima de 200 nós: `{ tipo: 'livre', project_id, chave, caminho }`.
+- §3, tarifa: sempre `sem_documento` até a RPC devolver as linhas; o pacote não replica a
+  classificação da 069. Total do plano segue `sem_documento`.
+- Permanecem: `numero.contexto.origem`, `motivos_falharam`/`falha_motivos`, `bolsas` com
+  `total_global`/`aviso`/`itens_ocultos` e a regra de bolsa vigente em centro oculto.
