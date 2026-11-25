@@ -456,6 +456,103 @@ describe('tetos e falhas', () => {
   });
 });
 
+describe('2ª rodada: prazo, texto vazio e erros longos', () => {
+  it('resposta do modelo que chega depois do prazo não vira texto', async () => {
+    let relogio = 1_000;
+    const { sessao, chamadas } = sessaoFalsa();
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      inicio: 1_000,
+      prazo: 121_000,
+      agora: () => relogio,
+      sessao,
+      chamarModelo: async () => {
+        relogio = 125_000; // a resposta chegou depois do prazo
+        return { message: { role: 'assistant', content: 'texto atrasado' } };
+      },
+      emitir,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('tempo');
+    expect(emitir.eventos.map((e) => e.nome)).toEqual(['erro', 'fim']);
+    expect(emitir.eventos.some((e) => e.nome === 'texto')).toBe(false);
+    expect(chamadas.marcarTexto).toHaveLength(0);
+  });
+
+  it('content vazio ou só espaços vira erro modelo, não texto vazio', async () => {
+    const { sessao, chamadas } = sessaoFalsa();
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      sessao,
+      chamarModelo: modeloFalso([texto('   ')]),
+      emitir,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('modelo');
+    expect(emitir.eventos.map((e) => e.nome)).toEqual(['erro', 'fim']);
+    expect(emitir.eventos[0].dados.mensagem).toContain('não respondeu');
+    expect(chamadas.marcarTexto).toHaveLength(0);
+  });
+
+  it('marcarTexto com formato inválido vira erro interno', async () => {
+    const { sessao } = sessaoFalsa({
+      marcarTexto: () => ({ texto: 'ok', semOrigem: 'nada' }),
+    });
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      sessao,
+      chamarModelo: modeloFalso([texto('ok')]),
+      emitir,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('interno');
+    expect(emitir.eventos.map((e) => e.nome)).toEqual(['erro', 'fim']);
+    expect(emitir.eventos.some((e) => e.nome === 'texto')).toBe(false);
+  });
+
+  it('erro de ferramenta (inclusive exceção) é cortado em 500 caracteres', async () => {
+    const longo = 'e'.repeat(1_000);
+    const { sessao } = sessaoFalsa({
+      executar: (nome) => {
+        if (nome === 'listar_centros') throw new Error(longo);
+        return { id: 'r2', erro: longo };
+      },
+    });
+    const emitir = emissorFalso();
+    const modelo = modeloFalso([
+      { message: { role: 'assistant', content: '', tool_calls: [chamada('listar_centros')] } },
+      { message: { role: 'assistant', content: '', tool_calls: [chamada('explicar_livre')] } },
+      texto('ok'),
+    ]);
+
+    const r = await executarLaco({ ...BASE, sessao, chamarModelo: modelo, emitir });
+
+    expect(r.ok).toBe(true);
+    const passosErro = emitir.eventos.filter(
+      (e) => e.nome === 'passo' && e.dados.estado === 'erro',
+    );
+    expect(passosErro).toHaveLength(2);
+    for (const passo of passosErro) {
+      expect(passo.dados.erro.length).toBeLessThanOrEqual(500);
+      expect(passo.dados.erro.endsWith('…')).toBe(true);
+    }
+    for (const chamadaModelo of [modelo.chamadas[1], modelo.chamadas[2]]) {
+      const erroDevolvido = JSON.parse(chamadaModelo.mensagens.at(-1).content).erro;
+      expect(erroDevolvido.length).toBeLessThanOrEqual(500);
+      expect(erroDevolvido.endsWith('…')).toBe(true);
+    }
+  });
+});
+
 describe('nenhum conteúdo no console', () => {
   it('pergunta, argumentos, resultado, bloco e texto não aparecem em console.*', async () => {
     const espioes = ['log', 'info', 'warn', 'error', 'debug'].map((metodo) =>

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { criarRpc } from '../src/rpc.js';
 
 const SUPABASE = 'https://proj.supabase.co';
@@ -97,5 +97,89 @@ describe('rpc', () => {
     expect(r.data).toBeNull();
     expect(r.error.codigo).toBe('sem_login');
     expect(fetchImpl.chamadas).toHaveLength(0);
+  });
+
+  it('manda um AbortSignal no fetch', async () => {
+    const fetchImpl = fetchFalso(json({ ok: true }));
+    await rpcCom(fetchImpl)('resumo_projetos_v2', {});
+    expect(fetchImpl.chamadas[0].init.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('corpo da resposta e desconexão', () => {
+  it('200 com corpo vazio é resposta_invalida', async () => {
+    const rpc = rpcCom(fetchFalso(new Response('', { status: 200 })));
+    const r = await rpc('resumo_projetos_v2', {});
+    expect(r.data).toBeNull();
+    expect(r.error.codigo).toBe('resposta_invalida');
+  });
+
+  it('200 com leitura interrompida devolve rede, nunca error null', async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => {
+        throw new TypeError('terminated');
+      },
+    });
+    const r = await rpcCom(fetchImpl)('resumo_projetos_v2', {});
+    expect(r.data).toBeNull();
+    expect(r.error.codigo).toBe('rede');
+  });
+
+  it('timeout na leitura do corpo devolve tempo', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = async () => ({
+        ok: true,
+        status: 200,
+        text: () => new Promise(() => {}),
+      });
+      const rpc = criarRpc({
+        supabaseUrl: SUPABASE,
+        anonKey: ANON,
+        jwt: JWT,
+        fetchImpl,
+        prazo: Date.now() + 50,
+      });
+      const promessa = rpc('resumo_projetos_v2', {});
+      await vi.advanceTimersByTimeAsync(60);
+      const r = await promessa;
+      expect(r.data).toBeNull();
+      expect(r.error.codigo).toBe('tempo');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('desconexão aborta o fetch e devolve abortado', async () => {
+    const controle = new AbortController();
+    let sinalDoFetch;
+    const fetchImpl = async (_url, init) => {
+      sinalDoFetch = init.signal;
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    };
+    const rpc = criarRpc({
+      supabaseUrl: SUPABASE,
+      anonKey: ANON,
+      jwt: JWT,
+      fetchImpl,
+      sinal: controle.signal,
+    });
+
+    const promessa = rpc('resumo_projetos_v2', {});
+    await vi.waitFor(() => expect(sinalDoFetch).toBeDefined());
+    controle.abort();
+    expect(sinalDoFetch.aborted).toBe(true);
+
+    const r = await promessa;
+    expect(r.data).toBeNull();
+    expect(r.error.codigo).toBe('abortado');
   });
 });

@@ -119,3 +119,32 @@ describe('limite diário', () => {
     expect(tetoDoAmbiente('10')).toBe(10);
   });
 });
+
+describe('prazo e desconexão', () => {
+  it('prazo vencido devolve tempo sem esperar o KV', async () => {
+    const kv = {
+      get: () => new Promise(() => {}),
+      put: () => new Promise(() => {}),
+    };
+    const r = await consumir({ kv, userId: 'u1', agora: () => 1_000, prazo: 500 });
+    expect(r.permitido).toBe(false);
+    expect(r.codigo).toBe('tempo');
+  });
+
+  it('desconexão devolve abortado sem esperar o KV', async () => {
+    const controle = new AbortController();
+    controle.abort();
+    const kv = {
+      get: () => new Promise(() => {}),
+      put: () => new Promise(() => {}),
+    };
+    const r = await consumir({
+      kv,
+      userId: 'u1',
+      agora: () => 1_000,
+      sinal: controle.signal,
+    });
+    expect(r.permitido).toBe(false);
+    expect(r.codigo).toBe('abortado');
+  });
+});

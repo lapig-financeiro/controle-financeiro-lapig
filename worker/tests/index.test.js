@@ -55,6 +55,8 @@ function fetchAmbiente({
   ollama = [],
   statusOllama = 200,
   corpoOllama,
+  ollamaResposta,
+  ollamaPendente,
 } = {}) {
   const chamadas = [];
   const fila = ollama.slice();
@@ -71,6 +73,16 @@ function fetchAmbiente({
     }
     if (url === 'https://ollama.com/api/chat') {
       if (statusOllama !== 200) return new Response('', { status: statusOllama });
+      if (ollamaPendente) {
+        return new Promise((_resolve, reject) => {
+          init.signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('aborted', 'AbortError')),
+            { once: true },
+          );
+        });
+      }
+      if (ollamaResposta !== undefined) return ollamaResposta;
       if (corpoOllama !== undefined) {
         return typeof corpoOllama === 'string'
           ? new Response(corpoOllama, { status: 200 })
@@ -150,12 +162,14 @@ afterEach(() => {
 async function chamarWorker({
   corpo,
   corpoBruto,
+  corpoStream,
   metodo = 'POST',
   caminho = '/analise',
   jwt = 'jwt-bom',
   origem = ORIGEM,
   env = {},
   fetchFalso,
+  sinalRequisicao,
 } = {}) {
   const dublê = fetchFalso ?? fetchAmbiente();
   vi.stubGlobal('fetch', dublê);
@@ -168,7 +182,7 @@ async function chamarWorker({
   };
 
   const headers = {};
-  if (corpo !== undefined || corpoBruto !== undefined) {
+  if (corpo !== undefined || corpoBruto !== undefined || corpoStream !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
   if (jwt) headers.Authorization = `Bearer ${jwt}`;
@@ -176,14 +190,16 @@ async function chamarWorker({
 
   let body;
   if (metodo === 'POST') {
-    body = corpoBruto !== undefined ? corpoBruto : JSON.stringify(corpo ?? {});
+    if (corpoStream !== undefined) body = corpoStream;
+    else if (corpoBruto !== undefined) body = corpoBruto;
+    else body = JSON.stringify(corpo ?? {});
   }
 
-  const request = new Request(`https://worker.local${caminho}`, {
-    method: metodo,
-    headers,
-    body,
-  });
+  const init = { method: metodo, headers, body };
+  if (corpoStream !== undefined) init.duplex = 'half';
+  if (sinalRequisicao) init.signal = sinalRequisicao;
+
+  const request = new Request(`https://worker.local${caminho}`, init);
 
   const resposta = await worker.fetch(request, { ...ENV, ANALISE_USO: kv, ...env }, ctx);
 
@@ -459,6 +475,201 @@ describe('validação do corpo', () => {
   it('JSON quebrado é 400', async () => {
     const { resposta } = await chamarWorker({ corpoBruto: '{quebrado' });
     expect(resposta.status).toBe(400);
+  });
+});
+
+describe('2ª rodada: corpo, prazo e cancelamento', () => {
+  function contextoFalso() {
+    return {
+      promessas: [],
+      waitUntil(promessa) {
+        this.promessas.push(promessa);
+      },
+    };
+  }
+
+  function requisicaoAnalise({ corpo = { pergunta: 'x' }, sinal } = {}) {
+    return new Request('https://worker.local/analise', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer jwt-bom',
+        Origin: ORIGEM,
+      },
+      body: JSON.stringify(corpo),
+      signal: sinal,
+    });
+  }
+
+  it('corpo acima de 100.000 bytes em stream é 413 antes de desserializar', async () => {
+    const fetchFalso = fetchAmbiente();
+    const fluxo = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"pergunta":"'));
+        controller.enqueue(new TextEncoder().encode('a'.repeat(120_000)));
+        // Sem fechar o JSON: se o código tentasse desserializar, seria 400.
+        controller.close();
+      },
+    });
+
+    const { resposta } = await chamarWorker({ corpoStream: fluxo, fetchFalso });
+
+    expect(resposta.status).toBe(413);
+    expect(await resposta.json()).toMatchObject({
+      erro: expect.stringContaining('100.000'),
+    });
+    expect(fetchFalso.chamadas).toHaveLength(0);
+  });
+
+  it('fecha o stream com erro tempo e fim mesmo com a sessão pendurada', async () => {
+    vi.useFakeTimers();
+    try {
+      const sessao = sessaoFalsa();
+      sessao.sessao.executar = () => new Promise(() => {});
+      pacote.criarSessao.mockReturnValue(sessao.sessao);
+
+      const fetchFalso = fetchAmbiente({
+        ollama: [
+          {
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [chamada('listar_centros')],
+            },
+          },
+        ],
+      });
+      vi.stubGlobal('fetch', fetchFalso);
+
+      const ctx = contextoFalso();
+      const resposta = await worker.fetch(
+        requisicaoAnalise(),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      );
+      const leitura = resposta.text();
+
+      await vi.advanceTimersByTimeAsync(120_001);
+
+      const texto = await leitura;
+      const ev = eventos(texto);
+      expect(ev.map((e) => e.nome)).toEqual(['passo', 'erro', 'fim']);
+      expect(ev[1].dados.codigo).toBe('tempo');
+      expect(ev[2].dados.rodadas).toBe(1);
+      expect(ev[2].dados.ms).toBeGreaterThanOrEqual(120_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('desconectar durante a chamada ao modelo aborta o fetch e encerra o laço', async () => {
+    const controle = new AbortController();
+    const fetchFalso = fetchAmbiente({ ollamaPendente: true });
+    vi.stubGlobal('fetch', fetchFalso);
+
+    const ctx = contextoFalso();
+    const resposta = await worker.fetch(
+      requisicaoAnalise({ sinal: controle.signal }),
+      { ...ENV, ANALISE_USO: kv },
+      ctx,
+    );
+    const leitura = resposta.text();
+
+    await vi.waitFor(() => {
+      expect(
+        fetchFalso.chamadas.some((c) => c.url === 'https://ollama.com/api/chat'),
+      ).toBe(true);
+    });
+    controle.abort();
+
+    const texto = await leitura;
+    await Promise.all(ctx.promessas);
+
+    expect(texto).toBe('');
+    const pedido = fetchFalso.chamadas.find(
+      (c) => c.url === 'https://ollama.com/api/chat',
+    );
+    expect(pedido.init.signal.aborted).toBe(true);
+  });
+
+  it('desconectar durante uma RPC aborta o fetch e encerra o laço', async () => {
+    const controle = new AbortController();
+    let contexto;
+    const sessao = sessaoFalsa();
+    sessao.sessao.executar = async (nome, args) => {
+      const r = await contexto.rpc(nome, args);
+      return r.error
+        ? { id: 'r1', erro: r.error.mensagem }
+        : { id: 'r1', paraModelo: JSON.stringify(r.data) };
+    };
+    pacote.criarSessao.mockImplementation((ctx) => {
+      contexto = ctx;
+      return sessao.sessao;
+    });
+
+    const fetchFalso = fetchAmbiente({
+      ollama: [
+        {
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [chamada('listar_centros')],
+          },
+        },
+      ],
+      rpc: (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('aborted', 'AbortError')),
+            { once: true },
+          );
+        }),
+    });
+    vi.stubGlobal('fetch', fetchFalso);
+
+    const ctx = contextoFalso();
+    const resposta = await worker.fetch(
+      requisicaoAnalise({ sinal: controle.signal }),
+      { ...ENV, ANALISE_USO: kv },
+      ctx,
+    );
+    const leitura = resposta.text();
+
+    await vi.waitFor(() => {
+      expect(fetchFalso.chamadas.some((c) => c.url.includes('/rest/v1/rpc/'))).toBe(true);
+    });
+    controle.abort();
+
+    const texto = await leitura;
+    await Promise.all(ctx.promessas);
+
+    const ev = eventos(texto);
+    expect(ev.map((e) => e.nome)).toEqual(['passo']);
+    expect(ev[0].dados).toMatchObject({ ferramenta: 'listar_centros', estado: 'inicio' });
+    const chamadaRpc = fetchFalso.chamadas.find((c) => c.url.includes('/rest/v1/rpc/'));
+    expect(chamadaRpc.init.signal.aborted).toBe(true);
+  });
+
+  it('Ollama com corpo vazio vira erro modelo', async () => {
+    const fetchFalso = fetchAmbiente({ corpoOllama: '' });
+    const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
+    expect(eventos(texto).map((e) => e.nome)).toEqual(['erro', 'fim']);
+    expect(eventos(texto)[0].dados.codigo).toBe('modelo');
+  });
+
+  it('Ollama com corpo interrompido vira erro modelo', async () => {
+    const fetchFalso = fetchAmbiente({
+      ollamaResposta: {
+        ok: true,
+        status: 200,
+        text: async () => {
+          throw new TypeError('terminated');
+        },
+      },
+    });
+    const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
+    expect(eventos(texto)[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'modelo' } });
   });
 });
 

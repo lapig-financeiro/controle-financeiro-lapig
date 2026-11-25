@@ -5,6 +5,10 @@
    <json>` e uma linha em branco. `JSON.stringify` já escapa
    quebra de linha, então um texto do modelo com `\n` não parte
    o evento no meio — mas só se todo evento passar por aqui.
+
+   2ª rodada: as escritas passam por uma fila. O watchdog do prazo
+   pode emitir `erro`/`fim` enquanto o laço ainda está terminando
+   um `passo`; sem a fila, os dois writes podiam intercalar.
    ============================================================ */
 
 export const CABECALHOS_SSE = Object.freeze({
@@ -30,29 +34,42 @@ export function criarEmissor(writable) {
   const escritor = writable.getWriter();
   const codificador = new TextEncoder();
   let encerrado = false;
+  let fila = Promise.resolve();
+
+  function enfileirar(tarefa) {
+    const resultado = fila.then(tarefa, tarefa);
+    // A fila continua mesmo quando uma escrita falha; o resultado de cada
+    // tarefa é devolvido a quem chamou.
+    fila = resultado.catch(() => {});
+    return resultado;
+  }
 
   return {
-    async emitir(nome, dados) {
-      if (encerrado) return false;
-      try {
-        await escritor.write(codificador.encode(formatarEvento(nome, dados)));
-        return true;
-      } catch {
-        // Cliente foi embora (ou o stream já foi fechado). Não há o que
-        // registrar: o conteúdo do evento não vai para log nem em erro.
-        encerrado = true;
-        return false;
-      }
+    emitir(nome, dados) {
+      return enfileirar(async () => {
+        if (encerrado) return false;
+        try {
+          await escritor.write(codificador.encode(formatarEvento(nome, dados)));
+          return true;
+        } catch {
+          // Cliente foi embora (ou o stream já foi fechado). Não há o que
+          // registrar: o conteúdo do evento não vai para log nem em erro.
+          encerrado = true;
+          return false;
+        }
+      });
     },
 
-    async fechar() {
-      if (encerrado) return;
-      encerrado = true;
-      try {
-        await escritor.close();
-      } catch {
-        // Já estava fechado do outro lado; nada a fazer.
-      }
+    fechar() {
+      return enfileirar(async () => {
+        if (encerrado) return;
+        encerrado = true;
+        try {
+          await escritor.close();
+        } catch {
+          // Já estava fechado do outro lado; nada a fazer.
+        }
+      });
     },
 
     get encerrado() {

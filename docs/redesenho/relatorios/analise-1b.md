@@ -190,3 +190,109 @@ ficou em 5 ms de parede (22 ms no log do Wrangler).
    repositório. Se o time preferir placeholders até o deploy, é só trocar antes de publicar.
 8. **`docs/redesenho/ESTADO.md` não foi tocado**: a lista de arquivos da tarefa não o inclui; o fecho
    e a atualização do ESTADO são do Claude, conforme o plano §4.
+
+## 2ª rodada (revisão)
+
+Data: 25/11/2026. Branch `redesenho/analise-1-b`. Commit novo:
+`fix(analise): Worker — 2ª rodada da revisão`. Só `worker/` e este relatório foram tocados.
+
+### O que mudou
+
+1. **Prazo único de 120 s desde o começo do `POST /analise`.** O `index.js` cria
+   `inicio = Date.now()` e `prazo = inicio + 120_000` antes de ler o corpo e de autenticar. O `prazo`
+   (timestamp) desce para `autenticar`, `consumir`, `criarRpc`, `chamarModelo` e `executarLaco`. Cada
+   um usa `timeoutEfetivo(prazo, tetoPróprio)`: o menor entre o teto da chamada (10 s auth/limite,
+   30 s RPC, 90 s modelo) e o tempo que falta — inclusive a leitura do corpo das respostas, que
+   antes escapava do relógio no `auth.js`. Um watchdog no `analisar` fecha o stream com `erro`
+   `tempo` + `fim` no prazo, mesmo que uma chamada pendurada ignore o `AbortSignal`; as escritas
+   passam por uma fila no `sse.js` para o `erro`/`fim` do watchdog não intercalar com um `passo`.
+   O `fim.ms` agora conta do começo do POST, não do começo do laço.
+2. **Cancelamento real.** O `AbortSignal` da requisição chega a todos os `fetch`: o `sinalComPrazo`
+   combina a desconexão do cliente, o prazo e o teto da chamada; `corrida` desiste de uma promessa
+   pendurada assim que o sinal aborta. Auth, RPC, KV (que não aceita signal, por isso é corrido
+   contra o relógio) e modelo usam o mesmo caminho. **Compatibilidade:** o `wrangler.toml` passou de
+   `compatibility_date = "2026-11-01"` para **`"2026-11-17"`**. Fonte: o registro de compatibilidade
+   embutido no binário do workerd instalado em
+   `worker/node_modules/@cloudflare/workerd-windows-64/bin/workerd.exe` (workerd `1.20261123.1`)
+   lista `enable_request_signal` / `disable_request_signal` sob a data `2026-11-17`; antes dela o
+   `request.signal` não é ligado por padrão. Não chutei o nome: ele está no próprio binário e o
+   `worker/tests/config.test.js` trava a data.
+3. **Corpo de resposta.** `rpc.js` mantém o sinal vivo durante `resposta.text()`: 200 vazio →
+   `resposta_invalida`; stream interrompido → `rede`; timeout → `tempo`; desconexão → `abortado`.
+   Nunca `{ data: null, error: null }`. `auth.js` e o chamador do modelo seguem a mesma regra
+   (200 vazio/inválido → `interno`/`modelo`; interrupção → `interno`/`modelo`; timeout → `tempo`).
+4. **Teto do corpo de 100.000 bytes contado durante a leitura.** `lerCorpoComTeto` lê o
+   `ReadableStream` do `request` em pedaços, soma `byteLength` e, ao passar do teto, cancela o
+   leitor e responde **413 antes de `JSON.parse`**. O `Content-Length` não é mais consultado.
+5. **Resposta final vazia e `marcarTexto` inválido.** `content` vazio ou só espaços, sem
+   `tool_calls`, vira `erro` `modelo` ("O modelo não respondeu."), não `texto: ""`. Se
+   `marcarTexto` devolver algo fora do contrato §4 (`texto` não-string, `semOrigem` não-lista ou
+   faixa com `inicio`/`fim` inválidos), vira `erro` `interno`, sem `texto`/`fim` de sucesso.
+6. **Erro de ferramenta limitado a 500 caracteres.** `cortarErro` vale para erro devolvido,
+   exceção, argumento inválido e chamada sem nome, tanto no evento `passo` quanto no
+   `{ role: 'tool', content }` que volta ao modelo (com `…` no fim, exatamente 500).
+
+### Testes
+
+```
+npm --prefix worker test   → 8 arquivos, 99 testes, todos verdes
+npm run lint               → limpo
+npm test                   → 44 arquivos passando + 1 pulado; 692 testes passando + 19 pulados (711)
+```
+
+Novos testes desta rodada:
+
+- `prazo.test.js`: menor entre teto e restante, sinal que dispara no prazo, desconexão, `corrida`
+  que desiste de promessa pendurada.
+- `config.test.js`: `compatibility_date >= 2026-11-17` (ou a flag `enable_request_signal`).
+- `auth.test.js`: 200 vazio/JSON inválido/leitura interrompida → `interno`; timeout na leitura →
+  `tempo`; desconexão → `abortado` e o `init.signal` do fetch abortado.
+- `rpc.test.js`: 200 vazio → `resposta_invalida`; leitura interrompida → `rede`; timeout na leitura
+  → `tempo`; desconexão → `abortado`; `init.signal` presente.
+- `limite.test.js`: prazo vencido e desconexão não esperam o KV.
+- `laco.test.js`: resposta do modelo depois do prazo não gera `texto`; `content` vazio vira
+  `erro` `modelo`; `marcarTexto` inválido vira `erro` `interno`; erro de ferramenta (inclusive
+  exceção) cortado em 500 no `passo` e no modelo.
+- `index.test.js`: corpo de 120 KB em stream → 413 (JSON quebrado, provando que não desserializou);
+  watchdog fecha o stream com `erro` `tempo` + `fim` com a sessão pendurada; desconectar durante o
+  modelo aborta o `fetch` e não emite `texto`; desconectar durante uma RPC aborta o `fetch` e para o
+  laço; corpo vazio/interrompido do Ollama → `erro` `modelo`.
+
+`wrangler dev` com o novo `compatibility_date` subiu em `127.0.0.1:8802` (stub temporário do
+`shared/ai-tools` + `.dev.vars` com valores falsos) e `GET /saude` respondeu **200
+`{"ok":true}`**, sem aviso de data; o Wrangler marcou `GET /saude 200 OK (25ms)`. O stub e o
+`.dev.vars` foram removidos.
+
+### Mutantes
+
+Cada um foi aplicado de verdade, rodado contra o teste indicado e revertido; os hashes dos
+arquivos restaurados foram conferidos e a suíte voltou a 99/99.
+
+| # | Item | Mutante | Teste que pega | O que falhou |
+|---|---|---|---|---|
+| 1 | Prazo | removida a checagem `expirado()` depois da resposta do modelo | `laco.test.js` › "resposta do modelo que chega depois do prazo não vira texto" | emitiu `texto atrasado` e chamou `marcarTexto` |
+| 2a | Cancelamento (config) | `compatibility_date` de volta para `2026-11-01` | `config.test.js` › "liga o sinal de desconexão do cliente" | `data >= 2026-11-17` falso |
+| 2b | Cancelamento (auth) | `pedirJson` sem `sinal` no `sinalComPrazo` | `auth.test.js` › "desconexão aborta o fetch de login" | `sinalDoFetch.aborted` ficou `false` |
+| 3 | Corpo de resposta | 200 vazio devolvendo `{ data: null, error: null }` | `rpc.test.js` › "200 com corpo vazio é resposta_invalida" | `r.error` era `null` |
+| 4 | Teto do corpo | `lerCorpoComTeto` voltando a `request.json()` | `index.test.js` › "corpo acima de 100.000 bytes em stream é 413" | respondeu 400 em vez de 413 |
+| 5a | Texto vazio | removida a checagem `if (!conteudo)` | `laco.test.js` › "content vazio ou só espaços vira erro modelo" | `ok: true`, com `texto: ""` |
+| 5b | Formato de `marcarTexto` | removida a checagem `textoMarcadoValido` | `laco.test.js` › "marcarTexto com formato inválido vira erro interno" | `ok: true`, sem erro |
+| 6 | Erro de ferramenta | `cortarErro` devolvendo o texto inteiro | `laco.test.js` › "erro de ferramenta ... 500 caracteres" | erro com 1.000 caracteres no `passo` |
+
+### Fica de fora, de propósito
+
+- **KV → Durable Object.** Fica para depois, como decidido. O KV é eventualmente consistente: a
+  leitura do contador pode vir de cache de outra região por até ~60 s. Com um único usuário admin,
+  isso aceita passar de 50 por poucas perguntas; é freio de fatura, não segurança. O README foi
+  atualizado com essa ressalva.
+- O **stub do `shared/ai-tools`** continua sendo o motivo de `wrangler dev` não montar nesta
+  branch isolada; foi usado só no teste e removido. Depois da junção, o comando funciona direto.
+- O teste do watchdog usa **timers falsos**; não há espera real de 120 s na suíte. A desconexão real
+  do cliente no workerd não foi exercitada no `wrangler dev` (não há como simular a queda da aba
+  pelo `curl`); a evidência é o registro de `enable_request_signal` no binário + o teste de config
+  + os testes de sinal em auth/RPC/modelo/índice.
+- `think: 'high'` continua sem conferência contra a API real, como na 1ª rodada (proibido chamar o
+  Ollama).
+- As medidas de CPU da 1ª rodada seguem valendo como aproximação; a 2ª rodada acrescenta um
+  relógio/`AbortSignal` por chamada (custo desprezível) e não repetiu a medição no `wrangler dev`,
+  que continua sem expor CPU.

@@ -21,7 +21,9 @@ Eventos do `/analise`: `passo`, `bloco`, `texto`, `fim`, `erro` (contrato §7).
 Autenticação recusada chega como evento `erro` (`sem_login` / `sem_permissao`)
 dentro do stream, não como 401/403: a tela tem um caminho só para ler erro.
 Corpo inválido (JSON quebrado, pergunta vazia ou acima de 2.000 caracteres)
-responde 400 antes de abrir o stream.
+responde 400 antes de abrir o stream. O corpo é lido com teto de **100.000
+bytes contados durante a leitura** (sem confiar em `Content-Length`): acima
+disso, a leitura é cancelada e a resposta é 413 antes de desserializar.
 
 CORS: só `https://lapig-financeiro.github.io` e `http://localhost:<porta>`.
 Qualquer outra origem recebe 403, sem cabeçalho de liberação.
@@ -40,6 +42,11 @@ git. Para exercitar o `/analise` local sem chamar a produção, aponte
 `SUPABASE_URL`/`SUPABASE_ANON_KEY` para um projeto de teste; com os valores do
 `wrangler.toml` (que são os públicos do site) o Worker consulta a produção, mas
 só depois de um login válido e dentro do RLS.
+
+O `compatibility_date` é **2026-11-17**: é a data em que o workerd (1.20261123.1,
+instalado em `worker/node_modules`) liga por padrão a compatibilidade
+`enable_request_signal`, que faz `request.signal` abortar quando o cliente
+desconecta. Sem ela, o fetch continuaria rodando para uma tela que já fechou.
 
 ## Variáveis e segredo
 
@@ -69,19 +76,31 @@ pode ainda não existir na branch; os outros módulos são testados direto.
 
 ## Tetos e o que o Worker NÃO faz
 
-- 8 rodadas de modelo, 30 chamadas de ferramenta, 60.000 caracteres por
-  resultado (acima disso volta erro curto ao modelo pedindo filtro) e 120 s no
-  total. Estourar vira `erro` (`tempo` ou `interno`) e `fim`.
+- **Um prazo só, de 120 s**, contado do início do `POST /analise` (antes da
+  autenticação). Ele é um timestamp passado a auth, limite, cada RPC e cada
+  chamada ao modelo; cada um usa o menor entre o próprio teto e o restante. Um
+  watchdog fecha o stream com `erro` `tempo` + `fim` mesmo que uma chamada
+  pendure e ignore o `AbortSignal`.
+- 8 rodadas de modelo, 30 chamadas de ferramenta e 60.000 caracteres por
+  resultado (acima disso volta erro curto ao modelo pedindo filtro). Estourar
+  vira `erro` (`tempo` ou `interno`) e `fim`.
 - 50 perguntas por login por dia, contadas no começo. Acima disso, `erro`
-  `limite`. O KV não é atômico: duas requisições simultâneas podem contar uma
-  a menos. É freio de fatura, não segurança.
+  `limite`. O KV não é atômico (duas requisições simultâneas podem contar uma a
+  menos) e a leitura pode vir de cache de outra região por até ~60 s. Com um
+  único admin, isso pode deixar passar algumas perguntas acima de 50. É freio
+  de fatura, não segurança.
 - Não loga pergunta, argumento, resultado, bloco nem texto. `console.*` não é
   usado nem em erro; a mensagem que chega à tela é genérica.
 - Não tem `service_role`, não escreve no banco, não faz cálculo financeiro e
   não decide número: todo valor vem de RPC, e o bloco só sai depois de
   `sessao.criarBloco` + `sessao.reidratar`.
 - O texto do modelo sempre passa por `sessao.marcarTexto`; o texto não é
-  reidratado (só o bloco é).
-- Se o cliente desconectar, o laço para (sinal da requisição + falha de
-  escrita no stream).
+  reidratado (só o bloco é). `content` vazio ou só espaços vira `erro` `modelo`
+  ("o modelo não respondeu"), não `texto: ""`; formato inválido de
+  `marcarTexto` vira `erro` `interno`.
+- Erro de ferramenta (inclusive exceção) é cortado em **500 caracteres** tanto
+  no evento `passo` quanto no que volta ao modelo.
+- Se o cliente desconectar, o `AbortSignal` da requisição chega a **todos** os
+  fetch (auth, RPC e modelo) e o laço para; a falha de escrita no stream é a
+  segunda detecção.
 - Não publica: deploy é do Claude, com o ok do Victor.

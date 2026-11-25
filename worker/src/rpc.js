@@ -11,18 +11,39 @@
    laço mandar o erro ao modelo. Lançar aqui derrubaria a análise
    inteira por causa de uma consulta que o modelo poderia
    contornar com um filtro menor.
+
+   2ª rodada: o prazo único e a desconexão valem para o fetch e
+   para a leitura do corpo. 200 vazio é `resposta_invalida`; 200
+   interrompido é `rede`; timeout é `tempo`; desconexão é
+   `abortado`. Nunca `{ data: null, error: null }`.
    ============================================================ */
 
-function erroRede(nome, causa) {
-  const detalhe = causa?.name === 'AbortError' ? 'demorou demais' : 'não chegou ao banco';
+import { corrida, motivoDoAborto, sinalComPrazo } from './prazo.js';
+
+function erroSinal(nome, codigo) {
   return {
     data: null,
     error: {
-      codigo: causa?.name === 'AbortError' ? 'tempo' : 'rede',
-      mensagem: `A consulta ${nome} ${detalhe}.`,
-      causa: causa?.message ?? null,
+      codigo,
+      mensagem:
+        codigo === 'abortado'
+          ? `A consulta ${nome} foi cancelada.`
+          : `A consulta ${nome} demorou demais.`,
     },
   };
+}
+
+function erroLeitura(nome, causa, { abortado, status } = {}) {
+  const error = {
+    codigo: abortado ? 'abortado' : causa?.name === 'AbortError' ? 'tempo' : 'rede',
+    mensagem:
+      causa?.name === 'AbortError'
+        ? `A consulta ${nome} foi interrompida.`
+        : `A consulta ${nome} não chegou ao banco.`,
+    causa: causa?.message ?? null,
+  };
+  if (status !== undefined) error.status = status;
+  return { data: null, error };
 }
 
 /**
@@ -38,6 +59,9 @@ export function criarRpc({
   jwt,
   fetchImpl = fetch,
   timeoutMs = 30_000,
+  prazo,
+  sinal,
+  agora = Date.now,
 }) {
   const base = String(supabaseUrl || '').replace(/\/+$/, '');
 
@@ -55,72 +79,106 @@ export function criarRpc({
       };
     }
 
-    const controle = new AbortController();
-    const relogio = setTimeout(() => controle.abort(), timeoutMs);
+    const combo = sinalComPrazo({ sinal, prazo, tetoMs: timeoutMs, agora });
 
-    let resposta;
     try {
-      resposta = await fetchImpl(`${base}/rest/v1/rpc/${encodeURIComponent(nome)}`, {
-        method: 'POST',
-        headers: {
-          apikey: anonKey,
-          Authorization: `Bearer ${jwt}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(args ?? {}),
-        signal: controle.signal,
-      });
-    } catch (e) {
-      clearTimeout(relogio);
-      return erroRede(nome, e);
-    }
+      const chamada = await corrida(
+        Promise.resolve().then(() =>
+          fetchImpl(`${base}/rest/v1/rpc/${encodeURIComponent(nome)}`, {
+            method: 'POST',
+            headers: {
+              apikey: anonKey,
+              Authorization: `Bearer ${jwt}`,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify(args ?? {}),
+            signal: combo.signal,
+          }),
+        ),
+        { sinal: combo.signal },
+      );
 
-    let texto = '';
-    try {
-      texto = await resposta.text();
-    } catch {
-      texto = '';
-    } finally {
-      // O relógio cobre também a leitura do corpo: uma resposta que entrega
-      // cabeçalho e trava no meio não pode segurar o laço.
-      clearTimeout(relogio);
-    }
+      if (chamada.erro === 'sinal') {
+        return erroSinal(nome, motivoDoAborto({ sinal, prazo, agora }));
+      }
+      if (chamada.erro) {
+        if (combo.signal.aborted || chamada.causa?.name === 'AbortError') {
+          return erroSinal(nome, motivoDoAborto({ sinal, prazo, agora }));
+        }
+        return erroLeitura(nome, chamada.causa);
+      }
 
-    let corpo = null;
-    if (texto) {
+      const resposta = chamada.valor;
+
+      // A leitura do corpo fica dentro do mesmo sinal: stream interrompido não
+      // pode virar `{ data: null, error: null }` nem escapar do prazo.
+      const leitura = await corrida(
+        Promise.resolve().then(() => resposta.text()),
+        { sinal: combo.signal },
+      );
+      if (leitura.erro === 'sinal') {
+        return erroSinal(nome, motivoDoAborto({ sinal, prazo, agora }));
+      }
+      if (leitura.erro) {
+        if (combo.signal.aborted || leitura.causa?.name === 'AbortError') {
+          return erroSinal(nome, motivoDoAborto({ sinal, prazo, agora }));
+        }
+        return erroLeitura(nome, leitura.causa, { status: resposta.status });
+      }
+
+      const texto = leitura.valor;
+
+      if (!resposta.ok) {
+        let corpo = null;
+        if (texto) {
+          try {
+            corpo = JSON.parse(texto);
+          } catch {
+            corpo = null;
+          }
+        }
+        const bruto = corpo && (corpo.message || corpo.error_description || corpo.error);
+        return {
+          data: null,
+          error: {
+            codigo: (corpo && corpo.code) || `http_${resposta.status}`,
+            mensagem: typeof bruto === 'string' && bruto
+              ? bruto
+              : `A consulta ${nome} falhou (HTTP ${resposta.status}).`,
+            status: resposta.status,
+          },
+        };
+      }
+
+      if (typeof texto !== 'string' || texto.length === 0) {
+        return {
+          data: null,
+          error: {
+            codigo: 'resposta_invalida',
+            mensagem: `A consulta ${nome} devolveu corpo vazio.`,
+            status: resposta.status,
+          },
+        };
+      }
+
+      let corpo;
       try {
         corpo = JSON.parse(texto);
       } catch {
-        corpo = null;
+        return {
+          data: null,
+          error: {
+            codigo: 'resposta_invalida',
+            mensagem: `A consulta ${nome} devolveu uma resposta que não é JSON.`,
+            status: resposta.status,
+          },
+        };
       }
-    }
 
-    if (!resposta.ok) {
-      const bruto = corpo && (corpo.message || corpo.error_description || corpo.error);
-      return {
-        data: null,
-        error: {
-          codigo: (corpo && corpo.code) || `http_${resposta.status}`,
-          mensagem: typeof bruto === 'string' && bruto
-            ? bruto
-            : `A consulta ${nome} falhou (HTTP ${resposta.status}).`,
-          status: resposta.status,
-        },
-      };
+      return { data: corpo, error: null };
+    } finally {
+      combo.limpar();
     }
-
-    if (texto && corpo === null) {
-      return {
-        data: null,
-        error: {
-          codigo: 'resposta_invalida',
-          mensagem: `A consulta ${nome} devolveu uma resposta que não é JSON.`,
-          status: resposta.status,
-        },
-      };
-    }
-
-    return { data: corpo, error: null };
   };
 }

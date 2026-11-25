@@ -8,10 +8,17 @@
    papel, o Worker também não leria.
 
    Distinção deliberada entre "esse login não vale" (`sem_login`),
-   "esse login não pode usar a Análise" (`sem_permissao`) e "a
-   infraestrutura não respondeu" (`interno`). Trocar os três por
-   uma mensagem só faria o admin caçar problema no lugar errado.
+   "esse login não pode usar a Análise" (`sem_permissao`), "a
+   infraestrutura não respondeu" (`interno`), "demorou" (`tempo`)
+   e "o cliente desconectou" (`abortado`).
+
+   2ª rodada: o prazo único do POST e o AbortSignal da desconexão
+   chegam ao fetch E à leitura do corpo. Corpo de 200 vazio ou
+   interrompido não vira `sem_login`; é `interno` (ou `tempo` se
+   o relógio venceu).
    ============================================================ */
+
+import { corrida, motivoDoAborto, sinalComPrazo } from './prazo.js';
 
 export const PAPEIS_PADRAO = Object.freeze(['admin']);
 
@@ -52,13 +59,76 @@ function interno(mensagem) {
   return { ok: false, codigo: 'interno', mensagem };
 }
 
-async function buscar(fetchImpl, url, init, timeoutMs) {
-  const controle = new AbortController();
-  const relogio = setTimeout(() => controle.abort(), timeoutMs);
+function falhaDoPedido(erro) {
+  if (erro === 'abortado') {
+    return { ok: false, codigo: 'abortado', mensagem: 'A requisição foi cancelada.' };
+  }
+  if (erro === 'tempo') {
+    return {
+      ok: false,
+      codigo: 'tempo',
+      mensagem: 'A validação do login demorou demais. Tente de novo.',
+    };
+  }
+  return interno('Não foi possível validar o login agora.');
+}
+
+/**
+ * Um GET que devolve JSON, com o prazo e a desconexão valendo do começo ao fim
+ * da leitura do corpo.
+ *
+ * @returns {Promise<{dados?: unknown, semLogin?: true,
+ *                    erro?: 'abortado'|'tempo'|'interno'}>}
+ */
+async function pedirJson({ url, cabecalhos, fetchImpl, prazo, sinal, timeoutMs, agora }) {
+  const combo = sinalComPrazo({ sinal, prazo, tetoMs: timeoutMs, agora });
+
   try {
-    return await fetchImpl(url, { ...init, signal: controle.signal });
+    const chamada = await corrida(
+      Promise.resolve().then(() =>
+        fetchImpl(url, { method: 'GET', headers: cabecalhos, signal: combo.signal }),
+      ),
+      { sinal: combo.signal },
+    );
+
+    if (chamada.erro === 'sinal') {
+      return { erro: motivoDoAborto({ sinal, prazo, agora }) };
+    }
+    if (chamada.erro) {
+      if (combo.signal.aborted || chamada.causa?.name === 'AbortError') {
+        return { erro: motivoDoAborto({ sinal, prazo, agora }) };
+      }
+      return { erro: 'interno' };
+    }
+
+    const resposta = chamada.valor;
+    if (resposta.status === 401 || resposta.status === 403) return { semLogin: true };
+    if (!resposta.ok) return { erro: 'interno' };
+
+    const leitura = await corrida(
+      Promise.resolve().then(() => resposta.text()),
+      { sinal: combo.signal },
+    );
+    if (leitura.erro === 'sinal') {
+      return { erro: motivoDoAborto({ sinal, prazo, agora }) };
+    }
+    if (leitura.erro) {
+      if (combo.signal.aborted || leitura.causa?.name === 'AbortError') {
+        return { erro: motivoDoAborto({ sinal, prazo, agora }) };
+      }
+      return { erro: 'interno' };
+    }
+
+    const texto = leitura.valor;
+    if (typeof texto !== 'string' || !texto.trim()) return { erro: 'interno' };
+
+    try {
+      return { dados: JSON.parse(texto) };
+    } catch {
+      return { erro: 'interno' };
+    }
   } finally {
-    clearTimeout(relogio);
+    combo.limpar();
   }
 }
 
@@ -66,7 +136,7 @@ async function buscar(fetchImpl, url, init, timeoutMs) {
  * Valida o JWT e o papel.
  *
  * @returns {Promise<{ok: true, usuario: {id: string, email: string|null}, papel: string}
- *                  | {ok: false, codigo: 'sem_login'|'sem_permissao'|'interno'|'tempo',
+ *                  | {ok: false, codigo: 'sem_login'|'sem_permissao'|'interno'|'tempo'|'abortado',
  *                     mensagem: string}>}
  */
 export async function autenticar({
@@ -76,6 +146,9 @@ export async function autenticar({
   papeis = PAPEIS_PADRAO,
   fetchImpl = fetch,
   timeoutMs = 10_000,
+  prazo,
+  sinal,
+  agora = Date.now,
 }) {
   if (!jwt) return semLogin();
 
@@ -90,54 +163,46 @@ export async function autenticar({
     Accept: 'application/json',
   };
 
-  let resposta;
-  try {
-    resposta = await buscar(
-      fetchImpl,
-      `${base}/auth/v1/user`,
-      { method: 'GET', headers: cabecalhos },
-      timeoutMs,
-    );
-  } catch (e) {
-    return e?.name === 'AbortError'
-      ? { ok: false, codigo: 'tempo', mensagem: 'A validação do login demorou demais. Tente de novo.' }
-      : interno('Não foi possível validar o login agora.');
+  const usuario = await pedirJson({
+    url: `${base}/auth/v1/user`,
+    cabecalhos,
+    fetchImpl,
+    prazo,
+    sinal,
+    timeoutMs,
+    agora,
+  });
+
+  if (usuario.semLogin) return semLogin();
+  if (usuario.erro) return falhaDoPedido(usuario.erro);
+  if (!usuario.dados || typeof usuario.dados.id !== 'string' || !usuario.dados.id) {
+    return interno('A validação do login devolveu uma resposta inválida.');
   }
 
-  if (resposta.status === 401 || resposta.status === 403) return semLogin();
-  if (!resposta.ok) return interno('Não foi possível validar o login agora.');
+  const respostaPapel = await pedirJson({
+    url: `${base}/rest/v1/app_users?select=role&user_id=eq.${encodeURIComponent(usuario.dados.id)}`,
+    cabecalhos,
+    fetchImpl,
+    prazo,
+    sinal,
+    timeoutMs,
+    agora,
+  });
 
-  let usuario;
-  try {
-    usuario = await resposta.json();
-  } catch {
-    return semLogin();
-  }
-  if (!usuario || typeof usuario.id !== 'string' || !usuario.id) return semLogin();
-
-  let respostaPapel;
-  try {
-    respostaPapel = await buscar(
-      fetchImpl,
-      `${base}/rest/v1/app_users?select=role&user_id=eq.${encodeURIComponent(usuario.id)}`,
-      { method: 'GET', headers: cabecalhos },
-      timeoutMs,
-    );
-  } catch (e) {
-    return e?.name === 'AbortError'
-      ? { ok: false, codigo: 'tempo', mensagem: 'A leitura do seu papel demorou demais. Tente de novo.' }
-      : interno('Não foi possível ler o seu papel agora.');
-  }
-
-  if (!respostaPapel.ok) return interno('Não foi possível ler o seu papel agora.');
-
-  let linhas;
-  try {
-    linhas = await respostaPapel.json();
-  } catch {
+  if (respostaPapel.semLogin) return semLogin();
+  if (respostaPapel.erro) {
+    if (respostaPapel.erro === 'abortado') return falhaDoPedido('abortado');
+    if (respostaPapel.erro === 'tempo') {
+      return {
+        ok: false,
+        codigo: 'tempo',
+        mensagem: 'A leitura do seu papel demorou demais. Tente de novo.',
+      };
+    }
     return interno('Não foi possível ler o seu papel agora.');
   }
 
+  const linhas = respostaPapel.dados;
   const papel = Array.isArray(linhas) ? linhas[0]?.role : linhas?.role;
   if (typeof papel !== 'string' || !papel) return semPermissao(null);
 
@@ -146,8 +211,8 @@ export async function autenticar({
   return {
     ok: true,
     usuario: {
-      id: usuario.id,
-      email: typeof usuario.email === 'string' ? usuario.email : null,
+      id: usuario.dados.id,
+      email: typeof usuario.dados.email === 'string' ? usuario.dados.email : null,
     },
     papel,
   };

@@ -12,16 +12,30 @@
    depois de `sessao.marcarTexto`, que marca número sem nó e
    mascara o que for pessoal. Bloco só sai por `criarBloco` e
    `reidratar`. Nenhum conteúdo vai para console.
+
+   2ª rodada: o prazo é um instante absoluto (`prazo`), vindo do
+   começo do POST /analise, não um contador que reinicia aqui.
+   Cada chamada usa o menor entre o teto próprio e o restante.
+   Texto vazio é erro do modelo; formato inválido de `marcarTexto`
+   é erro interno; erro de ferramenta (inclusive exceção) é
+   cortado em 500 caracteres na tela e no que volta ao modelo.
    ============================================================ */
 
+import { PRAZO_PADRAO_MS, timeoutEfetivo } from './prazo.js';
 import { diaBrasilia } from './limite.js';
 
 export const TETOS = Object.freeze({
   rodadas: 8,
   ferramentas: 30,
   resultadoChars: 60_000,
-  ms: 120_000,
+  ms: PRAZO_PADRAO_MS,
 });
+
+/** Teto de uma única ida ao modelo; o prazo total continua mandando. */
+export const TETO_POR_CHAMADA_MS = 90_000;
+
+/** Erro de ferramenta não vira romance na tela nem no contexto do modelo. */
+export const MAX_ERRO_CHARS = 500;
 
 /** Erro que o chamador do modelo usa para dizer POR QUE falhou. */
 export class ErroModelo extends Error {
@@ -30,6 +44,12 @@ export class ErroModelo extends Error {
     this.name = 'ErroModelo';
     this.codigo = codigo;
   }
+}
+
+function cortarErro(valor) {
+  const texto = String(valor ?? '');
+  if (texto.length <= MAX_ERRO_CHARS) return texto;
+  return `${texto.slice(0, MAX_ERRO_CHARS - 1)}…`;
 }
 
 // Rótulo em pt-BR do passo que a tela mostra. Ferramenta desconhecida não
@@ -99,12 +119,29 @@ function mensagemDeTool(chamada, nome, conteudo) {
   return msg;
 }
 
+/** O formato que o contrato §4 promete para `marcarTexto`. */
+function textoMarcadoValido(marcado) {
+  if (!marcado || typeof marcado !== 'object') return false;
+  if (typeof marcado.texto !== 'string') return false;
+  if (!Array.isArray(marcado.semOrigem)) return false;
+  return marcado.semOrigem.every(
+    (faixa) =>
+      faixa &&
+      typeof faixa === 'object' &&
+      Number.isInteger(faixa.inicio) &&
+      Number.isInteger(faixa.fim) &&
+      faixa.inicio >= 0 &&
+      faixa.fim >= faixa.inicio &&
+      faixa.fim <= marcado.texto.length,
+  );
+}
+
 /**
  * Roda uma pergunta até o modelo responder em texto.
  *
  * @param {object} opts
  * @param {object} opts.sessao        sessão do pacote `shared/ai-tools` (contrato §4)
- * @param {Function} opts.chamarModelo `({mensagens, tools, timeoutMs}) => resposta do /api/chat`
+ * @param {Function} opts.chamarModelo `({mensagens, tools, timeoutMs, prazo, sinal}) => resposta`
  * @param {Function} opts.emitir      `(nomeEvento, dados) => Promise<boolean>`
  * @param {string} opts.instrucoes    `INSTRUCOES` do pacote, injetado
  * @param {string} opts.pergunta
@@ -113,6 +150,9 @@ function mensagemDeTool(chamada, nome, conteudo) {
  * @param {Array}  [opts.tools]       especificações no formato do Ollama
  * @param {object} [opts.tetos]       sobrescreve `TETOS` (testes)
  * @param {Function} [opts.agora]     relógio injetável (testes)
+ * @param {number} [opts.inicio]      instante do começo do POST (para `fim.ms`)
+ * @param {number} [opts.prazo]       instante absoluto do fim (timestamp)
+ * @param {object} [opts.estado]      `{rodadas, ferramentas}` compartilhado com o watchdog
  * @param {AbortSignal} [opts.sinal]  aborta quando o cliente desconecta
  * @returns {Promise<{ok: boolean, rodadas: number, ms: number,
  *                    codigo?: string, abortado?: boolean}>}
@@ -128,30 +168,41 @@ export async function executarLaco({
   tools = [],
   tetos = {},
   agora = () => Date.now(),
+  inicio: inicioPedido,
+  prazo,
+  estado = { rodadas: 0, ferramentas: 0 },
   sinal,
 }) {
   const limites = { ...TETOS, ...tetos };
-  const inicio = agora();
+  const inicio = Number.isFinite(inicioPedido) ? inicioPedido : agora();
+  const limite = Number.isFinite(prazo) ? prazo : inicio + limites.ms;
+
   let rodadas = 0;
   let ferramentas = 0;
+  estado.rodadas = 0;
+  estado.ferramentas = 0;
 
   const decorrido = () => agora() - inicio;
+  const expirado = () => agora() >= limite;
   const abortado = () => Boolean(sinal?.aborted);
+  const interromper = () => ({ ok: false, abortado: true, rodadas, ms: decorrido() });
+  const duracaoSegundos = Math.max(1, Math.round((limite - inicio) / 1000));
+  const mensagemTempo = () =>
+    `A análise passou de ${duracaoSegundos} s e foi interrompida. ` +
+    'Tente uma pergunta mais específica.';
 
-  async function emitirPasso(ferramenta, estado, erro) {
+  async function emitirPasso(ferramenta, estadoPasso, erro) {
     const dados = {
       ferramenta,
       rotulo: rotuloDaFerramenta(ferramenta),
-      estado,
+      estado: estadoPasso,
     };
-    if (erro) dados.erro = erro;
+    if (erro) dados.erro = cortarErro(erro);
     return emitir('passo', dados);
   }
 
   async function encerrarComErro(codigo, mensagem) {
-    if (abortado()) {
-      return { ok: false, abortado: true, rodadas, ms: decorrido() };
-    }
+    if (abortado()) return interromper();
     await emitir('erro', { codigo, mensagem });
     const ms = decorrido();
     await emitir('fim', { rodadas, ms });
@@ -181,27 +232,24 @@ export async function executarLaco({
 
   try {
     while (rodadas < limites.rodadas) {
-      if (abortado()) {
-        return { ok: false, abortado: true, rodadas, ms: decorrido() };
-      }
-      if (decorrido() >= limites.ms) {
-        return await encerrarComErro(
-          'tempo',
-          `A análise passou de ${Math.round(limites.ms / 1000)} s e foi interrompida. ` +
-            'Tente uma pergunta mais específica.',
-        );
-      }
+      if (abortado()) return interromper();
+      if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
 
       rodadas += 1;
+      estado.rodadas = rodadas;
 
       let resposta;
       try {
         resposta = await chamarModelo({
           mensagens,
           tools,
-          timeoutMs: Math.max(1, Math.min(limites.ms - decorrido(), limites.ms)),
+          timeoutMs: Math.max(1, timeoutEfetivo(limite, TETO_POR_CHAMADA_MS, agora)),
+          prazo: limite,
+          sinal,
         });
       } catch (e) {
+        if (e?.codigo === 'abortado' || abortado()) return interromper();
+        if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
         const codigo =
           e?.codigo === 'tempo' || e?.codigo === 'interno' ? e.codigo : 'modelo';
         const mensagem =
@@ -213,6 +261,11 @@ export async function executarLaco({
         return await encerrarComErro(codigo, mensagem);
       }
 
+      // Resposta que chega depois do prazo não vira texto, mesmo que o fetch
+      // tenha ignorado o AbortSignal.
+      if (abortado()) return interromper();
+      if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
+
       const mensagem = resposta?.message;
       if (!mensagem || typeof mensagem !== 'object') {
         return await encerrarComErro('modelo', 'A resposta do modelo veio sem "message".');
@@ -223,11 +276,21 @@ export async function executarLaco({
       // ── Resposta final ────────────────────────────────────────────────
       if (!chamadas.length) {
         const conteudo = String(mensagem.content ?? '').trim();
+        if (!conteudo) {
+          return await encerrarComErro('modelo', 'O modelo não respondeu.');
+        }
+
         const marcado = await sessao.marcarTexto(conteudo);
-        await emitir('texto', {
-          texto: typeof marcado?.texto === 'string' ? marcado.texto : '',
-          semOrigem: Array.isArray(marcado?.semOrigem) ? marcado.semOrigem : [],
-        });
+        if (abortado()) return interromper();
+        if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
+        if (!textoMarcadoValido(marcado)) {
+          return await encerrarComErro(
+            'interno',
+            'A sessão devolveu o texto num formato inválido.',
+          );
+        }
+
+        await emitir('texto', { texto: marcado.texto, semOrigem: marcado.semOrigem });
         const ms = decorrido();
         await emitir('fim', { rodadas, ms });
         return { ok: true, rodadas, ms };
@@ -251,16 +314,8 @@ export async function executarLaco({
 
       // ── Ferramentas da rodada ──────────────────────────────────────────
       for (const chamada of chamadas) {
-        if (abortado()) {
-          return { ok: false, abortado: true, rodadas, ms: decorrido() };
-        }
-        if (decorrido() >= limites.ms) {
-          return await encerrarComErro(
-            'tempo',
-            `A análise passou de ${Math.round(limites.ms / 1000)} s e foi interrompida. ` +
-              'Tente uma pergunta mais específica.',
-          );
-        }
+        if (abortado()) return interromper();
+        if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
         if (ferramentas >= limites.ferramentas) {
           return await encerrarComErro(
             'interno',
@@ -269,15 +324,15 @@ export async function executarLaco({
           );
         }
         ferramentas += 1;
+        estado.ferramentas = ferramentas;
 
         const fn = chamada?.function ?? chamada ?? {};
         const nome = typeof fn.name === 'string' ? fn.name : '';
 
         if (!nome) {
-          await emitirPasso('desconhecida', 'erro', 'A chamada veio sem nome de ferramenta.');
-          mensagens.push(
-            mensagemDeTool(chamada, '', { erro: 'A chamada veio sem nome de ferramenta.' }),
-          );
+          const motivo = cortarErro('A chamada veio sem nome de ferramenta.');
+          await emitirPasso('desconhecida', 'erro', motivo);
+          mensagens.push(mensagemDeTool(chamada, '', { erro: motivo }));
           continue;
         }
 
@@ -285,16 +340,14 @@ export async function executarLaco({
         try {
           args = lerArgumentos(fn.arguments);
         } catch (e) {
-          const motivo = e?.message ?? 'Argumentos inválidos.';
+          const motivo = cortarErro(e?.message ?? 'Argumentos inválidos.');
           await emitirPasso(nome, 'erro', motivo);
           mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
           continue;
         }
 
         const passoIniciou = await emitirPasso(nome, 'inicio');
-        if (passoIniciou === false || abortado()) {
-          return { ok: false, abortado: true, rodadas, ms: decorrido() };
-        }
+        if (passoIniciou === false || abortado()) return interromper();
 
         // ── criar_bloco ──────────────────────────────────────────────────
         if (nome === 'criar_bloco') {
@@ -304,9 +357,11 @@ export async function executarLaco({
           } catch (e) {
             saida = { erro: e?.message ?? 'Falha ao montar o bloco.' };
           }
+          if (abortado()) return interromper();
+          if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
 
           if (saida?.erro) {
-            const motivo = String(saida.erro);
+            const motivo = cortarErro(saida.erro);
             await emitirPasso(nome, 'erro', motivo);
             mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
             continue;
@@ -321,6 +376,8 @@ export async function executarLaco({
               'O bloco foi aceito mas não pôde ser entregue à tela.',
             );
           }
+          if (abortado()) return interromper();
+          if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
           if (!blocoTela || typeof blocoTela !== 'object') {
             return await encerrarComErro(
               'interno',
@@ -343,9 +400,11 @@ export async function executarLaco({
           } catch (e) {
             saida = { erro: e?.message ?? 'Falha na conta.' };
           }
+          if (abortado()) return interromper();
+          if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
 
           if (saida?.erro) {
-            const motivo = String(saida.erro);
+            const motivo = cortarErro(saida.erro);
             await emitirPasso(nome, 'erro', motivo);
             mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
             continue;
@@ -371,9 +430,11 @@ export async function executarLaco({
         } catch (e) {
           saida = { erro: e?.message ?? 'Falha na consulta.' };
         }
+        if (abortado()) return interromper();
+        if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
 
         if (saida?.erro) {
-          const motivo = String(saida.erro);
+          const motivo = cortarErro(saida.erro);
           await emitirPasso(nome, 'erro', motivo);
           mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
           continue;

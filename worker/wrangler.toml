@@ -1,6 +1,10 @@
 name = "analise-lapig"
 main = "src/index.js"
-compatibility_date = "2026-11-01"
+# 2026-11-17 é a data em que `enable_request_signal` passa a valer por padrão
+# (o registro de compatibilidade do workerd 1.20261123.1, instalado em
+# worker/node_modules, lista `enable_request_signal` / `disable_request_signal`
+# sob essa data). É o que faz `request.signal` abortar quando o cliente cai.
+compatibility_date = "2026-11-17"
 
 # Limite diário por login (contrato §7). Em produção, crie o namespace e troque
 # o id abaixo pelo devolvido:

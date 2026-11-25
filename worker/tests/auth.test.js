@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   autenticar,
   extrairJwt,
@@ -154,5 +154,82 @@ describe('autenticação', () => {
     const r = await pedir(fetchImpl);
     expect(r.ok).toBe(false);
     expect(r.codigo).toBe('interno');
+  });
+});
+
+describe('corpo da resposta e desconexão', () => {
+  it('200 com corpo vazio é interno, não sem_login', async () => {
+    const r = await pedir(async () => new Response('', { status: 200 }));
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('interno');
+  });
+
+  it('200 com corpo que não é JSON é interno', async () => {
+    const r = await pedir(async () => new Response('{quebrado', { status: 200 }));
+    expect(r.codigo).toBe('interno');
+  });
+
+  it('leitura do corpo interrompida é interno, não sem_login', async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => {
+        throw new TypeError('terminated');
+      },
+    });
+    const r = await pedir(fetchImpl);
+    expect(r.codigo).toBe('interno');
+  });
+
+  it('timeout na leitura do corpo é tempo', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = async () => ({
+        ok: true,
+        status: 200,
+        text: () => new Promise(() => {}),
+      });
+      const promessa = autenticar({
+        jwt: JWT,
+        supabaseUrl: SUPABASE,
+        anonKey: ANON,
+        fetchImpl,
+        prazo: Date.now() + 50,
+      });
+      await vi.advanceTimersByTimeAsync(60);
+      const r = await promessa;
+      expect(r.codigo).toBe('tempo');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('desconexão aborta o fetch de login e devolve abortado', async () => {
+    const controle = new AbortController();
+    let sinalDoFetch;
+    const fetchImpl = async (_url, init) => {
+      sinalDoFetch = init.signal;
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    };
+
+    const promessa = autenticar({
+      jwt: JWT,
+      supabaseUrl: SUPABASE,
+      anonKey: ANON,
+      fetchImpl,
+      sinal: controle.signal,
+    });
+    await vi.waitFor(() => expect(sinalDoFetch).toBeDefined());
+    controle.abort();
+    expect(sinalDoFetch.aborted).toBe(true);
+
+    const r = await promessa;
+    expect(r.codigo).toBe('abortado');
   });
 });
