@@ -277,6 +277,15 @@ function criarChamador(env, { fetchImpl = fetch, agora = Date.now } = {}) {
 }
 
 /** Executa uma pergunta já validada, emitindo eventos até o fim ou o erro. */
+// O sinal interno aborta por desconexão do cliente OU pelo watchdog do prazo.
+// Só é desconexão quando o cliente saiu de verdade; senão o watchdog já está
+// encerrando com `erro tempo` e esta chamada só se junta a ele (sem cortar o
+// `fim` de quem ainda está lendo). Achado da conferência da 4ª rodada (Sol).
+function encerrarAbortado(encerrar, sinalCliente) {
+  if (sinalCliente?.aborted) return encerrar({ desconectado: true });
+  return encerrar({ erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO } });
+}
+
 async function rodarAnalise({
   corpo,
   env,
@@ -300,7 +309,7 @@ async function rodarAnalise({
   });
   if (!auth.ok) {
     if (auth.codigo === 'abortado') {
-      await encerrar({ desconectado: true });
+      await encerrarAbortado(encerrar, sinalCliente);
       return;
     }
     if (auth.codigo === 'tempo') {
@@ -331,7 +340,7 @@ async function rodarAnalise({
   });
   if (!uso.permitido) {
     if (uso.codigo === 'abortado') {
-      await encerrar({ desconectado: true });
+      await encerrarAbortado(encerrar, sinalCliente);
       return;
     }
     if (uso.codigo === 'tempo') {
@@ -363,7 +372,7 @@ async function rodarAnalise({
     tools = especificacoes();
   } catch {
     if (sinal?.aborted) {
-      await encerrar({ desconectado: true });
+      await encerrarAbortado(encerrar, sinalCliente);
       return;
     }
     if (Date.now() >= prazo) {

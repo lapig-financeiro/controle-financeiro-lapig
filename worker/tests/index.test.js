@@ -866,6 +866,52 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
     }
   });
 
+  it.each([
+    ['login', (url) => url.endsWith('/auth/v1/user')],
+    ['KV', null],
+  ])('prazo vencido durante o %s com o cliente lendo termina com erro tempo e fim', async (_onde, pendura) => {
+    vi.useFakeTimers();
+    try {
+      pacote.criarSessao.mockReturnValue(sessaoFalsa().sessao);
+      const base = fetchAmbiente({ ollama: [{ message: { role: 'assistant', content: 'ok' } }] });
+      const pendurado = (init) => new Promise((_r, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
+      });
+      vi.stubGlobal('fetch', (url, init = {}) => (pendura && pendura(url) ? pendurado(init) : base(url, init)));
+      const kvUsada = pendura ? kv : { get: () => new Promise(() => {}), put: async () => {} };
+
+      // O corpo só chega aos 115 s: o login (ou o KV) começa a 5 s do prazo, e o
+      // watchdog vence no meio dele, com o cliente ainda lendo.
+      const bytes = new TextEncoder().encode(JSON.stringify({ pergunta: 'x' }));
+      const corpo = new ReadableStream({
+        start(c) {
+          setTimeout(() => { c.enqueue(bytes); c.close(); }, 115_000);
+        },
+      });
+      const pedido = new Request('https://worker.local/analise', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer jwt-bom', Origin: ORIGEM },
+        body: corpo,
+        duplex: 'half',
+      });
+
+      const ctx = ctxFalso();
+      const pendente = worker.fetch(pedido, { ...ENV, ANALISE_USO: kvUsada }, ctx);
+      await vi.advanceTimersByTimeAsync(115_001);
+      const leitura = lerAteFechar(await pendente);
+      await vi.advanceTimersByTimeAsync(7_000);
+
+      const ev = eventos(await leitura);
+      expect(ev.filter((e) => e.nome === 'erro')).toEqual([
+        expect.objectContaining({ dados: expect.objectContaining({ codigo: 'tempo' }) }),
+      ]);
+      expect(ev.at(-1).nome).toBe('fim');
+      expect(ev.filter((e) => e.nome === 'fim')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('413 não espera o cancel() do corpo', async () => {
     let cancelChamado = false;
     const fluxo = new ReadableStream({

@@ -462,3 +462,19 @@ conferidos contra o backup e a suíte voltou a 115/115, 20/20.
   da `corrida`), e o `setImmediate` continua pegando a rejeição sem esperar 20 ms.
 - Nada de push, deploy, login ou produção. `.revisao-b3.md` e os demais `.revisao-*.md` ficaram
   fora do commit.
+
+## Ajuste do Claude depois da conferência da 4ª rodada (25/11)
+
+A conferência do GPT-6.2 Sol sobre `63e7162` apontou dois pontos:
+
+1. **Prazo vencido durante o login ou o KV cortava o `fim`** (médio, defeito novo da 4ª rodada). O watchdog
+   aborta o sinal interno, a autenticação (ou o limite) volta `abortado` e o `index.js` tratava isso como
+   desconexão do cliente, abortando o stream sem `fim`. Correção do Claude: `encerrarAbortado` em
+   `src/index.js` só trata como desconexão quando `request.signal` (o cliente) abortou de verdade; senão junta-se ao
+   encerramento do watchdog com `erro tempo`. Teste novo em `tests/index.test.js` ("prazo vencido durante o
+   login/KV…", com corpo que chega aos 115 s): sem a correção termina em `erro` sem `fim` (2 falhas); com ela, passa.
+   Suíte: 117 testes, 6/6 execuções verdes.
+2. **Stream aberto além do prazo enquanto a própria aba não lê** (o Sol manteve como alto). A promessa do
+   `waitUntil` resolve no prazo + 1 s, então o Worker não fica trabalhando; o que fica aberto é a conexão que o
+   próprio cliente pausou. **Aceito como limite conhecido** (decisão do Claude, 25/11): o navegador lê o SSE sem
+   pausa, esperar não gasta CPU e o runtime fecha a conexão. Rever se aparecer no uso real.
