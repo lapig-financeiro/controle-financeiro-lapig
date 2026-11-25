@@ -180,6 +180,13 @@ declare
   rub   jsonb;
   g     jsonb;
 begin
+  -- Asserção monetária que falha na 066 por NÚMERO, sem depender de
+  -- chave nova: a 066 deixa 8.000 a mais em a.bolsas (25.000 em vez
+  -- de 17.000). É a primeira do bloco, de propósito.
+  rub := pg_temp.rubrica070(r, 'a.bolsas');
+  perform pg_temp.ok070(pg_temp.num070((rub ->> 'saldo_livre')::numeric) = 17000,
+    format('70.UM_MES a.bolsas livre deveria ser 17000 (a 066 daria 25000), veio %s', rub ->> 'saldo_livre'));
+
   perform pg_temp.ok070(r ->> 'folha_conferencia' = 'feita',
     format('70.UM_MES deveria conferir a folha, folha_conferencia = %s', r ->> 'folha_conferencia'));
   perform pg_temp.ok070(f is not null and jsonb_typeof(f) = 'object', '70.UM_MES deveria ter folha_atrasada');
@@ -202,7 +209,6 @@ begin
   perform pg_temp.ok070(pg_temp.num070((r ->> 'compromissos_bolsas')::numeric) = 78000,
     format('70.UM_MES compromissos_bolsas deveria ser 78000 (janela 70000 + falta 8000), veio %s', r ->> 'compromissos_bolsas'));
 
-  rub := pg_temp.rubrica070(r, 'a.bolsas');
   perform pg_temp.ok070(pg_temp.num070((rub ->> 'compromissos')::numeric) = 78000,
     '70.UM_MES a.bolsas deveria carregar os 8000 a mais');
   perform pg_temp.ok070(pg_temp.num070((rub ->> 'saldo_livre')::numeric) = 17000,
@@ -222,6 +228,26 @@ begin
     '70.UM_MES deveria citar o balancete de 03/10/2026');
   perform pg_temp.ok070(pg_temp.tem_aviso070(r, 'visto R$ 0,00'),
     '70.UM_MES deveria mostrar o visto R$ 0,00');
+end $$;
+
+-- ------------------------------------------------------------
+-- BLOCO 2b — bolsa que termina no meio do mês (15/10) entra inteira
+-- no esperado daquele mês, pelo mesmo critério de sobreposição.
+-- ------------------------------------------------------------
+do $$
+declare
+  v_id  uuid := (select id from public.projects where code = '70.FIM_MEIO_MES');
+  r     jsonb := public.get_saldo_livre(v_id);
+  f     jsonb := r -> 'folha_atrasada';
+begin
+  perform pg_temp.ok070(
+    pg_temp.num070(coalesce(f ->> 'valor', '0')::numeric) = 4000,
+    format('70.FIM_MEIO_MES deveria contar a bolsa que termina em 15/10 inteira (4000), veio %s', coalesce(f ->> 'valor', '0')));
+  perform pg_temp.ok070(f is not null, '70.FIM_MEIO_MES deveria ter folha_atrasada');
+  perform pg_temp.ok070(pg_temp.num070((f ->> 'esperado')::numeric) = 4000,
+    format('70.FIM_MEIO_MES esperado deveria ser 4000, veio %s', f ->> 'esperado'));
+  perform pg_temp.ok070(pg_temp.num070((r ->> 'compromissos_bolsas')::numeric) = 4000,
+    format('70.FIM_MEIO_MES compromissos_bolsas deveria ser 4000, veio %s', r ->> 'compromissos_bolsas'));
 end $$;
 
 -- ------------------------------------------------------------
@@ -392,6 +418,53 @@ begin
 end $$;
 
 -- ------------------------------------------------------------
+-- BLOCO 10b — limite (a), NÃO é correção: baixa/pagamento de bolsa
+-- antiga no balancete de D infla o visto e esconde a folha de
+-- novembro da bolsa corrente. O teste prova o comportamento atual.
+-- ------------------------------------------------------------
+do $$
+declare
+  v_id  uuid := (select id from public.projects where code = '70.BAIXA_ANTIGA');
+  r     jsonb := public.get_saldo_livre(v_id);
+  rub   jsonb;
+begin
+  perform pg_temp.ok070(r ->> 'folha_conferencia' = 'feita', '70.BAIXA_ANTIGA deveria conferir');
+  perform pg_temp.ok070(r ->> 'folha_atrasada' is null,
+    '70.BAIXA_ANTIGA (limite a): a baixa de bolsa antiga esconde a folha de novembro — comportamento atual, não correção');
+  perform pg_temp.ok070(pg_temp.num070((r ->> 'compromissos_bolsas')::numeric) = 65000,
+    format('70.BAIXA_ANTIGA (limite a): o compromisso fica só na janela (65000), veio %s', r ->> 'compromissos_bolsas'));
+  rub := pg_temp.rubrica070(r, 'a.bolsas');
+  perform pg_temp.ok070(pg_temp.num070((rub ->> 'saldo_livre')::numeric) = 30000,
+    format('70.BAIXA_ANTIGA (limite a): o livre esconde os 5000 (30000 em vez de 25000), veio %s', rub ->> 'saldo_livre'));
+end $$;
+
+-- ------------------------------------------------------------
+-- BLOCO 10c — limite (b), NÃO é correção: mudar o valor da bolsa na
+-- própria linha recalcula meses já pagos pelo valor novo e cria
+-- falta fictícia. O teste prova o comportamento atual.
+-- ------------------------------------------------------------
+do $$
+declare
+  v_id  uuid := (select id from public.projects where code = '70.VALOR_ALTERADO');
+  r     jsonb := public.get_saldo_livre(v_id);
+  f     jsonb := r -> 'folha_atrasada';
+  rub   jsonb;
+begin
+  perform pg_temp.ok070(f is not null, '70.VALOR_ALTERADO deveria ter folha_atrasada');
+  perform pg_temp.ok070(pg_temp.num070((f ->> 'valor')::numeric) = 2000,
+    format('70.VALOR_ALTERADO (limite b): o valor novo na mesma linha cria falta fictícia de 2000, veio %s', f ->> 'valor'));
+  perform pg_temp.ok070(pg_temp.num070((f ->> 'esperado')::numeric) = 7000,
+    format('70.VALOR_ALTERADO (limite b): esperado de novembro usa o valor novo (7000), veio %s', f ->> 'esperado'));
+  perform pg_temp.ok070(pg_temp.num070((f ->> 'visto')::numeric) = 5000,
+    format('70.VALOR_ALTERADO (limite b): visto é o realizado a 5000 por mês, veio %s', f ->> 'visto'));
+  perform pg_temp.ok070(pg_temp.num070((r ->> 'compromissos_bolsas')::numeric) = 93000,
+    format('70.VALOR_ALTERADO (limite b): janela 91000 + falta fictícia 2000, veio %s', r ->> 'compromissos_bolsas'));
+  rub := pg_temp.rubrica070(r, 'a.bolsas');
+  perform pg_temp.ok070(pg_temp.num070((rub ->> 'compromissos')::numeric) = 93000,
+    '70.VALOR_ALTERADO (limite b): a rubrica carrega a falta fictícia');
+end $$;
+
+-- ------------------------------------------------------------
 -- BLOCO 11 — explicar_livre_v2 fecha com e sem folha atrasada e
 -- separa o valor dentro do compromisso de bolsas.
 -- ------------------------------------------------------------
@@ -401,6 +474,7 @@ declare
   v_um   uuid := (select id from public.projects where code = '70.UM_MES');
   v_dois uuid := (select id from public.projects where code = '70.DOIS_MESES');
   v_emp  uuid := (select id from public.projects where code = '70.EMPATE');
+  v_meio uuid := (select id from public.projects where code = '70.FIM_MEIO_MES');
   sl     jsonb;
   ex     jsonb;
   g      jsonb;
@@ -468,6 +542,18 @@ begin
     '70.EMPATE deveria ter a parte do esperado');
   perform pg_temp.ok070(pg_temp.no070(no, 'rubrica:a.bolsas:folha_vista:realizado') is not null,
     '70.EMPATE com visto > 0 deveria ter a parte do visto');
+
+  -- bolsa que termina no meio do mês: o nó novo também fecha.
+  sl := public.get_saldo_livre(v_meio);
+  ex := public.explicar_livre_v2(v_meio);
+  perform pg_temp.arvore070(ex);
+  perform pg_temp.ok070(pg_temp.num070((ex ->> 'valor')::numeric) = pg_temp.num070(pg_temp.soma_grupos070(sl)),
+    '70.FIM_MEIO_MES raiz da árvore deveria ser a soma dos grupos');
+  no := pg_temp.no070(ex, 'rubrica:a.bolsas:folha_atrasada');
+  perform pg_temp.ok070(no is not null and pg_temp.num070((no ->> 'valor')::numeric) = 4000,
+    '70.FIM_MEIO_MES nó da folha atrasada deveria valer 4000');
+  perform pg_temp.ok070(pg_temp.no070(no, 'rubrica:a.bolsas:folha_esperada:comprometido') is not null,
+    '70.FIM_MEIO_MES deveria ter a parte do esperado');
 
   perform pg_temp.ok070(position('folha_atrasada' in coalesce(public.get_saldo_livre(v_um) ->> 'nota', '')) > 0,
     'a nota deveria explicar a conferência da folha atrasada');

@@ -21,8 +21,13 @@ const centrosSemAtraso = [
   '70.UM_BALANCETE',
   '70.SEM_BALANCETE',
   '70.FORA_JANELA',
+  // Limite (a): o retorno também não muda (a falta fica escondida).
+  '70.BAIXA_ANTIGA',
 ];
-const centrosComAtraso = ['70.UM_MES', '70.DOIS_MESES', '70.DIA_MAIOR_07', '70.CANCELADA', '70.JANELA', '70.EMPATE'];
+const centrosComAtraso = [
+  '70.UM_MES', '70.DOIS_MESES', '70.DIA_MAIOR_07', '70.CANCELADA', '70.JANELA', '70.EMPATE',
+  '70.FIM_MEIO_MES', '70.VALOR_ALTERADO',
+];
 
 export function conferirRegrasCofre070(texto) {
   const bytes = Buffer.byteLength(texto, 'utf8');
@@ -309,7 +314,7 @@ async function main() {
       try { await sql('rollback;'); } catch { /* idem */ }
     }
     if (!falhouAntes) throw new Error('test_070 passou antes da migração 070!');
-    if (!msgAntes.includes('070 FALHOU: 70.UM_MES deveria conferir a folha')) {
+    if (!msgAntes.includes('070 FALHOU: 70.UM_MES a.bolsas livre deveria ser 17000 (a 066 daria 25000)')) {
       throw new Error(`ANTES da 070 falhou pelo motivo errado: ${msgAntes}`);
     }
     console.log(`  [ANTES OK] ${msgAntes}`);
@@ -432,7 +437,7 @@ async function main() {
         if (mut === fn) throw new Error('Falha ao montar mutante 3.');
         await sql(mut);
       },
-      '070 FALHOU: 70.UM_MES falta deveria ser 8000',
+      '070 FALHOU: 70.UM_MES a.bolsas livre deveria ser 17000',
     );
 
     await esperarFalhaTest070(
@@ -477,6 +482,26 @@ async function main() {
       '070 FALHOU: nó grupo:a não fecha',
     );
 
+    await esperarFalhaTest070(
+      '7) bolsa que termina no meio do mês exigindo o mês inteiro',
+      async () => {
+        const fn = extrairFuncao(texto070, 'get_saldo_livre');
+        const alvo = `                   on s.start_date <= m.month_end
+                  and s.end_date   >= m.month_start
+                where s.project_id = p_project_id
+                  and s.status <> 'cancelled'
+             ), 0) as esperado,`;
+        const mut = fn.replace(alvo, `                   on s.start_date <= m.month_start
+                  and s.end_date   >= m.month_end
+                where s.project_id = p_project_id
+                  and s.status <> 'cancelled'
+             ), 0) as esperado,`);
+        if (mut === fn) throw new Error('Falha ao montar mutante 7.');
+        await sql(mut);
+      },
+      '070 FALHOU: 70.FIM_MEIO_MES deveria contar a bolsa que termina em 15/10 inteira',
+    );
+
     console.log('14. Conferência final depois dos mutantes...');
     await arquivo(sql070);
     await rodarTeste(test064);
@@ -484,7 +509,7 @@ async function main() {
     await rodarTeste(test066);
     await rodarTeste(test070);
 
-    console.log('070 OK em PGlite: base real + 064/065/066 + stubs + retorno e árvores idênticos sem atraso + test_070 falhando antes + test_064/test_065/test_066/test_070 + idempotência + fechamento da árvore + atributos/ACL + barreira 051 + 6 mutantes.');
+    console.log('070 OK em PGlite: base real + 064/065/066 + stubs + retorno e árvores idênticos sem atraso + test_070 falhando antes + test_064/test_065/test_066/test_070 + idempotência + fechamento da árvore + atributos/ACL + barreira 051 + 7 mutantes.');
   } catch (e) {
     console.error('ERRO:', e.message, e.detail || '', e.where || '');
     process.exitCode = 1;

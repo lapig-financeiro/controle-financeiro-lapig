@@ -2,8 +2,9 @@
 
 Branch `redesenho/folha-atrasada-banco` (worktree `C:/Users/amara/dev/cf-folha-banco`, a partir do `master`
 620f19a). **Nada foi aplicado em produção**, nenhum `CF_*` real foi usado, nenhum dado real (nome, CPF,
-código ou nome de centro, valor de balancete) entrou em teste, stub, roteiro ou neste relatório, **nenhuma
-outra IA foi chamada** e **não houve push**. O runner do PGlite rodou só em memória.
+código ou nome de centro, valor de balancete) entrou em teste, stub, roteiro ou neste relatório. **Não chamei
+outra IA** nesta execução (a revisão do GPT-6.2 Sol veio pronta no pedido, já conferida pelo Claude) e **não
+houve push**. O runner do PGlite rodou só em memória.
 
 ## 1. O que foi entregue
 
@@ -11,8 +12,8 @@ outra IA foi chamada** e **não houve push**. O runner do PGlite rodou só em me
 |---|---|
 | `database/070_folha_atrasada.sql` | `create or replace` de `get_saldo_livre` (base 066) e de `explicar_livre_v2` (base 066); nenhuma tabela/linha nova |
 | `tests/sql/test_070_folha_atrasada.sql` | Roteiro autoconferido (blocos 1–13) |
-| `tools/replica-local/sintetico/stub-070.sql` | Stub sintético com 11 centros `70.*` (auxiliar do roteiro, como o `stub-066.sql`) |
-| `tools/replica-local/rodar-070-pglite.mjs` | Executor PGlite: base 064/065/066, defeito antes, cofre, antes/depois, idempotência, barreira 051, atributos/ACL e 6 mutantes |
+| `tools/replica-local/sintetico/stub-070.sql` | Stub sintético com 14 centros `70.*` (auxiliar do roteiro, como o `stub-066.sql`) |
+| `tools/replica-local/rodar-070-pglite.mjs` | Executor PGlite: base 064/065/066, defeito antes (por número), cofre, antes/depois, idempotência, barreira 051, atributos/ACL e 7 mutantes |
 | `docs/migracoes.md` | Linha da 070 ("não aplicada em produção") |
 | `docs/redesenho/relatorios/folha-atrasada-banco.md` | Este relatório |
 
@@ -20,9 +21,9 @@ Nenhum arquivo fora da lista de entregáveis foi alterado. `tools/replica-local/
 arquivo **novo** de apoio ao roteiro (o molde da 066 também tem `stub-066.sql`), não uma alteração de
 consumidor.
 
-A migração tem 46.882 bytes (limite do cofre: 90 KB), começa com `begin;` como primeiro comando SQL, termina
+A migração tem 48.401 bytes (limite do cofre: 90 KB), começa com `begin;` como primeiro comando SQL, termina
 com `commit;` como último, não tem `commit`/`savepoint` no meio nem os termos proibidos do cofre. O roteiro
-tem 26.546 bytes, o runner 19.007 e o stub 16.439.
+tem 31.737 bytes, o runner 20.094 e o stub 21.478.
 
 ## 2. A versão viva e o defeito
 
@@ -129,15 +130,16 @@ migração, conforme a instrução de não alterar consumidores.
 
 `node tools/replica-local/rodar-070-pglite.mjs` passou de ponta a ponta. O que ele prova:
 
-- **Defeito antes**: com a 066 (sem a 070), o `test_070` falha em `70.UM_MES` porque
-  `folha_conferencia` não existe; a folha de outubro está livre.
-- **Sem folha atrasada nada muda**: o retorno inteiro de cinco centros sintéticos foi comparado chave a chave
-  antes/depois; só `folha_conferencia`, `folha_atrasada` e `nota` diferem. As cinco árvores de
+- **Defeito antes**: com a 066 (sem a 070), o `test_070` falha em `70.UM_MES` por **número**:
+  `a.bolsas livre deveria ser 17000 (a 066 daria 25000), veio 25000.00`. Não depende de chave nova.
+- **Sem folha atrasada nada muda**: o retorno inteiro de seis centros sintéticos foi comparado chave a chave
+  antes/depois; só `folha_conferencia`, `folha_atrasada` e `nota` diferem. As seis árvores de
   `explicar_livre_v2` são idênticas à 066.
 - **Casos**: um mês (03/11 com a folha de outubro paga depois, incluindo bolsa encerrada e cancelada), dois
   meses (o par mais longo vence o imediato), balancete com dia > 07 sem a folha do próprio mês, bolsa antiga
-  não cadastrada (falta negativa → 0, sem diminuir compromisso), só um balancete, sem balancete, bolsa
-  cancelada, candidato exatamente no limite de 6 meses e candidato fora, empate (vence o mais recente).
+  não cadastrada (falta negativa → 0, sem diminuir compromisso), bolsa que termina no meio do mês, só um
+  balancete, sem balancete, bolsa cancelada, candidato exatamente no limite de 6 meses e candidato fora,
+  empate (vence o mais recente).
 - **Árvore**: raiz = soma dos grupos = `get_saldo_livre`; todos os nós fecham; o nó
   `Comprometido — folha atrasada` tem valor, sinal −1 e conta; o nó da janela vale só a janela; com e sem
   falta.
@@ -147,8 +149,9 @@ migração, conforme a instrução de não alterar consumidores.
 - **Regressão**: `test_064`, `test_065` e `test_066` passam depois da 070 e de novo depois de reaplicá-la
   (idempotência).
 - **Mutantes reprovados**: sem `greatest(..., 0)`; só o par imediato (sem o máximo); `status = 'active'` no
-  lugar de `<> 'cancelled'`; `>=` trocado por `>` na janela de 6 meses; soma sem arredondar; e
-  `explicar_livre_v2` sem separar a folha (duplicaria). As mensagens estão no log do runner.
+  lugar de `<> 'cancelled'`; `>=` trocado por `>` na janela de 6 meses; soma sem arredondar;
+  `explicar_livre_v2` sem separar a folha (duplicaria); e a sobreposição trocada por "cobre o mês inteiro"
+  (a bolsa que termina em 15/10 sai do esperado). As mensagens estão no log do runner.
 
 O mutante "soma sem arredondar" é reprovado por uma asserção **estrutural** do roteiro (a definição tem de
 conter `round(greatest(coalesce(v_max_falta, 0), 0), 2)`), porque o schema só guarda centavos em
@@ -160,7 +163,52 @@ equivalente sem explicação.
 dependências do MCP com `npm ci --prefix mcp` (o `mcp/node_modules` não existia no worktree; não é mudança
 versionada).
 
-## 6. O que não foi feito / limites
+## 6. 2ª rodada (revisão do GPT-6.2 Sol, conferida pelo Claude)
+
+Esta rodada **não muda a regra**: fecha uma lacuna de teste, troca a prova do defeito para um número e
+documenta dois limites conhecidos, sem corrigi-los.
+
+### 6.1. Bolsa que termina no meio do mês
+
+Caso novo `70.FIM_MEIO_MES`: uma bolsa `ended` com fim em **15/10/2026** e valor 4.000; o balancete D é de
+03/11/2026 (cobre 10/2026) e o k é de 03/10/2026, sem pagamento de outubro no realizado. Pelo critério de
+sobreposição (`start_date <= fim do mês` e `end_date >= início do mês`), ela entra **inteira** no esperado de
+outubro: `falta = 4.000`. O mutante novo troca o predicado por "cobre o mês inteiro" (`start_date <= início do
+mês` e `end_date >= fim do mês`), exclui a bolsa, zera a falta e é reprovado por
+`70.FIM_MEIO_MES deveria contar a bolsa que termina em 15/10 inteira (4000), veio 0`.
+
+### 6.2. Defeito antes da 070 por número
+
+A primeira asserção do BLOCO 2 do `test_070` passou a ser monetária: `a.bolsas` livre de `70.UM_MES` tem de
+ser **17.000**; a 066 devolve **25.000**, porque os 8.000 da folha de outubro estão livres. O runner agora
+espera essa falha (`070 FALHOU: 70.UM_MES a.bolsas livre deveria ser 17000 (a 066 daria 25000), veio
+25000.00`) e não depende mais da ausência de `folha_conferencia` para provar o defeito.
+
+### 6.3. Limites conhecidos (documentados, não corrigidos)
+
+**(a) Baixa de bolsa antiga no balancete recente.** `70.BAIXA_ANTIGA` tem uma bolsa corrente de 5.000 e uma
+bolsa antiga de 5.000 encerrada em 30/09/2026; o pagamento/baixa da antiga entrou no balancete de D (5.000) e
+o k não tinha linha de bolsas. O `esperado` de novembro é 5.000 (só a bolsa corrente), o `visto` é 5.000 e a
+falta fica **0**: a folha de novembro da bolsa corrente está faltando, mas o `visto` agregado a compensa. No
+comportamento atual: `folha_atrasada` nulo, `compromissos_bolsas` 65.000 e `a.bolsas` livre 30.000 (seria
+25.000 se a folha fosse contada). Um estorno negativo no mesmo lugar reduz `real(D)` e faz o contrário
+(aumenta a falta); os dois casos mostram que o `visto` não distingue a bolsa nem o sinal do lançamento. Não é
+corrigido porque o balancete não traz o vínculo do lançamento com o bolsista.
+
+**(b) Valor mudado na própria linha.** `70.VALOR_ALTERADO` tem uma única bolsa na linha com `amount = 7.000`
+(o valor novo), mas o realizado de D (10.000) e o de k (5.000) são os pagamentos antigos de 5.000 por mês. O
+`esperado` de novembro usa 7.000, o `visto` é 5.000 e a falta fica **2.000 fictícios**: `folha_atrasada`
+2.000, `compromissos_bolsas` 93.000 (janela 91.000 + falta). A prática do sistema é encerrar a linha antiga e
+criar outra; a regra usa o `amount` atual para todos os meses e não corrige isso.
+
+### 6.4. Resultado da rodada
+
+`node tools/replica-local/rodar-070-pglite.mjs` passou com **14 centros** no fechamento da árvore e **7
+mutantes** reprovados. A 070 ficou com **48.401 bytes** (abaixo de 90 KB). `npm run lint` e `npm test`
+continuam verdes (44 arquivos, 699 testes, 5 pulados). O arquivo de tarefa editado pelo Victor (sem números de
+produção) entrou no commit; nenhum arquivo tem número de produção.
+
+## 7. O que não foi feito / limites
 
 - **Não apliquei a migração em lugar nenhum** além da réplica PGlite em memória. Não publiquei (`push`) e não
   disparei o cofre. A linha em `docs/migracoes.md` diz "não aplicada em produção".
@@ -172,10 +220,15 @@ versionada).
   da janela de compromissos". A falta vai no total (`compromissos_bolsas`) e no objeto novo.
 - **O `test_064` não foi tocado**; as chaves das partes novas terminam em `:comprometido`/`:realizado` para
   respeitar a convenção de pai que ele já verifica.
-- **Nenhuma outra IA foi chamada**, nem para revisão. A revisão do SQL por outra IA e o ensaio/aplicação pelo
-  cofre ficam para quando o Victor aprovar a migração (o procedimento está em `docs/aplicar-migracao.md`).
+- **Os dois limites da 2ª rodada não foram corrigidos**, como pedido: baixa de bolsa antiga no balancete
+  recente (o `visto` é agregado e não casa lançamento com bolsista) e valor mudado na própria linha (o
+  `esperado` usa o `amount` atual para todos os meses). Estão no cabeçalho da 070 e nos blocos 10b/10c do
+  `test_070`, provando o comportamento atual.
+- **Não chamei outra IA nesta execução.** A revisão do GPT-6.2 Sol e a conferência do Claude vieram prontas no
+  pedido; a revisão do SQL e o ensaio/aplicação pelo cofre ficam para quando o Victor aprovar a migração (o
+  procedimento está em `docs/aplicar-migracao.md`).
 
-## 7. Reproduzir
+## 8. Reproduzir
 
 ```bash
 npm install --prefix .cache/pglite-064 --cache .cache/npm --no-save --package-lock=false @electric-sql/pglite

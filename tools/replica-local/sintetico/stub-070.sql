@@ -19,6 +19,15 @@
 --   70.JANELA       — k 20/05/2026, exatamente 6 meses antes de 11/2026.
 --   70.FORA_JANELA  — k 20/03/2026, fora dos 6 meses => sem anterior.
 --   70.EMPATE       — k 03/10 e 03/09 dão a mesma falta; vence 03/10.
+--   70.FIM_MEIO_MES — bolsa encerrada em 15/10/2026: entra inteira no
+--                     esperado de outubro (4.000), pelo critério de
+--                     sobreposição, mesmo sem cobrir o mês inteiro.
+--   70.BAIXA_ANTIGA — limite (a): baixa/pagamento de bolsa antiga no
+--                     balancete de D infla o visto e esconde a folha de
+--                     novembro; o teste prova o comportamento atual.
+--   70.VALOR_ALTERADO— limite (b): valor da bolsa mudado na própria
+--                     linha; meses já pagos são recalculados pelo valor
+--                     novo e criam falta fictícia de 2.000.
 --
 -- Deve ser carregado depois de 038/048/063/064/065/066 e antes do teste.
 -- Pode ser recarregado: apaga somente os centros 70.* antes de inserir.
@@ -38,6 +47,9 @@ declare
   v_janela     uuid := md5('lapig:070:janela')::uuid;
   v_fora       uuid := md5('lapig:070:fora-janela')::uuid;
   v_empate     uuid := md5('lapig:070:empate')::uuid;
+  v_meio_mes   uuid := md5('lapig:070:fim-meio-mes')::uuid;
+  v_baixa      uuid := md5('lapig:070:baixa-antiga')::uuid;
+  v_valor_alt  uuid := md5('lapig:070:valor-alterado')::uuid;
 
   v_fim date := date '2027-12-31';
 begin
@@ -45,35 +57,42 @@ begin
    where balancete_id in (select id from public.balancetes
                            where project_id in (
                              v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-                             v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate));
+                             v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt));
   delete from public.balancetes
    where project_id in (
      v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate);
+     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt);
   delete from public.plano_desembolsos
    where plano_id in (select id from public.planos_trabalho
                        where project_id in (
                          v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-                         v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate));
+                         v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt));
   delete from public.plano_rubricas
    where plano_id in (select id from public.planos_trabalho
                        where project_id in (
                          v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-                         v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate));
+                         v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt));
   delete from public.planos_trabalho
    where project_id in (
      v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate);
+     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt);
   delete from public.scholarships
    where project_id in (
      v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate);
+     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt);
   delete from public.scholarship_holders
    where full_name like 'Bolsista Sintético 70%';
   delete from public.projects
    where id in (
      v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate);
+     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt);
 
   insert into public.projects (id, name, code, start_date, end_date) values
     (v_sem_atraso, 'Stub 070 Sem Atraso',    '70.SEM_ATRASO',   '2025-01-01', v_fim),
@@ -86,7 +105,10 @@ begin
     (v_cancelada,  'Stub 070 Cancelada',     '70.CANCELADA',    '2025-01-01', v_fim),
     (v_janela,     'Stub 070 Janela',        '70.JANELA',       '2025-01-01', v_fim),
     (v_fora,       'Stub 070 Fora Janela',   '70.FORA_JANELA',  '2025-01-01', v_fim),
-    (v_empate,     'Stub 070 Empate',        '70.EMPATE',       '2025-01-01', v_fim);
+    (v_empate,     'Stub 070 Empate',        '70.EMPATE',       '2025-01-01', v_fim),
+    (v_meio_mes,   'Stub 070 Fim Meio Mes',  '70.FIM_MEIO_MES', '2025-01-01', v_fim),
+    (v_baixa,      'Stub 070 Baixa Antiga',  '70.BAIXA_ANTIGA', '2025-01-01', v_fim),
+    (v_valor_alt,  'Stub 070 Valor Alterado','70.VALOR_ALTERADO','2025-01-01', v_fim);
 
   -- Plano de cada centro: a.bolsas 100.000 e b 10.000.
   insert into public.planos_trabalho
@@ -95,20 +117,23 @@ begin
     from public.projects p
    where p.id in (
      v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate);
+     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt);
 
   insert into public.plano_rubricas (plano_id, rubrica_code, valor_previsto)
   select pl.id, 'a.bolsas', 100000.00
     from public.planos_trabalho pl
    where pl.project_id in (
      v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate)
+     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt)
   union all
   select pl.id, 'b', 10000.00
     from public.planos_trabalho pl
    where pl.project_id in (
      v_sem_atraso, v_um_mes, v_dois, v_dia_maior, v_antiga,
-     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate);
+     v_um_bal, v_sem_bal, v_cancelada, v_janela, v_fora, v_empate,
+     v_meio_mes, v_baixa, v_valor_alt);
 
   -- Bolsistas fictícios, um por centro.
   insert into public.scholarship_holders (full_name) values
@@ -122,7 +147,10 @@ begin
     ('Bolsista Sintético 70 Cancelada'),
     ('Bolsista Sintético 70 Janela'),
     ('Bolsista Sintético 70 Fora Janela'),
-    ('Bolsista Sintético 70 Empate');
+    ('Bolsista Sintético 70 Empate'),
+    ('Bolsista Sintético 70 Fim Meio Mes'),
+    ('Bolsista Sintético 70 Baixa Antiga'),
+    ('Bolsista Sintético 70 Valor Alterado');
 
   -- 70.SEM_ATRASO: out e nov ja no realizado de D.
   insert into public.scholarships (holder_id, project_id, amount, start_date, end_date, status)
@@ -334,6 +362,73 @@ begin
          'a.bolsas'
     from public.balancetes b
    where b.project_id = v_empate;
+
+  -- 70.FIM_MEIO_MES: a bolsa acaba em 15/10/2026 (no meio do mes).
+  -- O criterio de sobreposicao conta a folha de outubro inteira (4.000),
+  -- como no bloco de compromissos; nao exige cobrir o mes todo.
+  insert into public.scholarships (holder_id, project_id, amount, start_date, end_date, status)
+  select h.id, v_meio_mes, 4000.00, date '2025-01-01', date '2026-10-15', 'ended'
+    from public.scholarship_holders h
+   where h.full_name = 'Bolsista Sintético 70 Fim Meio Mes';
+
+  insert into public.balancetes
+    (project_id, data_referencia, saldo_disponivel, rendimento_liquido,
+     total_debitos, total_creditos)
+  values
+    (v_meio_mes, date '2026-10-03', 200000.00, 0.00, 0.00, 200000.00),
+    (v_meio_mes, date '2026-11-03', 200000.00, 0.00, 0.00, 200000.00);
+
+  -- 70.BAIXA_ANTIGA (limite a): a bolsa antiga terminou em 30/09 e nao
+  -- entra no esperado de novembro, mas o pagamento/baixa dela em D entra
+  -- no realizado e infla o visto. A folha de novembro da bolsa corrente
+  -- fica escondida (falta 0) no comportamento atual.
+  insert into public.scholarships (holder_id, project_id, amount, start_date, end_date, status)
+  select h.id, v_baixa, v.amount, v.ini, v.fim, v.st
+    from public.scholarship_holders h
+    join (values
+      (5000.00, date '2025-01-01', date '2027-12-31', 'active'),
+      (5000.00, date '2025-01-01', date '2026-09-30', 'ended')
+    ) as v(amount, ini, fim, st) on true
+   where h.full_name = 'Bolsista Sintético 70 Baixa Antiga';
+
+  insert into public.balancetes
+    (project_id, data_referencia, saldo_disponivel, rendimento_liquido,
+     total_debitos, total_creditos)
+  values
+    (v_baixa, date '2026-11-03', 200000.00, 0.00, 0.00, 200000.00),
+    (v_baixa, date '2026-11-17', 200000.00, 0.00, 0.00, 200000.00);
+
+  insert into public.balancete_lancamentos
+    (balancete_id, conta_codigo, conta_descricao, valor_debito, valor_credito, saldo_atual, rubrica_code)
+  select b.id, '7.1.3.04.01.09142', 'BAIXA DE BOLSA ANTIGA', 5000.00, 0.00, 5000.00, 'a.bolsas'
+    from public.balancetes b
+   where b.project_id = v_baixa and b.data_referencia = date '2026-11-17';
+
+  -- 70.VALOR_ALTERADO (limite b): o valor da bolsa foi mudado na propria
+  -- linha de 5.000 para 7.000. Os meses ja pagos (out e nov a 5.000)
+  -- estao no realizado, mas o esperado de novembro usa 7.000: falta
+  -- ficticia de 2.000 no comportamento atual.
+  insert into public.scholarships (holder_id, project_id, amount, start_date, end_date, status)
+  select h.id, v_valor_alt, 7000.00, date '2025-01-01', v_fim, 'active'
+    from public.scholarship_holders h
+   where h.full_name = 'Bolsista Sintético 70 Valor Alterado';
+
+  insert into public.balancetes
+    (project_id, data_referencia, saldo_disponivel, rendimento_liquido,
+     total_debitos, total_creditos)
+  values
+    (v_valor_alt, date '2026-11-03', 200000.00, 0.00, 0.00, 200000.00),
+    (v_valor_alt, date '2026-11-17', 200000.00, 0.00, 0.00, 200000.00);
+
+  insert into public.balancete_lancamentos
+    (balancete_id, conta_codigo, conta_descricao, valor_debito, valor_credito, saldo_atual, rubrica_code)
+  select b.id, '7.1.3.04.01.09142', 'BOLSA SINTETICA',
+         case when b.data_referencia = date '2026-11-17' then 10000.00 else 5000.00 end,
+         0.00,
+         case when b.data_referencia = date '2026-11-17' then 10000.00 else 5000.00 end,
+         'a.bolsas'
+    from public.balancetes b
+   where b.project_id = v_valor_alt;
 end
 $stub$;
 

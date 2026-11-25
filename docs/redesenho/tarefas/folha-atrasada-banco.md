@@ -18,9 +18,9 @@ do executor), a linha da 066 e da 069 em `docs/migracoes.md`.
 `get_saldo_livre` supõe que o balancete de data D já contém a folha de bolsas de todo mês até `balancete_cobre_ate`
 (o mês de D se D passou do dia 07, senão o anterior), e só conta compromissos a partir do mês seguinte. Quando a
 FUNAPE paga uma folha **atrasada** (depois da data do balancete), esse dinheiro não está no realizado **nem** nos
-compromissos: aparece como **livre**, mas já tem dono. Medido na produção em 25/11 (só leitura): um centro com
-R$ 5.000 a mais de livre na rubrica de bolsas (a folha de outubro saiu em 13/11, depois do balancete de 03/11), e
-três centros com balancete de 17–18/11 em que a folha de novembro não aparece (de R$ 47 mil a R$ 96 mil a mais).
+compromissos: aparece como **livre**, mas já tem dono. Medido na produção em 25/11 (só leitura): acontece em
+alguns centros, tanto com balancete emitido antes do dia 07 (folha do mês anterior paga com atraso) quanto com
+balancete emitido depois do dia 07 (folha do próprio mês ainda fora do balancete).
 
 ## A regra nova (conferir a folha contra os balancetes anteriores)
 

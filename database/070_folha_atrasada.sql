@@ -37,6 +37,32 @@
 -- fica abaixo do visto: a conferência só ACRESCENTA compromisso,
 -- errando para "cabe menos", como a 048.
 --
+-- A sobreposição é a mesma do bloco de compromissos: uma bolsa que
+-- termina no meio do mês (ex.: 15/10) entra INTEIRA no esperado
+-- daquele mês, porque `end_date >= início do mês` já basta. Exigir
+-- que cubra o mês todo seria outra regra e deixaria essa folha fora
+-- (o caso `70.FIM_MEIO_MES` e o mutante "cobre o mês inteiro" provam).
+--
+-- LIMITES CONHECIDOS (não corrigidos aqui; o roteiro prova o atual):
+--
+-- (a) O `visto` é agregado por rubrica, não por bolsa: um lançamento
+--     de bolsa antiga no balancete de D entra na diferença e não é
+--     casado com o `esperado`. Um pagamento/baixa de bolsa antiga fora
+--     do intervalo pode inflar `visto` e esconder a folha que falta;
+--     um estorno negativo no mesmo lugar reduz `real(D)` e faz o
+--     contrário (aumenta a falta). O caso sintético `70.BAIXA_ANTIGA`
+--     mostra a folha de novembro escondida quando a bolsa antiga é
+--     paga em D.
+-- (b) O `esperado` usa o `amount` ATUAL da bolsa para todos os meses.
+--     Mudar o valor na própria linha (em vez de encerrar a linha e
+--     criar outra, que é a prática do sistema) recalcula meses já
+--     pagos pelo valor novo e pode criar falta fictícia. O caso
+--     `70.VALOR_ALTERADO` mostra 2.000 de falta fictícia.
+--
+-- Nenhum dos dois é corrigido nesta migração: o primeiro exigiria
+-- casar lançamento por bolsista (o balancete não traz esse vínculo) e
+-- o segundo exige a prática de encerrar/criar em vez de editar.
+--
 -- `get_saldo_livre`: a conferência roda depois do bloco de
 -- compromissos de bolsas e soma `falta` a `v_compromissos`. O resto
 -- do corpo é o da 066 (janela do dia 07, taxas, rollup). Duas
