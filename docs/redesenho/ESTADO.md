@@ -72,7 +72,9 @@ de verdade (leitura automática), F4 (o resto dos contratos), F5 (Análise) e o 
 5. **Leitura automática** (a F3 do plano): Apps Script no Drive → Storage + `ingest_jobs` → repositório
    privado com os parsers → `aplicar_documento` ou pendência. É a frente maior; com ela a rotina do mês deixa de
    ser manual. Antes: decidir o repositório privado e o login `automacao`.
-6. **Análise** (a F5 do plano): Worker + ferramentas + blocos com origem.
+6. **Análise** (a F5 do plano): Worker + ferramentas + blocos com origem. **Plano de execução em
+   [`analise-plano.md`](analise-plano.md) (25/11)**: 5 etapas, 2 DeepSeek max executando em worktrees e o
+   GPT-6.2 Sol medium revisando cada etapa (pedido do Victor, 25/11). Esperando as decisões do §7 do plano.
 7. **Corte**: quando o `/v2/` cobrir o uso diário, o novo vai para `/` e o antigo sai. No corte: (a) o nome visível
    do sistema passa a ser **Buriti** (decisão do Victor, 23/11: título, cabeçalho e login; **o endereço e o nome do
    repositório não mudam**, porque o login mora no `localStorage` por endereço e o cofre usa o redirecionamento);
