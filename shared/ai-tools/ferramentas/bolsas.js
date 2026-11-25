@@ -97,6 +97,16 @@ function criarRegistradorUnico(ctx) {
   };
 }
 
+/**
+ * Bolsa que ainda vai começar (início depois de hoje) e não foi cancelada nem
+ * encerrada: é compromisso, então entra no recorte padrão junto das vigentes.
+ */
+function comecaDepois(bolsa, hoje) {
+  if (typeof hoje !== 'string' || typeof bolsa.inicio !== 'string') return false;
+  if (bolsa.status === 'cancelled' || bolsa.status === 'ended') return false;
+  return bolsa.inicio.slice(0, 10) > hoje;
+}
+
 export async function executar(ctx, args) {
   let centro = null;
   if (args && args.project_id !== undefined && args.project_id !== null && args.project_id !== '') {
@@ -154,7 +164,7 @@ export async function executar(ctx, args) {
       (bolsa) =>
         visiveis.has(bolsa.project_id) &&
         (centro ? bolsa.project_id === centro.id : true) &&
-        (incluirEncerradas || bolsa.vigente_hoje === true)
+        (incluirEncerradas || bolsa.vigente_hoje === true || comecaDepois(bolsa, ctx.hoje))
     );
     if (bolsas.length === 0) continue;
 
@@ -236,9 +246,9 @@ export async function executar(ctx, args) {
       item.status = noStatus.id;
       nos.push(noStatus);
 
-      // Por padrão só entram vigentes; o campo só carrega informação quando
-      // `incluir_encerradas` também traz as antigas.
-      if (incluirEncerradas) {
+      // Por padrão entram vigentes e as que ainda vão começar; o campo diz
+      // qual é qual sempre que a bolsa não for vigente hoje.
+      if (incluirEncerradas || bolsa.vigente_hoje !== true) {
         const noVigente = registrar.texto(
           bolsa.vigente_hoje ? 'sim' : 'não',
           'Vigente hoje',

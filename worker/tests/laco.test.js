@@ -382,6 +382,33 @@ describe('tetos e falhas', () => {
     expect(nomes.at(-1)).toBe('fim');
   });
 
+  it('bloco que o emissor recusou não conta: esgotar as rodadas continua interno', async () => {
+    const respostas = [
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [chamada('criar_bloco', { tipo: 'texto', texto: 'ok' })],
+        },
+      },
+      ...Array.from({ length: 20 }, () => ({
+        message: { role: 'assistant', content: '', tool_calls: [chamada('listar_centros')] },
+      })),
+    ];
+    const { sessao } = sessaoFalsa();
+    const eventos = [];
+    const emitir = async (nome, dados) => {
+      eventos.push({ nome, dados });
+      return nome !== 'bloco';
+    };
+    const modelo = modeloFalso(respostas);
+
+    const r = await executarLaco({ ...BASE, sessao, chamarModelo: modelo, emitir });
+
+    expect(r.codigo).toBe('interno');
+    expect(eventos.find((e) => e.nome === 'erro').dados.codigo).toBe('interno');
+  });
+
   it('resultado acima de 60.000 chars volta erro curto ao modelo', async () => {
     const gigante = 'x'.repeat(60_001);
     const respostas = [

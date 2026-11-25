@@ -525,3 +525,18 @@ continua exigindo `interno`.
 - Raiz: **838 passando + 19 ignorados (857)**.
 - Worker: **118** (antes 117).
 - `npm run lint`: 0 erros e 0 avisos.
+
+### Revisão do Sol sobre `94daca9` e ajuste do Claude
+
+Cinco achados, todos conferidos e corrigidos pelo Claude, cada um com teste que falha sem a correção:
+
+| Achado | Correção |
+|---|---|
+| Alto: `rendimento_bruto: "0x0"` virava R$ 0,00 (o `Number()` aceita hexadecimal, `1e3` etc.) | `numeroOuNulo` (comum.js, vale para todas as ferramentas) só aceita texto decimal simples (`123`, `-4.5`, `4,5`) |
+| Médio: `11/2026%` virava data e escondia o percentual sem origem | `MM/AAAA` não vale com `%` ou decimal colado depois |
+| Médio: `incluir_encerradas` trazia futuras e canceladas; e o padrão "só vigentes" deixava de fora bolsa que ainda vai começar, que é compromisso | padrão = vigentes **e futuras não canceladas** (marcadas "vigente hoje: não"); `incluir_encerradas: true` traz todas, com a situação de cada uma |
+| Baixo: bloco recusado pelo emissor contava para `incompleta` | só conta o bloco que o emissor aceitou |
+| Baixo: a regra 8 mandava dizer o porquê e proibia supor o porquê | "Diga o porquê só quando a ferramenta informar o motivo" |
+
+Medido com o oráculo real (sem nomes): `bolsas` do 30.111 sai com ~21 mil caracteres no padrão e ~28 mil com
+`incluir_encerradas` (antes estourava 60 mil). Pacote: 152 testes; Worker: 119.

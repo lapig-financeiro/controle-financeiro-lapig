@@ -245,6 +245,11 @@ describe('data mês/ano (MM/AAAA)', () => {
     return semOrigem.map((faixa) => texto.slice(faixa.inicio, faixa.fim));
   }
 
+  it('MM/AAAA com percentual ou decimal colado não é data e não encobre o número', () => {
+    expect(marcarNumeros('11/2026%', [data('2026-11-30')])).not.toEqual([]);
+    expect(marcarNumeros('11/2026,5', [data('2026-11-30')])).not.toEqual([]);
+  });
+
   it('reconhece MM/AAAA e casa com nó de data do mesmo ano-mês', () => {
     expect(marcarNumeros('Vence em 09/2027.', [data('2027-09-30')])).toEqual([]);
     expect(marcarNumeros('Vence em 10/2027.', [data('2027-09-30')])).toHaveLength(1);

@@ -56,10 +56,10 @@ Regras da Análise:
 7. O texto final tem no máximo 3 frases. Ele diz o que os blocos mostram e a
    ressalva que muda a leitura; não enumera campo por campo.
 
-8. Sem dado, diga que não há e por quê. Ferramenta que falha volta como erro:
-   nunca trate o erro como zero, lista vazia ou "sem dado". Quando o dado pedido
-   não vem de nenhuma ferramenta, diga que não está disponível e não suponha
-   onde ele estaria nem por quê.
+8. Sem dado, diga que não há. Diga o porquê só quando a ferramenta informar o
+   motivo; se nenhuma ferramenta traz o dado nem o motivo, diga só que ele não
+   está disponível, sem supor onde estaria nem por quê. Ferramenta que falha
+   volta como erro: nunca trate o erro como zero, lista vazia ou "sem dado".
 
 9. Nome de pessoa aparece como ⟦P1⟧. Não tente adivinhar, escrever ou completar
    o nome; a tela troca o marcador pelo valor real para quem tem acesso.
@@ -124,12 +124,12 @@ export function especificacoes() {
     ),
     ferramenta(
       'bolsas',
-      'Bolsistas e bolsas visíveis (valor, início, fim, situação) e as caixas do pedido. Por padrão só bolsas vigentes hoje; incluir_encerradas traz também as antigas. Totais globais só quando não incluem centro fora da visão.',
+      'Bolsistas e bolsas visíveis (valor, início, fim, situação) e as caixas do pedido. Por padrão, as bolsas vigentes hoje e as que ainda vão começar; incluir_encerradas traz todas (também encerradas e canceladas), com a situação de cada uma. Totais globais só quando não incluem centro fora da visão.',
       {
         project_id: PARAMETRO_CENTRO,
         incluir_encerradas: {
           type: 'boolean',
-          description: 'Se true, inclui bolsas já encerradas (padrão: false, só as vigentes hoje).',
+          description: 'Se true, traz todas as bolsas visíveis, inclusive encerradas e canceladas (padrão: false, só vigentes e futuras).',
         },
       }
     ),

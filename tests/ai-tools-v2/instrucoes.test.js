@@ -31,7 +31,7 @@ describe('INSTRUCOES', () => {
   it('acrescenta as regras da Análise', () => {
     expect(INSTRUCOES).toContain('Toda resposta é feita de blocos');
     expect(INSTRUCOES).toContain('máximo 3 frases');
-    expect(INSTRUCOES).toContain('Sem dado, diga que não há e por quê');
+    expect(INSTRUCOES).toContain('Sem dado, diga que não há.');
     expect(INSTRUCOES).toContain('Número só por "criar_bloco" ou "calcular"');
     expect(INSTRUCOES).toContain('⟦P1⟧');
   });
@@ -39,7 +39,9 @@ describe('INSTRUCOES', () => {
   it('proíbe especular quando o dado não vem de nenhuma ferramenta', () => {
     const texto = INSTRUCOES.replace(/\s+/g, ' ');
     expect(texto).toContain('não está disponível');
-    expect(texto).toContain('não suponha onde ele estaria nem por quê');
+    expect(texto).toContain('Diga o porquê só quando a ferramenta informar o motivo');
+    expect(texto).toContain('sem supor onde estaria nem por quê');
+    expect(texto).not.toContain('diga que não há e por quê');
   });
 });
 

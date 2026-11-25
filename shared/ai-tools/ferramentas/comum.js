@@ -13,7 +13,10 @@ export function textoOuNulo(valor) {
 
 export function numeroOuNulo(valor) {
   if (typeof valor === 'number' && Number.isFinite(valor)) return valor;
-  if (typeof valor === 'string' && valor.trim() !== '') {
+  // Texto só vale como número decimal simples ("123", "-4.5", "4,5"). Sem isso,
+  // Number() aceita "0x0", "1e3", "Infinity" com espaço etc., e um valor
+  // malformado da RPC virava zero (ou outro número) em vez de erro de formato.
+  if (typeof valor === 'string' && /^\s*-?\d+(?:[.,]\d+)?\s*$/.test(valor)) {
     const numero = Number(valor.trim().replace(',', '.'));
     if (Number.isFinite(numero)) return numero;
   }

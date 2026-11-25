@@ -471,6 +471,17 @@ describe('desembolsos', () => {
     expect(bloco.numero.origem.consulta).toBe('get_repasses_v2');
   });
 
+  it.each(['0x0', '1e3', 'Infinity', ' 12 34 '])(
+    'rendimento "%s" (texto que Number() aceitaria) é erro de formato, nunca número',
+    async (valor) => {
+      const repasses = fixture('repasses');
+      repasses.recursos.rendimento_bruto = valor;
+      const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
+      const resultado = await sessao.executar('desembolsos', { project_id: '30.901' });
+      expect(resultado.erro).toBe('Não foi possível carregar os desembolsos. (formato)');
+    }
+  );
+
   it('rendimento não numérico é erro de formato, nunca zero', async () => {
     const repasses = fixture('repasses');
     repasses.recursos.rendimento_bruto = 'não é número';
@@ -683,6 +694,27 @@ describe('bolsas', () => {
     expect(dados.bolsistas[0].bolsas).toHaveLength(1);
     const vigente = dados.nos.find((no) => no.id === dados.bolsistas[0].bolsas[0].vigente_hoje);
     expect(vigente.valor).toBe('não');
+  });
+
+  it('por padrão entra a bolsa que ainda vai começar, marcada como não vigente; a cancelada não', async () => {
+    const pedido = fixture('pedido_bolsas');
+    const futura = pedido.bolsistas[0].bolsas[0];
+    futura.vigente_hoje = false;
+    futura.status = 'active';
+    futura.inicio = '2027-01-01';
+    const sessao = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    const dados = json(await sessao.executar('bolsas', { project_id: '30.901' }));
+    expect(dados.bolsistas).toHaveLength(1);
+    const vigente = dados.nos.find((no) => no.id === dados.bolsistas[0].bolsas[0].vigente_hoje);
+    expect(vigente.valor).toBe('não');
+
+    futura.status = 'cancelled';
+    const outra = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    expect(json(await outra.executar('bolsas', { project_id: '30.901' })).bolsistas).toEqual([]);
+    const todas = json(
+      await outra.executar('bolsas', { project_id: '30.901', incluir_encerradas: true })
+    );
+    expect(todas.bolsistas).toHaveLength(1);
   });
 
   it('incluir_encerradas precisa ser booleano', async () => {

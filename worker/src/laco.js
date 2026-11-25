@@ -432,8 +432,8 @@ export async function executarLaco({
           }
 
           await emitirPasso(nome, 'fim');
-          await emitir('bloco', blocoTela);
-          blocosEmitidos += 1;
+          // Só conta como emitido o bloco que o emissor aceitou.
+          if ((await emitir('bloco', blocoTela)) !== false) blocosEmitidos += 1;
           const recibo = saida.bloco?.id ? { id: saida.bloco.id } : { ok: true };
           mensagens.push(mensagemDeTool(chamada, nome, recibo));
           continue;
