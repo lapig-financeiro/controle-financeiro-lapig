@@ -91,6 +91,72 @@ function limparCpfEEmail(valor) {
 }
 
 /**
+ * Escolhe os trechos a trocar por ⟦Pn⟧ sem deixar pedaço de nome à vista.
+ *
+ * 1. Entre trechos que se sobrepõem, a combinação sem sobreposição que cobre
+ *    MAIS texto (agendamento ponderado de intervalos); no empate, a que usa
+ *    mais trechos com acento. "Joao Pedro Silva" ganha de "Pedro Silva"
+ *    dentro dele, e "Maria Inês" + "Ana Paula" ganham de "Ines Ana Paula"
+ *    que cruza os dois.
+ * 2. O que ficou descoberto dentro de algum trecho achado (sobra de um nome
+ *    que perdeu a disputa) também vira marcador: o do trecho mais longo que
+ *    cobre a sobra. A ficha pode repetir; o nome nunca fica exposto.
+ */
+function escolherTrechos(candidatos, fonte) {
+  const PESO_CARACTERE = 1000;
+  const ordenados = [...candidatos].sort((a, b) => a.fim - b.fim || a.inicio - b.inicio);
+  const melhor = new Array(ordenados.length + 1).fill(0);
+  const escolha = new Array(ordenados.length + 1).fill(null);
+  for (let i = 1; i <= ordenados.length; i += 1) {
+    const atual = ordenados[i - 1];
+    let anterior = i - 1;
+    while (anterior > 0 && ordenados[anterior - 1].fim > atual.inicio) anterior -= 1;
+    const peso = (atual.fim - atual.inicio) * PESO_CARACTERE + (atual.exato ? 1 : 0);
+    const com = melhor[anterior] + peso;
+    if (com > melhor[i - 1]) {
+      melhor[i] = com;
+      escolha[i] = { usa: true, anterior };
+    } else {
+      melhor[i] = melhor[i - 1];
+      escolha[i] = { usa: false };
+    }
+  }
+  const escolhidos = [];
+  for (let i = ordenados.length; i > 0; ) {
+    if (escolha[i].usa) {
+      escolhidos.push(ordenados[i - 1]);
+      i = escolha[i].anterior;
+    } else {
+      i -= 1;
+    }
+  }
+
+  // Sobras: posições cobertas por algum candidato e por nenhum escolhido.
+  const sobras = [];
+  for (const candidato of candidatos) {
+    let posicao = candidato.inicio;
+    const dentro = escolhidos
+      .filter((item) => item.inicio < candidato.fim && item.fim > candidato.inicio)
+      .sort((a, b) => a.inicio - b.inicio);
+    for (const item of dentro) {
+      if (item.inicio > posicao) sobras.push({ inicio: posicao, fim: item.inicio, dono: candidato, texto: fonte.slice(posicao, item.inicio) });
+      posicao = Math.max(posicao, item.fim);
+    }
+    if (posicao < candidato.fim) {
+      sobras.push({ inicio: posicao, fim: candidato.fim, dono: candidato, texto: fonte.slice(posicao, candidato.fim) });
+    }
+  }
+  const RE_SO_SEPARADOR = /^[^\p{L}\p{N}]*$/u;
+  for (const sobra of sobras.sort((a, b) => b.dono.fim - b.dono.inicio - (a.dono.fim - a.dono.inicio))) {
+    if (escolhidos.some((item) => sobra.inicio < item.fim && sobra.fim > item.inicio)) continue;
+    // Só espaço ou pontuação entre dois nomes escolhidos não é pedaço de nome.
+    if (RE_SO_SEPARADOR.test(sobra.texto)) continue;
+    escolhidos.push({ inicio: sobra.inicio, fim: sobra.fim, marcador: sobra.dono.marcador, sobra: true });
+  }
+  return escolhidos;
+}
+
+/**
  * Cria a máscara de uma sessão. `rpc` é o mesmo cliente injetado na sessão;
  * ele só é usado uma vez, para carregar o dicionário de nomes dos bolsistas.
  */
@@ -230,7 +296,7 @@ export function criarMascara({ rpc } = {}) {
       : item.chaveExata ?? chaveExataDoNome(item.nome);
     if (!chave) return [];
     const padrao = new RegExp(
-      `(^|[^\p{L}\p{N}])(${escaparRegex(chave)})(?=$|[^\p{L}\p{N}])`,
+      `(^|[^\\p{L}\\p{N}])(${escaparRegex(chave)})(?=$|[^\\p{L}\\p{N}])`,
       'gu'
     );
     const trechos = [];
@@ -253,11 +319,9 @@ export function criarMascara({ rpc } = {}) {
     if (typeof valor !== 'string') return valor;
     const saida = limparCpfEEmail(valor);
     if (nomesParaBusca.length === 0) return saida;
-    // Uma passada só, com os dois modos juntos: ganha o trecho MAIS LONGO
-    // (o nome completo cobre o nome curto de outra pessoa dentro dele) e, no
-    // mesmo trecho, a identidade com acento ("João" acha a ficha do João
-    // mesmo quando existe um "Joao"). Duas passadas em sequência deixavam
-    // "Joao" exposto em "Joao Pedro Silva" quando "Pedro Silva" casava antes.
+    // Uma passada só, com os dois modos juntos (ver `escolherTrechos`). Duas
+    // passadas em sequência deixavam "Joao" exposto em "Joao Pedro Silva"
+    // quando "Pedro Silva" casava antes.
     const exato = normalizarComparavel(saida, { semAcento: false });
     const semAcento = normalizarComparavel(saida, { semAcento: true });
     const candidatos = [];
@@ -266,17 +330,7 @@ export function criarMascara({ rpc } = {}) {
       candidatos.push(...acharTrechos(semAcento.texto, semAcento.mapa, item, true));
     }
     if (candidatos.length === 0) return saida;
-    candidatos.sort((a, b) => {
-      const tamanho = b.fim - b.inicio - (a.fim - a.inicio);
-      if (tamanho !== 0) return tamanho;
-      if (a.exato !== b.exato) return a.exato ? -1 : 1;
-      return a.inicio - b.inicio;
-    });
-    const escolhidos = [];
-    for (const candidato of candidatos) {
-      if (escolhidos.some((item) => candidato.inicio < item.fim && candidato.fim > item.inicio)) continue;
-      escolhidos.push(candidato);
-    }
+    const escolhidos = escolherTrechos(candidatos, exato.fonte);
     escolhidos.sort((a, b) => b.inicio - a.inicio);
     let resultado = exato.fonte;
     for (const trecho of escolhidos) {

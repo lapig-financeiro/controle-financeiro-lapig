@@ -117,6 +117,34 @@ describe('máscara — conferência final da 4ª rodada', () => {
     expect(sessao.marcarTexto('Pedro Silva').texto).toBe('⟦P2⟧');
   });
 
+  it('nome entre chaves é mascarado (bordas por classe Unicode)', async () => {
+    const { sessao } = montar();
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    expect(sessao.marcarTexto('Caixa {Pessoa Exemplo Um}').texto).toBe('Caixa {⟦P1⟧}');
+  });
+
+  it('trecho mais longo que cruza dois nomes não deixa pedaço do primeiro', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].nome = 'Maria Inês';
+    pedido.bolsistas[1].nome = 'Ana Paula';
+    pedido.bolsistas.push({ ...pedido.bolsistas[1], nome: 'Ines Ana Paula' });
+    const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const marcado = sessao.marcarTexto('Maria Inês' + String.fromCharCode(10) + 'Ana Paula').texto;
+    expect(marcado).not.toMatch(/Maria|Inês|Ines|Ana|Paula/);
+    expect(marcado).toBe('⟦P1⟧' + String.fromCharCode(10) + '⟦P2⟧');
+  });
+
+  it('sobra de nome que perdeu a disputa também é mascarada', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].nome = 'Ana Paula Souza';
+    pedido.bolsistas[1].nome = 'Paula Souza Lima';
+    const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const marcado = sessao.marcarTexto('Ana Paula Souza Lima').texto;
+    expect(marcado).not.toMatch(/Ana|Paula|Souza|Lima/);
+  });
+
   it('nomes que só diferem no acento são duas pessoas', async () => {
     const pedido = fixture('pedido_bolsas');
     pedido.bolsistas[0].nome = 'Joao Exemplo';

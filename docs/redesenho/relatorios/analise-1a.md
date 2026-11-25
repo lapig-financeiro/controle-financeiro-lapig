@@ -426,3 +426,16 @@ Achou 3 altos criados pelas próprias correções; os três conferidos e corrigi
   `R$` é moeda com qualquer coisa antes.
 
 Pacote: 131 testes.
+
+### Terceira conferência curta do Sol (sobre `e8e38ed`)
+
+Dois altos, ambos conferidos e corrigidos com teste que falha sem a correção:
+
+- O `\p{L}` da borda do nome perdeu o escape na reescrita (`{Ana Paula}` passava inteiro). Voltou a `\p{L}` no
+  template.
+- "Ganha o mais longo" deixava `Maria` exposto quando `Ines Ana Paula` (outra pessoa) cruzava `Maria Inês` e
+  `Ana Paula`. A escolha agora é a combinação sem sobreposição que **cobre mais texto** (agendamento ponderado de
+  intervalos; no empate, com acento), e o que sobrar descoberto dentro de qualquer trecho achado também vira
+  marcador (só espaço ou pontuação entre dois nomes não conta como sobra).
+
+Pacote: 134 testes.
