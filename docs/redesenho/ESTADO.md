@@ -104,7 +104,7 @@ Relatórios completos (o que mudou em cada rodada, mutantes, desvios): `docs/red
 os ids das sessões do opencode estão em `NãoColocarNoGit/analise/etapa1/`. Os `.revisao-*.md` soltos nos worktrees
 são cópias de trabalho: **não entram em commit**. O oráculo da bateria (retrato só leitura de 25/11, sem dados
 pessoais) está em `NãoColocarNoGit/analise/oraculo-2026-11-25.json`. O teste das 3 primeiras perguntas da bateria
-roda **no console do site, com o login do Victor**: `NãoColocarNoGit/analise/teste-console.js` (o login guardado
+roda **no console de `…/controle-financeiro-lapig/manutencao.json`, com o login do Victor**: `NãoColocarNoGit/analise/teste-console.js` (o login guardado
 do MCP não pode ser usado por script; o sistema de permissões recusou).
 
 Decisões tomadas durante as revisões (não rediscutir):
@@ -120,12 +120,29 @@ Decisões tomadas durante as revisões (não rediscutir):
   (contrato §3). **A Etapa 2 precisa trazer uma ferramenta de dinheiro em conta e plano com `ref`**, para esses
   números também abrirem o documento, como no site (requisito do Victor).
 
+**Teste real em 25/11** (3 perguntas da bateria, login do Victor, pelo console de `manutencao.json`: o CSP do
+`/v2/` só deixa conectar ao Supabase, e o do site atual também; a Etapa 2 acrescenta o Worker ao `connect-src` de
+`app/vite.config.js`). O DeepSeek aceitou `think: 'high'` sem erro. Resultado:
+- **"Quanto o 30.109 tem livre e de onde vem"** (24 s, 4 rodadas): R$ 514.864,60, **igual ao oráculo**; cada número
+  dos 3 blocos abre a árvore até a linha do plano, do balancete ou da bolsa. Defeito pequeno: o texto marcou
+  `11/2026` como número sem origem (o formato mês/ano não é reconhecido como data em `texto.js`).
+- **"Até quando as bolsas do 30.111 cabem"** (17 s): a ferramenta `bolsas` estourou o teto de 60.000 caracteres
+  **mesmo filtrada pelo centro** (3 tentativas); o modelo montou o saldo da rubrica com `calcular`
+  (R$ 182.514,64 = 1.046.700 − 771.100 − 93.085,36) e a vigência, mas esgotou as 8 rodadas e terminou em `erro`.
+  A resposta de verdade pede a 071 `projecao_bolsas_v2` (Etapa 2); a ferramenta `bolsas` precisa de recorte
+  (só vigentes por padrão, nós mais enxutos).
+- **"Quanto de rendimento entrou no 30.099"** (6 s): **errado**. A `get_repasses_v2` devolve
+  `rendimento_bruto` (R$ 31.040,69 no oráculo), mas a ferramenta `desembolsos` descarta esse campo; o modelo disse
+  que não havia rendimento e especulou que ele estaria "misturado" ao recebido. Corrigir: expor o rendimento (com a
+  ressalva de que já está no saldo) e instruir o modelo a não especular quando o dado falta.
+
 **Próximo passo, nesta ordem:**
-1. O Victor roda `teste-console.js` no console do site e cola o resultado; o Claude confere contra o oráculo
-   (número, origem de cada bloco, rendimento sem somar) e o `think: 'high'` (se a API recusar, `think: true`).
-2. Push do master (os commits de documentação e os merges da Análise) e nova tentativa do deploy do Pages, que
-   falhou 4× em 25/11 (o conserto dos leitores de 25/11 ainda não está no ar).
-3. Etapa 2: tela `#/analise` + 071 `projecao_bolsas_v2` + ferramenta de dinheiro em conta e plano com `ref`.
+1. Rodada curta de correção (DeepSeek executando + Sol revisando): `desembolsos` com rendimento; `bolsas` com
+   recorte; data `mm/aaaa` no `texto.js`; decidir se esgotar as rodadas depois de blocos válidos ainda é `erro`.
+   Republicar o Worker e repetir as 3 perguntas (`teste-console.js` em `manutencao.json`).
+2. Push do master e nova tentativa do deploy do Pages (o conserto dos leitores de 25/11 ainda não está no ar).
+3. Etapa 2: tela `#/analise` (com o Worker no CSP) + 071 `projecao_bolsas_v2` + ferramenta de dinheiro em conta e
+   plano com `ref`.
 
 ## Dívidas técnicas conhecidas
 Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeçalho de cada `.sql`). Ficam:
