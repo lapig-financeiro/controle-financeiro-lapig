@@ -142,6 +142,10 @@ não canceladas**; `incluir_encerradas` traz todas) — 30.111 caiu de >60 mil p
 data; regra 8 "sem dado, não especular"; erro `incompleta` quando as rodadas acabam depois de bloco aceito; número
 vindo de texto só se for decimal simples (`"0x0"` virava R$ 0). Worker republicado (versão `e202b294`).
 
+**Publicado em 25/11 (noite)**: master enviado ao GitHub; o deploy do Pages voltou a passar depois de uma espera de
+30 s entre o upload do artefato e o `deploy-pages` (`d54ec56`; a falha de 5 vezes no dia era corrida de tempo, não
+instabilidade). Os consertos dos leitores (DAO em branco e fim "início + N meses") estão no ar.
+
 **Segundo teste real (25/11), as 3 perguntas sem erro:**
 - 30.109 livre: R$ 514.864,60 (= oráculo), 12 s, texto sem número sem origem.
 - 30.111 bolsas: 28 s, 5 rodadas. As 71 bolsas vigentes terminam em 31/12/2026 (confere com o oráculo), antes do
@@ -154,8 +158,7 @@ põe um número na coluna "Grupo"/"Linha" e repete valores; o contrato precisa d
 árvore, ex. o nome da rubrica). O texto final às vezes vem em lista markdown, contra a regra das 3 frases.
 
 **Próximo passo, nesta ordem:**
-1. Push do master e nova tentativa do deploy do Pages (o conserto dos leitores de 25/11 ainda não está no ar).
-2. Etapa 2: tela `#/analise` (com o Worker no CSP do `app/vite.config.js`) + rótulo de linha nas tabelas + 071
+1. Etapa 2: tela `#/analise` (com o Worker no CSP do `app/vite.config.js`) + rótulo de linha nas tabelas + 071
    `projecao_bolsas_v2` + ferramenta de dinheiro em conta e plano com `ref`.
 
 ## Dívidas técnicas conhecidas
