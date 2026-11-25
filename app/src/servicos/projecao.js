@@ -61,7 +61,7 @@ function somarMeses(mes, quantidade) {
 }
 
 /** Resposta de um estado em que não há conta mês a mês para mostrar. */
-function respostaSemConta(estado, motivo, folhaAtrasada = 0) {
+function respostaSemConta(estado, motivo, folhaAtrasada = 0, faltaFolhaAtrasada = 0) {
   return {
     estado,
     motivo,
@@ -76,7 +76,7 @@ function respostaSemConta(estado, motivo, folhaAtrasada = 0) {
     mes_mais_apertado: null,
     taxa_fracao: 0,
     folha_atrasada: folhaAtrasada,
-    falta_folha_atrasada: 0,
+    falta_folha_atrasada: faltaFolhaAtrasada,
     folha_atrasada_coberta_por: null,
     atrasados: [],
     fora: [],
@@ -111,9 +111,26 @@ function lerFolhaAtrasada(saldo) {
 }
 
 /** Motivo de `sem_bolsas` que não esconde a folha atrasada da 070. */
-function motivoSemBolsas(motivo, folhaAtrasada) {
+function motivoSemBolsas(motivo, folhaAtrasada, falta = 0) {
   if (!(folhaAtrasada > 0)) return motivo;
-  return `${motivo} Há ${dinheiro(folhaAtrasada, { centavos: true })} de folha atrasada que ainda vai sair do caixa.`;
+  const base = `${motivo} Há ${dinheiro(folhaAtrasada, { centavos: true })} de folha atrasada que ainda vai sair do caixa.`;
+  return falta > 0
+    ? `${base} O dinheiro em conta hoje não a paga: faltam ${dinheiro(falta, { centavos: true })}.`
+    : base;
+}
+
+/**
+ * Falta da folha atrasada quando não há conta mês a mês (sem bolsas na
+ * janela): mesma base de caixa da projeção (sem o rendimento, a não ser
+ * que ele conte). Sem saldo legível, zero — a frase só não ganha a falta.
+ */
+function faltaAtrasadaSemConta(saldo, contaRendimento, valor) {
+  if (!(valor > 0)) return 0;
+  const caixa = numero(saldo?.saldo_disponivel_caixa);
+  if (caixa === null) return 0;
+  const rendimento = numero(saldo?.rendimento_liquido);
+  const base = contaRendimento || rendimento === null ? caixa : caixa - rendimento;
+  return r2(Math.max(0, valor - base));
 }
 
 /**
@@ -197,9 +214,11 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       'sem_bolsas',
       motivoSemBolsas(
         'Nenhuma bolsa ativa para pagar na janela do balancete.',
-        folhaAtrasada.valor
+        folhaAtrasada.valor,
+        faltaAtrasadaSemConta(saldo, opcoes.rendimento, folhaAtrasada.valor)
       ),
-      folhaAtrasada.valor
+      folhaAtrasada.valor,
+      faltaAtrasadaSemConta(saldo, opcoes.rendimento, folhaAtrasada.valor)
     );
   }
 
@@ -268,9 +287,11 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       'sem_bolsas',
       motivoSemBolsas(
         'As bolsas cadastradas terminam antes do início da janela do balancete.',
-        folhaAtrasada.valor
+        folhaAtrasada.valor,
+        faltaAtrasadaSemConta(saldo, opcoes.rendimento, folhaAtrasada.valor)
       ),
-      folhaAtrasada.valor
+      folhaAtrasada.valor,
+      faltaAtrasadaSemConta(saldo, opcoes.rendimento, folhaAtrasada.valor)
     );
   }
 
@@ -517,7 +538,9 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
       // falta da atrasada tem campo e frase próprios.
       saldoConta = r2(saldoConta - atrasadaDoMes);
       saldoConta = r2(saldoConta + antes);
-      if (saldoConta < folha && mesFalta === null) {
+      // Sem folha regular no mês não há "falta no dia 07": um caixa negativo
+      // só pela folha atrasada já está em `falta_folha_atrasada`.
+      if (folha > 0 && saldoConta < folha && mesFalta === null) {
         mesFalta = mes;
         faltaValor = r2(folha - saldoConta);
       }
@@ -526,7 +549,12 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
         // A frase "ela fica paga" só vale quando os desembolsos que entram
         // antes da folha deixam o mês capaz de pagar também a folha regular.
         let acumulado = r2(saldoInicioMes - atrasadaDoMes);
-        for (const desembolso of listaAntes) {
+        // Na ordem em que o dinheiro entra (data), não na ordem da parcela:
+        // a frase cita o desembolso que completa a cobertura.
+        const porData = [...listaAntes].sort((a, b) =>
+          String(a.data || '').localeCompare(String(b.data || ''))
+        );
+        for (const desembolso of porData) {
           acumulado = r2(acumulado + desembolso.liquido);
           if (acumulado >= folha) {
             folhaAtrasadaCobertaPor = {
