@@ -75,7 +75,7 @@ Branch `redesenho/folha-atrasada-tela`, worktree `C:/Users/amara/dev/cf-folha-te
 
 - `npm run lint`: sem erro nem aviso.
 - `npm test` (raiz): **685 passaram, 19 pulados**; 43 arquivos passaram e 1 foi pulado.
-- `npm --prefix app test`: **250 passaram** em 24 arquivos.
+- `npm --prefix app test`: **254 passaram** em 24 arquivos.
 - `npm --prefix app run build`: verde; guarda de estilo sem violação e verificação de build sem dado de
   exemplo no bundle.
 - `bolsistas.test.jsx` estourou o timeout de 5 s uma vez na primeira execução completa depois de mexer no
@@ -98,6 +98,11 @@ Servidor `npm --prefix app run dev:exemplo` (porta 5173) e Chrome headless.
   balancete de 15/10/2026".
 
 ## 2ª rodada (25/11/2026 — revisão do GPT-6.2 Sol, conferida pelo Claude)
+
+> **A 3ª rodada desfez os dois pontos estruturais abaixo**: `depende_de` voltou a falar só de desembolso
+> depois da folha (sem `antes_da_folha`), e `falta_valor` voltou a ser só a falta da folha regular. A
+> sanitização também passou a aceitar só `number` finito, sem string. A seção "3ª rodada" descreve o estado
+> final.
 
 ### Conta (`projecao.js`)
 
@@ -159,6 +164,75 @@ Servidor `npm --prefix app run dev:exemplo` (porta 5173) e Chrome headless.
 - `npm --prefix app run build`: verde, sem violação de estilo e sem dado de exemplo no bundle.
 - Nenhuma outra IA foi chamada; nada foi enviado (`sem push`). O `PEDIDO-rev-tela.txt` que apareceu no
   worktree é só o pedido de revisão: não foi versionado.
+
+## 3ª rodada (25/11/2026 — 2ª revisão do GPT-6.2 Sol, conferida pelo Claude)
+
+A 2ª rodada tinha estendido `depende_de` com `antes_da_folha` e feito `falta_valor` guardar a maior das duas
+faltas. Isso misturava a falta da folha atrasada com a falta da folha regular e produzia frases erradas (por
+exemplo, "faltam X no dia 07" quando a falta era a atrasada, ou "o desembolso resolve" quando o orçamento
+estourava no mesmo mês). A 3ª rodada simplificou.
+
+### Conta (`projecao.js`)
+
+- **Desfeitos `antes_da_folha` e a "maior das duas faltas".** `mes_falta`, `falta_valor`, `cabe_ate`,
+  `limite` e `depende_de` voltaram a falar **só da folha regular**, exatamente como antes da 2ª rodada.
+  `depende_de` volta a olhar apenas desembolsos que entram **depois** da folha no próprio mês da falta.
+- **A ordem do 1º mês continua**: sai a folha atrasada → entram os desembolsos com vencimento até o dia 07 →
+  sai a folha regular. O caixa pode ficar negativo depois da atrasada e a checagem da folha regular usa esse
+  saldo, como hoje.
+- **Campo novo `falta_folha_atrasada`** = `max(0, folha_atrasada − dinheiro em conta no início do 1º mês)`,
+  arredondado ao centavo. Quando é zero (inclusive sem balancete ou sem bolsas), não há frase nova.
+- **Campo de apoio `folha_atrasada_coberta_por`** = `{ parcela, data }` do primeiro desembolso que entra antes
+  da folha e deixa o mês capaz de pagar a atrasada **e** a folha regular; `null` quando nenhum cobre. É o dado
+  que a frase precisa para citar "desembolso N (data)".
+- **Critério da cobertura**: a frase "Ela fica paga…" só aparece quando os desembolsos de antes da folha
+  deixam o mês também capaz de pagar a folha regular. No caso (a), o desembolso de 3.000 empata a atrasada de
+  3.000, mas deixa a folha regular de 1.000 descoberta; por isso a frase é "Nenhum desembolso previsto antes
+  da folha cobre essa falta", como a revisão pediu. Sem essa condição, a tela diria que a atrasada está paga
+  enquanto a folha regular do mesmo dia 07 ainda falta.
+- **Casos da revisão, conferidos em teste:**
+  - (a) caixa 5.000, atrasada 8.000, desembolso 3.000 no dia 05, folha regular 1.000:
+    `falta_folha_atrasada` 3.000, cobertura `null`, `mes_falta` dez/26, `falta_valor` 1.000, `cabe_ate`
+    nov/26, `limite` caixa; a folha regular fecha com 5.000 − 8.000 + 3.000 = 0 e falta 1.000.
+  - (b) caixa 5.000, atrasada 8.000, folha 8.000, desembolso 30.000 no dia 05, orçamento 10.000:
+    `falta_folha_atrasada` 3.000, cobertura `{ parcela: 1, data: '2026-12-05' }`, `mes_falta` nulo, `limite`
+    orçamento, `cabe_ate` nov/26.
+  - (c) caixa 5.000, atrasada 8.000, folha mensal 8.000, desembolso 11.000 no dia 05, dois meses: cobertura
+    `{ parcela: 1, data: '2026-12-05' }`, dezembro em `em_conta_apos_folha` 0, `mes_falta` jan/27,
+    `falta_valor` 8.000, `cabe_ate` dez/26.
+
+### Tela
+
+- A frase própria da atrasada é um parágrafo separado, acima dos botões "Contar" e **fora** da frase do limite
+  das folhas regulares:
+  "O dinheiro em conta hoje não paga a folha atrasada: faltam R$ X,00. Ela fica paga se o desembolso N
+  (DD/MM/AAAA) entrar antes." ou "… Nenhum desembolso previsto antes da folha cobre essa falta."
+- A frase só aparece com `falta_folha_atrasada > 0`; sem a chave, nada muda. A frase regular continua sem
+  mencionar a atrasada.
+
+### Dados (`dados.js`)
+
+- `valor` só aceita `number` finito (a RPC manda jsonb numérico). String, boolean, array ou objeto fazem a
+  `folha_atrasada` inteira virar `null` com `console.warn`.
+- Se só `esperado` ou `visto` forem inválidos, o objeto é mantido com o `valor` e o campo inválido vira
+  `null`, com aviso próprio.
+- O valor é arredondado ao centavo antes do teste `> 0` (`0.004` → `0`, descartado; `0.005` → `0.01`,
+  aceito). Tudo dentro de `try/catch`.
+- Testes de `dados.test.js` verificam **um `console.warn` por entrada inválida** (não um aviso qualquer no
+  fim), incluindo `true`, `[8000]`, `{ toString: null }`, `{ valor: '8000' }` e o objeto que lança ao ler
+  `valor`; e conferem `esperado`/`visto` inválidos mantendo o `valor`.
+
+### Testes desta rodada
+
+- Os três cenários (a), (b) e (c) têm teste de conta em `projecao.test.js` e teste de tela em
+  `projecao-tela.test.jsx` (frase da atrasada, frase regular separada e valores).
+- O teste de igualdade sem a chave continua: sem `folha_atrasada`, `null`, `0`, string, boolean ou array
+  produzem o mesmo resultado de hoje.
+- `npm run lint`: limpo.
+- `npm test` (raiz): **685 passaram, 19 pulados**.
+- `npm --prefix app test`: **254 passaram** em 24 arquivos.
+- `npm --prefix app run build`: verde, sem violação de estilo e sem dado de exemplo no bundle.
+- Nenhuma outra IA foi chamada; `PEDIDO-rodada3.txt` não foi versionado.
 
 ## Desvios do plano da tarefa
 

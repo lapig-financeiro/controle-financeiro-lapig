@@ -132,14 +132,12 @@ describe('camada de dados', () => {
     expect(repassesInvalido.erro).toContain('Não foi possível');
   });
 
-  it('sanitiza folha_atrasada: só número ou string numérica, arredonda ao centavo e nunca lança', () => {
+  it('sanitiza folha_atrasada: valor só number finito, esperado/visto inválidos viram null e cada entrada avisa', () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     expect(sanitizarFolhaAtrasada(undefined)).toBeNull();
     expect(sanitizarFolhaAtrasada(null)).toBeNull();
     expect(sanitizarFolhaAtrasada({ valor: 8000 })).toMatchObject({ valor: 8000 });
-    expect(sanitizarFolhaAtrasada({ valor: '8000' })).toMatchObject({ valor: 8000 });
-    expect(sanitizarFolhaAtrasada({ valor: '8.000' })).toMatchObject({ valor: 8000 });
     expect(sanitizarFolhaAtrasada({ valor: 0.005 })).toMatchObject({ valor: 0.01 });
 
     const invalidos = [
@@ -147,25 +145,47 @@ describe('camada de dados', () => {
       [8000],
       { toString: null },
       { valor: 0.004 },
+      { valor: '8000' },
+      { valor: '8.000' },
       { valor: true },
       { valor: [8000] },
       { valor: { toString: null } },
-      { valor: 8000, esperado: true },
-      { valor: 8000, visto: [] },
     ];
     for (const invalido of invalidos) {
-      expect(() => sanitizarFolhaAtrasada(invalido)).not.toThrow();
-      expect(sanitizarFolhaAtrasada(invalido)).toBeNull();
+      aviso.mockClear();
+      let resultado;
+      expect(() => {
+        resultado = sanitizarFolhaAtrasada(invalido);
+      }).not.toThrow();
+      expect(resultado).toBeNull();
+      expect(aviso).toHaveBeenCalledTimes(1);
     }
 
+    aviso.mockClear();
+    expect(sanitizarFolhaAtrasada({ valor: 8000, esperado: true })).toMatchObject({
+      valor: 8000,
+      esperado: null,
+    });
+    expect(aviso).toHaveBeenCalledTimes(1);
+
+    aviso.mockClear();
+    expect(
+      sanitizarFolhaAtrasada({ valor: 8000, esperado: 7000, visto: [] })
+    ).toMatchObject({ valor: 8000, esperado: 7000, visto: null });
+    expect(aviso).toHaveBeenCalledTimes(1);
+
+    aviso.mockClear();
     const explosivo = {
       get valor() {
         throw new Error('explodiu ao ler o valor');
       },
     };
-    expect(() => sanitizarFolhaAtrasada(explosivo)).not.toThrow();
-    expect(sanitizarFolhaAtrasada(explosivo)).toBeNull();
-    expect(aviso).toHaveBeenCalled();
+    let resultadoExplosivo;
+    expect(() => {
+      resultadoExplosivo = sanitizarFolhaAtrasada(explosivo);
+    }).not.toThrow();
+    expect(resultadoExplosivo).toBeNull();
+    expect(aviso).toHaveBeenCalledTimes(1);
   });
 
   it('usa as RPCs separadas get_balancetes_by_project e get_planos_historico para documentos', async () => {

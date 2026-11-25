@@ -493,9 +493,6 @@ function fraseDaProjecao(projecao) {
       ? mesAnteriorProjecao(mesLimiteOrcamento)
       : ultimoMes;
   if (projecao.depende_de) {
-    if (projecao.depende_de.antes_da_folha) {
-      return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: true })} para a folha atrasada; o desembolso ${projecao.depende_de.parcela} entra antes da folha e, com ele, a conta segue até ${dataCompacta(fimDoDepende)}.`;
-    }
     return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07; o desembolso ${projecao.depende_de.parcela} entra depois da folha e, com ele, a conta segue até ${dataCompacta(fimDoDepende)}.`;
   }
   return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07 e a conta não se recupera dentro das bolsas cadastradas.`;
@@ -1399,6 +1396,17 @@ export function Projeto({
     </span>
   ) : null;
   const fraseProjecao = projetar?.estado === 'ok' ? fraseDaProjecao(projetar) : '';
+  const faltaFolhaAtrasadaProjecao =
+    numeroFinito(projetar?.falta_folha_atrasada) ?? 0;
+  const coberturaFolhaAtrasada = projetar?.folha_atrasada_coberta_por || null;
+  const fraseFaltaFolhaAtrasada =
+    faltaFolhaAtrasadaProjecao > 0
+      ? `O dinheiro em conta hoje não paga a folha atrasada: faltam ${dinheiro(faltaFolhaAtrasadaProjecao, { centavos: true })}. ${
+          coberturaFolhaAtrasada
+            ? `Ela fica paga se o desembolso ${coberturaFolhaAtrasada.parcela}${coberturaFolhaAtrasada.data ? ` (${dataCompleta(coberturaFolhaAtrasada.data)})` : ''} entrar antes.`
+            : 'Nenhum desembolso previsto antes da folha cobre essa falta.'
+        }`
+      : '';
 
   // Pendências do centro.
   const listaPendencias = [...(pendenciasSt.dados || [])].sort((a, b) => {
@@ -1894,6 +1902,12 @@ export function Projeto({
 
               {fraseProjecao && (
                 <p class="projeto__projecao-frase texto-corrido">{fraseProjecao}</p>
+              )}
+
+              {fraseFaltaFolhaAtrasada && (
+                <p class="projeto__folha-atrasada-frase texto-corrido">
+                  {fraseFaltaFolhaAtrasada}
+                </p>
               )}
 
               <div class="projeto__contar" role="group" aria-label="O que entra na conta">

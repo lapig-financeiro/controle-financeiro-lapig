@@ -91,14 +91,7 @@ const SITUACOES_FOLHA_CONFERENCIA = new Set([
 ]);
 
 function numeroDoSaldo(valor) {
-  if (typeof valor === 'number') {
-    return Number.isFinite(valor) ? valor : null;
-  }
-  if (typeof valor === 'string') {
-    // Mesmo leitor de dinheiro digitado que o resto da camada usa.
-    return parseValorBR(valor);
-  }
-  return null;
+  return typeof valor === 'number' && Number.isFinite(valor) ? valor : null;
 }
 
 function dataDoSaldo(valor, formato) {
@@ -145,8 +138,9 @@ export function sanitizarFolhaAtrasada(folha) {
       folha.esperado !== undefined &&
       folha.esperado !== null
     ) {
-      console.warn('[cf] saldo: folha_atrasada com esperado inválido; descartada.');
-      return null;
+      console.warn(
+        '[cf] saldo: folha_atrasada com esperado inválido; campo descartado.'
+      );
     }
 
     const visto =
@@ -154,8 +148,9 @@ export function sanitizarFolhaAtrasada(folha) {
         ? null
         : numeroDoSaldo(folha.visto);
     if (visto === null && folha.visto !== undefined && folha.visto !== null) {
-      console.warn('[cf] saldo: folha_atrasada com visto inválido; descartada.');
-      return null;
+      console.warn(
+        '[cf] saldo: folha_atrasada com visto inválido; campo descartado.'
+      );
     }
 
     return {
