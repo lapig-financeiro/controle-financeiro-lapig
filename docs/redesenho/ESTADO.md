@@ -76,14 +76,56 @@ de verdade (leitura automática), F4 (o resto dos contratos), F5 (Análise) e o 
    [`analise-plano.md`](analise-plano.md) (25/11)**: 5 etapas, 2 DeepSeek max executando em worktrees e o
    GPT-6.2 Sol medium revisando cada etapa (pedido do Victor, 25/11). Decisões do Victor no §7 do plano (só ele
    vê a Análise por enquanto; 50 perguntas/dia; só DeepSeek high; origem clicável igual à do site). Contrato em
-   [`analise-contrato.md`](analise-contrato.md). **Etapa 1 em execução desde 25/11**: tarefas
-   `tarefas/analise-1a-ferramentas.md` (worktree `C:/Users/amara/dev/cf-analise-a`) e `analise-1b-worker.md`
-   (`cf-analise-b`).
+   [`analise-contrato.md`](analise-contrato.md). **Etapa 1: código pronto nas duas branches, falta juntar** (ver
+   a seção "Análise — Etapa 1" abaixo).
 7. **Corte**: quando o `/v2/` cobrir o uso diário, o novo vai para `/` e o antigo sai. No corte: (a) o nome visível
    do sistema passa a ser **Buriti** (decisão do Victor, 23/11: título, cabeçalho e login; **o endereço e o nome do
    repositório não mudam**, porque o login mora no `localStorage` por endereço e o cofre usa o redirecionamento);
    (b) a IA é atualizada para o sistema novo (RPCs `*_v2`, termos de contrato, selos com motivo, pendências por
    projeto) e ganha nome próprio, já que "Buriti" passa a ser o sistema (ver pendência abaixo).
+
+## Análise — Etapa 1 (onde parou em 25/11, para quem retoma)
+
+**Nada foi juntado ao master nem publicado.** As duas partes estão prontas em branches próprias, fora do OneDrive:
+
+| Parte | Worktree / branch | Último commit | Situação |
+|---|---|---|---|
+| Pacote de ferramentas `shared/ai-tools/` + `tests/ai-tools-v2/` | `C:/Users/amara/dev/cf-analise-a` · `redesenho/analise-1-a` | `3f609a1` (4 rodadas: edc69d7, 44d0e27, 2132a51, 3f609a1) | raiz 814 testes verdes, lint limpo, 29 mutantes pegos no total. **Falta a conferência final do Sol sobre a 4ª rodada** |
+| Worker `worker/` | `C:/Users/amara/dev/cf-analise-b` · `redesenho/analise-1-b` | `75a8c83` (474e042, abe1f62, 829dd2b, 63e7162 e um ajuste do Claude) | 117 testes, estável (dezenas de execuções verdes), conferido pelo Sol 4 vezes |
+
+Relatórios completos (o que mudou em cada rodada, mutantes, desvios): `docs/redesenho/relatorios/analise-1a.md` e
+`analise-1b.md`, **dentro de cada branch**. As revisões do GPT-6.2 Sol medium, os pedidos de cada rodada e os ids das
+sessões do opencode (para retomar o mesmo executor com `opencode-run.sh -s <arquivo .sid>`) estão em
+`NãoColocarNoGit/analise/etapa1/`. Os arquivos `.revisao-*.md` soltos na raiz dos worktrees são cópias de trabalho:
+**não entram em commit**. O oráculo da bateria (retrato só leitura de 25/11, sem dados pessoais) está em
+`NãoColocarNoGit/analise/oraculo-2026-11-25.json`, com o script ao lado; a `resumo_projetos_v2` devolveu 12 centros
+(conferir se é o filtro de visão antes de usar).
+
+Decisões tomadas durante as revisões (não rediscutir):
+- **Victor autorizou a 4ª rodada** nos dois executores (o plano previa 3).
+- Limite por KV fica (não Durable Object): com um único admin, a leitura atrasada do KV pode deixar passar de 50
+  por poucas perguntas.
+- Aceito como limite conhecido: a conexão fica aberta além do prazo enquanto a **própria aba** não lê (o Worker já
+  terminou o trabalho no prazo + 1 s).
+- Nome de pessoa fora da lista de bolsistas dos últimos 180 dias pode passar no **título** de pendência (a
+  máscara usa essa lista); os textos do `detalhe` das pendências não vão ao modelo.
+- Célula de tabela que reproduz o texto de um motivo vindo da RPC é aceita.
+- Sem documento até a Etapa 2: tarifa bancária, total do plano, desembolsos, saldo em conta e rendimento
+  (contrato §3). **A Etapa 2 precisa trazer uma ferramenta de dinheiro em conta e plano com `ref`**, para esses
+  números também abrirem o documento, como no site (requisito do Victor).
+
+**Próximo passo, nesta ordem:**
+1. Conferência final do Sol sobre `3f609a1` (pacote). Se sobrar achado alto, trazer ao Victor.
+2. Juntar no master: `redesenho/analise-1-a` primeiro, depois `redesenho/analise-1-b` (o Worker importa
+   `../../shared/ai-tools/index.js`). Acrescentar `worker/` ao script `lint` da raiz. Rodar `npm run lint`,
+   `npm test`, `npm --prefix worker test` e `npm --prefix app test`.
+3. Rodar o Worker local (`npm --prefix worker run dev`) contra a produção com o login do Claude (só leitura). Isso
+   pede o `.dev.vars` com a `OLLAMA_API_KEY`, que **o Victor põe** (o Claude não digita chave). Fazer 3 perguntas da
+   bateria e conferir o `think: 'high'` do DeepSeek (se a API recusar, `think: true`).
+4. Com o ok do Victor: criar o KV (`wrangler kv namespace create ANALISE_USO`, trocar o id no `wrangler.toml`), o
+   Victor põe `wrangler secret put OLLAMA_API_KEY` e o Claude faz `wrangler deploy`.
+5. Atualizar este ESTADO e o `analise-plano.md`; depois, Etapa 2 (tela `#/analise` + 071 `projecao_bolsas_v2` +
+   ferramenta de dinheiro em conta e plano).
 
 ## Dívidas técnicas conhecidas
 Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeçalho de cada `.sql`). Ficam:
@@ -120,6 +162,7 @@ Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeç
 ## Registro
 | Data | O que aconteceu |
 |---|---|
+| 25/11 | **Análise, Etapa 1**: Victor decidiu (só ele vê; 50/dia; só DeepSeek high; origem clicável igual à do site); contrato e tarefas no master (bbe1b2a). Dois DeepSeek V4.1 Flash max executaram em worktrees (pacote de ferramentas e Worker), com o GPT-6.2 Sol medium revisando cada rodada e o Claude conferindo cada achado no código. 4 rodadas em cada parte (a 4ª autorizada pelo Victor) e um ajuste do Claude no Worker. Pacote em `3f609a1`, Worker em `75a8c83`; nada juntado nem publicado. Ver a seção "Análise — Etapa 1" |
 | 25/11 | **Dois defeitos de leitura corrigidos** (vistos ao gravar os 3 centros): (1) o leitor de planos DOCX lia o DAO em branco como R$ 1, porque pegava o "1" de "conforme detalhado no anexo 1"; agora o valor da frase precisa de "R$" ou formato de dinheiro, e o plano do 30.114 sai com "Valor DAO não detectado"; (2) a planilha da FUNAPE com o fim "início + N meses" (dia do fim igual ao do início, fora do fim do mês) passa a contar até o último dia do mês anterior, e só corrige se bater com "Total de Bolsas"; avisa a linha, sem nome. Reproduzido nos arquivos reais de 25/11: dá exatamente o que foi gravado à mão no 30.106. Os dados já estavam certos e nada foi regravado. Testes `tests/bolsa-parser-fim.test.js` e 2 casos novos em `pt-parser-correcoes`; raiz 711, lint verde. Busca só leitura no banco: 5 bolsas ativas do 30.110 terminam em 01/11/2027 (contrato vai até 12/11/2027; sem a planilha não dá para saber se novembro é pago: pergunta ao Victor) e 1 bolsa ativa sem centro (`project_id` nulo, criada em 05/06/2026) |
 | 25/11 | **Folha atrasada no ar**: tela publicada (4465afd) e **070 aplicada** com o ok do Victor (manutenção ligada e desligada; dois deploys falharam por instabilidade do GitHub ao buscar o pacote e passaram ao rodar de novo); ver a linha na tabela. Mesma data: uma sessão paralela de 24/11 corrigiu **só dados** do 30.103 (uma bolsa dividida em duas linhas, jul–set e out–dez; plano da 5ª carta com CIP e DAO) e criou a tarefa da ideia "conferir balancete × plano × planilha de bolsas" (a 070 é a primeira parte dela). Gravados em 25/11 com o ok do Victor (script fora do git): 30.068 (encerrar 4 bolsas antigas, criar uma bolsa nova out–nov), 30.114 (CIP UFG/UA e DAO no plano) e 30.106 (1º remanejamento digitado + 3 bolsas com o fim no último mês pago). No 30.106 as bolsas atrasaram e R$ 12 mil de fev–out serão pagos de uma vez como retroativo (Victor, 25/11): até esse balancete chegar o livre de Pessoal aparece R$ 12 mil acima do real, porque a 070 só confere com dois balancetes; tarefa aberta no sistema. Defeitos vistos: o leitor de planos leu DAO em branco como R$ 1 (30.114); a planilha da FUNAPE dá o fim da bolsa como "início + N meses" e a importação conta um mês a mais (os dois corrigidos no mesmo dia, ver acima) |
 | 23/11 | **Projeção das bolsas no ar** (merge a49fb9e, deploy e CI verdes; bundle `index-Bd_dUCVx.js` com a seção e sem `example.org`). Esboços com números reais do 30.109 (fora do git) → Victor escolheu juntar as duas formas e chamar de "desembolso". 1ª rodada 4ead369 (DeepSeek max); revisões MiniMax max e DeepSeek max acharam bolsa posicionada errada quando começa/termina no meio da janela (alto, confirmado na 066), taxa 0,15% no texto, "Cabe até" só no painel de erro, nulo virando zero, frase ignorando o orçamento, data do centro anterior; 2ª rodada 05f7741 corrigiu com teste; o Claude corrigiu o gráfico que escalava o texto (e4a7d1e). Master: raiz 704, app 238, lint e build verdes. Também em 23/11: nome visível do sistema passa a ser **Buriti** no corte (link e repositório ficam) e o nome da IA vira pendência |

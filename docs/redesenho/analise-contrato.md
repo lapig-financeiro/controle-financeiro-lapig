@@ -34,7 +34,7 @@ Seis formas, todas já suportadas pelos componentes do `app/` ou montadas com el
 | `tipo` | Campos | O que a tela abre (Etapa 2) | Quando usar |
 |---|---|---|---|
 | `no` | `no`: nó da árvore no formato de `explicar_livre_v2` (`{ rotulo, valor, tipo, ref, partes, sinal }`) | `DeOndeVem` com `arvore = no`; a folha chama `get_origem_v2` e abre o `Documento` na página e no trecho | todo valor que vem da árvore do livre (raiz, grupos, rubricas, compromissos, folha atrasada) |
-| `livre` | `project_id` | carrega `explicar_livre_v2(project_id)` e abre `DeOndeVem`, como o valor principal da página do projeto | livre de um centro vindo de `resumo_projetos_v2` (sem árvore no resultado) |
+| `livre` | `project_id`, `chave` e `caminho` (opcionais: a `chave` do nó a abrir e os índices das `partes` desde a raiz, ex. `[1, 0, 3]`; a `chave` sozinha não é única, porque a 070 repete `linha:<id>` no compromisso e na folha atrasada) | carrega `explicar_livre_v2(project_id)` e abre `DeOndeVem`, como o valor principal da página do projeto; com `chave`, abre e destaca aquele nó | livre de um centro vindo de `resumo_projetos_v2` (sem árvore no resultado), ou nó de árvore grande demais sem `ref` |
 | `ref` | `ref: { alvo_tabela, alvo_id, campo }`, `nome` | `get_origem_v2(ref)` → `Documento`, como o saldo em conta e o rendimento (`itemOrigemDoBalancete`) | campo de documento com ref direta: balancete (`saldo_disponivel`, `rendimento_liquido`), plano, desembolso |
 | `termo` | `project_id`, `termo_id` | o painel "Do contrato" do projeto (trecho literal e documento) | vigência, taxa e outros termos de `get_termos_contrato_v2` |
 | `calculo` | `op` (`soma` \| `diferenca`), `partes: [{ id, sinal, valor, rotulo, origem }]` | lista das partes com o sinal; cada parte é clicável pela própria origem; o total confere ao centavo | resultado de `calcular` |
@@ -44,7 +44,17 @@ Regras:
 - A ferramenta escolhe a **melhor origem que a RPC oferece**. Se a RPC traz `ref` ou árvore, usar
   `sem_documento` é defeito.
 - O nó da árvore vai inteiro (com as partes) dentro da origem `no`, para o clique não precisar de nova
-  consulta. Limite: 200 nós por árvore; acima disso, usar `livre`.
+  consulta. Limite: 200 nós por árvore; acima disso, todo nó sai como `livre` com a `chave` e o `caminho`
+  dele (o clique abre a árvore naquele nó). Nunca `ref` direto, porque o valor da folha (ex.: bolsa × meses) pode
+  diferir do campo referenciado (2ª revisão de 25/11).
+- Nó de bolsa na árvore (`ref.alvo_tabela = 'scholarships'`): o modelo vê o rótulo com `⟦Pn⟧` no lugar do
+  nome, estável pela `alvo_id`, sem depender do dicionário de nomes; o nome só existe na `origem`, que
+  nunca vai ao modelo.
+- Sem documento por enquanto (decisão de 25/11, a resolver na Etapa 2): **tarifa bancária** (a 069 soma as
+  linhas e não as devolve; o pacote não replica a regra), **total do plano** e **desembolsos** (a 063 não
+  devolve o id do plano nem `ref` das parcelas), **saldo em conta e rendimento** (ainda sem ferramenta; no
+  site abrem o balancete por `ref` em `balancetes`). A Etapa 2 traz uma ferramenta de dinheiro em conta e
+  plano com essas `ref`, e RPC que devolva as linhas da tarifa.
 - `calculo` só soma e subtrai, com `sinal` ±1, para o "De onde vem" fechar ao centavo. Razão e
   percentual de conta ad hoc ficam fora da Etapa 1.
 
@@ -108,13 +118,17 @@ O que sai para a tela (evento `bloco`):
 
 ```js
 { id: 'b1', tipo: 'numero' | 'tabela' | 'texto', titulo,
-  numero: { valor, unidade, rotulo, origem, contexto: { valor, unidade } | null },
+  numero: { valor, unidade, rotulo, origem, contexto: { valor, unidade, origem } | null },
   tabela: { colunas: [{ rotulo, unidade }], linhas: [[{ valor, unidade, origem }]] },
   texto:  { texto, semOrigem: [{ inicio, fim }] } }
 ```
 
 Recusas (voltam ao modelo como erro, e o bloco não sai): id que não existe; célula literal; coluna com
-unidades misturadas; tabela com mais de 50 linhas ou 8 colunas; título com número que não é de nó.
+unidades misturadas; tabela com mais de 50 linhas ou 8 colunas; título ou cabeçalho de coluna com número
+que não é de nó.
+
+Mensagem de erro de RPC nunca vai crua ao modelo nem à tela: sai uma mensagem fixa por ferramenta com o
+código (`http_4xx`, `tempo`, `formato`, `rede`).
 
 ## 7. Worker (`worker/`)
 
