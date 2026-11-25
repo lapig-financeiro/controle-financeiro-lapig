@@ -220,6 +220,14 @@ describe('números — conferência final da 4ª rodada', () => {
     expect(marcarNumeros('Desconto R$ -1200', [moeda(-1200)])).toEqual([]);
   });
 
+  it('sinal colado depois de letra também conta; letra antes de R$ não esconde moeda', () => {
+    expect(marcarNumeros('Desconto-R$ 1200', [moeda(1200)])).toEqual([{ inicio: 8, fim: 16 }]);
+    expect(marcarNumeros('Desconto-R$ 1200', [moeda(-1200)])).toEqual([]);
+    expect(marcarNumeros('TotalR$ 1200', [numero(1200)])).toEqual([{ inicio: 5, fim: 12 }]);
+    expect(marcarNumeros('TotalR$ 1200', [moeda(1200)])).toEqual([]);
+    expect(marcarNumeros('1200-R$ 300', [numero(1200), moeda(300)])).toEqual([]);
+  });
+
   it('subtração com espaço não gruda o sinal no valor seguinte', () => {
     expect(marcarNumeros('R$ 1.200 - R$ 300', [moeda(1200), moeda(300)])).toEqual([]);
   });

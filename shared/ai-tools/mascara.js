@@ -223,14 +223,14 @@ export function criarMascara({ rpc } = {}) {
     return registrarNome(valor);
   }
 
-  function substituirNome(texto, item, semAcento) {
+  /** Trechos de `fonte` onde o nome do item aparece, num dos dois modos. */
+  function acharTrechos(comparavel, mapa, item, semAcento) {
     const chave = semAcento
       ? item.chave ?? chaveDoNome(item.nome)
       : item.chaveExata ?? chaveExataDoNome(item.nome);
-    if (!chave) return texto;
-    const { texto: comparavel, mapa, fonte } = normalizarComparavel(texto, { semAcento });
+    if (!chave) return [];
     const padrao = new RegExp(
-      `(^|[^\\p{L}\\p{N}])(${escaparRegex(chave)})(?=$|[^\\p{L}\\p{N}])`,
+      `(^|[^\p{L}\p{N}])(${escaparRegex(chave)})(?=$|[^\p{L}\p{N}])`,
       'gu'
     );
     const trechos = [];
@@ -238,32 +238,51 @@ export function criarMascara({ rpc } = {}) {
       const inicioComparavel = achado.index + achado[1].length;
       const fimComparavel = inicioComparavel + achado[2].length;
       if (fimComparavel > mapa.length) continue;
-      const inicio = mapa[inicioComparavel].inicio;
-      const fim = mapa[fimComparavel - 1].fim;
-      if (trechos.length > 0 && inicio < trechos[trechos.length - 1].fim) continue;
-      trechos.push({ inicio, fim });
+      trechos.push({
+        inicio: mapa[inicioComparavel].inicio,
+        fim: mapa[fimComparavel - 1].fim,
+        marcador: item.marcador,
+        exato: !semAcento,
+      });
     }
-    if (trechos.length === 0) return texto;
-    let saida = fonte;
-    for (let indice = trechos.length - 1; indice >= 0; indice -= 1) {
-      const trecho = trechos[indice];
-      saida = saida.slice(0, trecho.inicio) + item.marcador + saida.slice(trecho.fim);
-    }
-    return saida;
+    return trechos;
   }
 
   /** Sanitiza qualquer texto livre: CPF, e-mail e nomes conhecidos. */
   function texto(valor) {
     if (typeof valor !== 'string') return valor;
-    let saida = limparCpfEEmail(valor);
-    if (nomesParaBusca.length > 0) {
-      const ordenados = [...nomesParaBusca].sort((a, b) => b.nome.length - a.nome.length);
-      // Primeiro com acento (identidade exata), depois sem: "João" acha a
-      // ficha do João mesmo quando existe um "Joao" no dicionário.
-      for (const item of ordenados) saida = substituirNome(saida, item, false);
-      for (const item of ordenados) saida = substituirNome(saida, item, true);
+    const saida = limparCpfEEmail(valor);
+    if (nomesParaBusca.length === 0) return saida;
+    // Uma passada só, com os dois modos juntos: ganha o trecho MAIS LONGO
+    // (o nome completo cobre o nome curto de outra pessoa dentro dele) e, no
+    // mesmo trecho, a identidade com acento ("João" acha a ficha do João
+    // mesmo quando existe um "Joao"). Duas passadas em sequência deixavam
+    // "Joao" exposto em "Joao Pedro Silva" quando "Pedro Silva" casava antes.
+    const exato = normalizarComparavel(saida, { semAcento: false });
+    const semAcento = normalizarComparavel(saida, { semAcento: true });
+    const candidatos = [];
+    for (const item of nomesParaBusca) {
+      candidatos.push(...acharTrechos(exato.texto, exato.mapa, item, false));
+      candidatos.push(...acharTrechos(semAcento.texto, semAcento.mapa, item, true));
     }
-    return saida;
+    if (candidatos.length === 0) return saida;
+    candidatos.sort((a, b) => {
+      const tamanho = b.fim - b.inicio - (a.fim - a.inicio);
+      if (tamanho !== 0) return tamanho;
+      if (a.exato !== b.exato) return a.exato ? -1 : 1;
+      return a.inicio - b.inicio;
+    });
+    const escolhidos = [];
+    for (const candidato of candidatos) {
+      if (escolhidos.some((item) => candidato.inicio < item.fim && candidato.fim > item.inicio)) continue;
+      escolhidos.push(candidato);
+    }
+    escolhidos.sort((a, b) => b.inicio - a.inicio);
+    let resultado = exato.fonte;
+    for (const trecho of escolhidos) {
+      resultado = resultado.slice(0, trecho.inicio) + trecho.marcador + resultado.slice(trecho.fim);
+    }
+    return resultado;
   }
 
   /** Troca ⟦Pn⟧ pelo nome real. Só para o bloco que vai à tela. */

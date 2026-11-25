@@ -413,3 +413,16 @@ Limite que fica: um texto que escreve sem acento o nome de quem tem acento, quan
 mesmo nome sem acento, cai na ficha da segunda. O nome continua mascarado; só a ficha pode ser a errada.
 
 Pacote: 129 testes. Raiz: 821 passando, lint limpo.
+
+### Segunda conferência curta do Sol (sobre `dffea1f`)
+
+Achou 3 altos criados pelas próprias correções; os três conferidos e corrigidos, com teste que falha sem a correção:
+
+- **Duas passadas na máscara** deixavam `Joao` exposto em `Joao Pedro Silva` quando `Pedro Silva` (outra pessoa)
+  casava na passada com acento. Agora é **uma passada**: os trechos dos dois modos concorrem juntos, ganha o mais
+  longo e, no mesmo trecho, o com acento.
+- **Sinal e moeda**: a guarda "sem letra antes" impedia `Desconto-R$ 1200` de levar o sinal e `TotalR$ 1200` de ser
+  lido como moeda. Agora o sinal colado conta sempre que não vem depois de dígito (`1200-R$ 300` é subtração) e
+  `R$` é moeda com qualquer coisa antes.
+
+Pacote: 131 testes.

@@ -106,6 +106,17 @@ describe('máscara — conferência final da 4ª rodada', () => {
     expect(marcado.texto).toContain('⟦P1⟧.');
   });
 
+  it('nome curto de outra pessoa dentro do nome completo sem acento não deixa pedaço', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].nome = 'João Pedro Silva';
+    pedido.bolsistas[1].nome = 'Pedro Silva';
+    const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const um = sessao.marcarTexto('Caixa de Joao Pedro Silva.').texto;
+    expect(um).toBe('Caixa de ⟦P1⟧.');
+    expect(sessao.marcarTexto('Pedro Silva').texto).toBe('⟦P2⟧');
+  });
+
   it('nomes que só diferem no acento são duas pessoas', async () => {
     const pedido = fixture('pedido_bolsas');
     pedido.bolsistas[0].nome = 'Joao Exemplo';
