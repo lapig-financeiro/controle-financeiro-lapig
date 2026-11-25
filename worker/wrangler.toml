@@ -1,0 +1,24 @@
+name = "analise-lapig"
+main = "src/index.js"
+# 2026-11-17 é a data em que `enable_request_signal` passa a valer por padrão
+# (o registro de compatibilidade do workerd 1.20261123.1, instalado em
+# worker/node_modules, lista `enable_request_signal` / `disable_request_signal`
+# sob essa data). É o que faz `request.signal` abortar quando o cliente cai.
+compatibility_date = "2026-11-17"
+
+# Limite diário por login (contrato §7). Namespace criado em 25/11/2026 com
+# o comando abaixo (o id é dele):
+#   wrangler kv namespace create ANALISE_USO
+# Em `wrangler dev`, o KV é simulado localmente e o id não precisa existir.
+[[kv_namespaces]]
+binding = "ANALISE_USO"
+id = "6b3b7ce8eb0d454d872c881db24805da"
+
+[vars]
+# Públicas, as mesmas que o frontend carrega em frontend/js/supabase-config.js.
+# A chave do Ollama NÃO mora aqui: é segredo (`wrangler secret put OLLAMA_API_KEY`).
+SUPABASE_URL = "https://skxiivmkhpegefafdlty.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_cWm8BfwIb2JQ-WIOOjkQfA_jvTt7OmG"
+ANALISE_MODELO = "deepseek-v4.1-flash:cloud"
+ANALISE_PAPEIS = "admin"
+ANALISE_LIMITE_DIA = "50"

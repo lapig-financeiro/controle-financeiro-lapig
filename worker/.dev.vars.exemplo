@@ -1,0 +1,5 @@
+# Copie para .dev.vars (que não é versionado) e preencha. Este arquivo só tem
+# nomes, de propósito: nenhum valor real mora no git.
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+OLLAMA_API_KEY=
