@@ -296,3 +296,100 @@ arquivos restaurados foram conferidos e a suíte voltou a 99/99.
 - As medidas de CPU da 1ª rodada seguem valendo como aproximação; a 2ª rodada acrescenta um
   relógio/`AbortSignal` por chamada (custo desprezível) e não repetiu a medição no `wrangler dev`,
   que continua sem expor CPU.
+
+## 3ª rodada (revisão)
+
+Data: 25/11/2026. Branch `redesenho/analise-1-b`. Commit:
+`fix(analise): Worker — 3ª rodada da revisão`. Só `worker/` e este relatório foram tocados. A
+revisão da 2ª rodada (`.revisao-b2.md`) foi aceita pelo Claude; os dois cenários de encerramento
+dela são os testes novos.
+
+### O que mudou
+
+1. **Um dono único do encerramento.** Nasceu `worker/src/encerrador.js`: estado `aberto →
+   encerrando → fechado`, e `encerrar({ erro?, desconectado? })` só vale na primeira chamada — as
+   outras recebem a mesma promessa. Laço, watchdog, desconexão e exceção chamam esse método; o laço
+   não escreve mais `erro`/`fim` por conta própria. Ao encerrar, o emissor descarta da fila o que
+   ainda não começou a ser escrito e não é `erro`/`fim`, escreve no máximo um `erro`, sempre um
+   `fim`, e fecha. Depois de `fechado`, nenhum evento sai. A desconexão não escreve nada: aborta o
+   stream.
+   - **Escrita bloqueada.** O `sse.js` agora tem fila explícita e cancelável; o `encerrar` corre a
+     sequência terminal contra `prazo + 1 s`. Se o cliente parou de ler, chama `writer.abort()` e,
+     como no Node o `abort` do writer fica na fila atrás de um `write` pendurado, também
+     `readable.cancel()` — é o que libera o transform e rejeita a escrita. O encerramento resolve
+     mesmo quando o abort do writer não resolve. (No Worker, o `readable` é o corpo da resposta.)
+   - `sse.js` serializa as escritas numa fila; o watchdog não intercala `erro`/`fim` com um `passo`
+     em voo.
+2. **`ctx.waitUntil` sempre resolve até prazo + 1 s.** O `index.js` corre `rodarAnalise` contra um
+   timer em `prazo + 1 s`; quando o timer vence, o `.finally` chama `encerrar({ erro: tempo })` (se
+   o watchdog já não encerrou) e a promessa entregue ao `waitUntil` resolve, mesmo que ferramenta,
+   `marcarTexto` ou modelo estejam pendurados. O laço pendurado fica abandonado; o `AbortSignal` e
+   o encerramento já resolveram o que importava.
+3. **Teto do corpo.** Ao passar de 100.000 bytes, o `cancel()` do leitor é disparado **sem
+   `await`** e a resposta é 413 na hora. Corpo parado em `read()`: o aborto do prazo cancela o
+   leitor e a resposta é 408 (antes o `corrida` desistia da promessa, mas o leitor ficava preso).
+4. **`corrida` com sinal já abortado.** A promessa abandonada recebe `.catch(() => {})` antes do
+   retorno; não há mais `unhandledRejection` quando o `kv.get`, o fetch ou a leitura rejeitam com o
+   sinal já abortado.
+5. **RPC com `null` e `content` não-string.** `rpc.js` trata 200 com JSON literal `null` como
+   `resposta_invalida` (nenhuma das 7 RPCs do contrato §4 devolve `null` com sucesso). `laco.js`
+   rejeita `content` que não seja string (objeto, número, array) como `erro` `modelo`; antes virava
+   `[object Object]` no texto. O `content` de uma mensagem com `tool_calls` continua podendo ser
+   ausente e é normalizado para `''`.
+6. **Intermitência.** Os quatro `vi.waitFor` de desconexão (auth, RPC, modelo e RPC no índice)
+   saíram. Cada dublê resolve uma promessa “fetch iniciado” quando captura o `init.signal`; o teste
+   espera essa promessa e só então aborta. A suíte rodou **20 vezes seguidas: 20/20**.
+
+### Testes
+
+```
+npm --prefix worker test   → 9 arquivos, 111 testes, todos verdes
+npm run lint               → limpo
+npm test                   → 44 arquivos passando + 1 pulado; 692 testes passando + 19 pulados (711)
+```
+
+Novos testes desta rodada:
+
+- `encerrador.test.js`: primeira chamada vence (um `erro`, um `fim`, nessa ordem), escrita
+  bloqueada abortada no limite sem segurar o encerramento, desconexão não escreve nada.
+- `index.test.js` › “3ª rodada”: pausa **depois de `texto`** termina em `texto → fim` uma vez, sem
+  `erro` depois do `fim`; pausa **antes do primeiro `passo`** termina com `fim` (nunca EOF mudo);
+  `waitUntil` resolve com `marcarTexto` pendurado; 413 não espera `cancel()`; corpo parado em
+  `read()` vira 408 e cancela o leitor.
+- `prazo.test.js`: sinal já abortado não deixa rejeição sem tratamento.
+- `limite.test.js`: KV rejeitada com sinal já abortado não deixa `unhandledRejection`.
+- `rpc.test.js`: 200 com `null` é `resposta_invalida`.
+- `laco.test.js`: `content` objeto/número/array vira `erro` `modelo`, sem `texto`.
+- Os quatro testes de desconexão agora usam a promessa “fetch iniciado”, sem `vi.waitFor`.
+
+### Mutantes
+
+Cada um foi aplicado, rodado contra o teste indicado e revertido; os hashes de `src/` foram
+conferidos contra o backup e a suíte voltou a 111/111. A suíte final também passou 20/20.
+
+| # | Item | Mutante | Teste que pega | O que falhou |
+|---|---|---|---|---|
+| 1 | Encerramento único | o laço volta a emitir `fim` por `emitir` e não chama o encerrador | `index.test.js` › "pausa depois de texto..." | veio `texto → fim → erro → fim` |
+| 2 | `waitUntil` | removida a corrida de `rodarAnalise` contra `prazo + 1 s` | `index.test.js` › "waitUntil resolve ... com marcarTexto pendurado" | `resolveu` ficou `false` |
+| 3a | 413 sem esperar | `await leitor.cancel()` antes de responder | `index.test.js` › "413 não espera o cancel()" | resposta ficou `undefined` (pendurada) |
+| 3b | 408 cancela leitor | removido o `cancel()` no aborto do prazo | `index.test.js` › "corpo parado em read()..." | `cancelChamado` ficou `false` |
+| 4 | `corrida` | sinal já abortado sem `.catch` na promessa abandonada | `prazo.test.js` › "sinal já abortado..." | `unhandledRejection` com `Error: boom` |
+| 5a | RPC `null` | removida a checagem de `corpo === null` | `rpc.test.js` › "200 com JSON null..." | `r.error` era `null` |
+| 5b | `content` não-string | `String(mensagem.content)` de volta | `laco.test.js` › "content que não é string..." | `ok: true`, com texto |
+| 6 | Intermitência | removida a resolução de “fetch iniciado” do dublê de auth | `auth.test.js` › "desconexão aborta o fetch de login..." | teste ficou pendurado e estourou o timeout |
+
+### Fica de fora, de propósito
+
+- **KV → Durable Object** continua fora, como na 2ª rodada: leitura eventualmente consistente por
+  até ~60 s, aceitável com um único admin; é freio de fatura, não segurança.
+- O **stub do `shared/ai-tools`** continua sendo o motivo de `wrangler dev` não montar nesta branch
+  isolada; foi usado só no teste e removido. Depois da junção, funciona direto.
+- A suíte usa **timers falsos** para o prazo de 120 s e para os cenários de pausa; não há espera
+  real de dois minutos. A queda real do socket no workerd segue sem simulação no `wrangler dev`
+  (evidência: registro de `enable_request_signal` no binário, teste de config e testes de sinal).
+- `think: 'high'` segue sem conferência contra a API real (proibido chamar o Ollama).
+- `readable.cancel()` no encerramento é um acréscimo ao `writer.abort()` pedido: no runtime do Node,
+  `writer.abort()` espera o `write` pendurado terminar, então sozinho não liberaria a escrita
+  bloqueada. Os dois juntos cobrem o runtime local e o Worker.
+- Os erros de autenticação/limite agora também terminam com `fim` (antes a 2ª rodada só emitia
+  `erro`): é o que "sempre um `fim`" do dono único exige.

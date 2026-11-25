@@ -114,6 +114,13 @@ describe('corpo da resposta e desconexão', () => {
     expect(r.error.codigo).toBe('resposta_invalida');
   });
 
+  it('200 com JSON null é resposta_invalida', async () => {
+    const rpc = rpcCom(fetchFalso(new Response('null', { status: 200 })));
+    const r = await rpc('resumo_projetos_v2', {});
+    expect(r.data).toBeNull();
+    expect(r.error.codigo).toBe('resposta_invalida');
+  });
+
   it('200 com leitura interrompida devolve rede, nunca error null', async () => {
     const fetchImpl = async () => ({
       ok: true,
@@ -155,8 +162,13 @@ describe('corpo da resposta e desconexão', () => {
   it('desconexão aborta o fetch e devolve abortado', async () => {
     const controle = new AbortController();
     let sinalDoFetch;
+    let iniciouResolver;
+    const iniciou = new Promise((resolve) => {
+      iniciouResolver = resolve;
+    });
     const fetchImpl = async (_url, init) => {
       sinalDoFetch = init.signal;
+      iniciouResolver();
       return new Promise((_resolve, reject) => {
         init.signal.addEventListener(
           'abort',
@@ -174,7 +186,7 @@ describe('corpo da resposta e desconexão', () => {
     });
 
     const promessa = rpc('resumo_projetos_v2', {});
-    await vi.waitFor(() => expect(sinalDoFetch).toBeDefined());
+    await iniciou;
     controle.abort();
     expect(sinalDoFetch.aborted).toBe(true);
 

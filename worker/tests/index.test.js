@@ -57,11 +57,13 @@ function fetchAmbiente({
   corpoOllama,
   ollamaResposta,
   ollamaPendente,
+  aoChamar,
 } = {}) {
   const chamadas = [];
   const fila = ollama.slice();
   const fn = async (url, init = {}) => {
     chamadas.push({ url, init });
+    if (typeof aoChamar === 'function') aoChamar(url, init);
     if (url.endsWith('/auth/v1/user')) {
       if (statusUsuario !== 200) return new Response('', { status: statusUsuario });
       return json(usuario);
@@ -138,6 +140,27 @@ function eventos(texto) {
       const dados = JSON.parse(linhas.find((l) => l.startsWith('data: '))?.slice(6) ?? 'null');
       return { nome, dados };
     });
+}
+
+/**
+ * Lê até o fim, preservando o que veio antes de um aborto de stream. A
+ * desconexão pode abortar o escritor; `Response.text()` perderia os eventos
+ * já entregues.
+ */
+async function lerAteFechar(resposta) {
+  const leitor = resposta.body.getReader();
+  const decodificador = new TextDecoder();
+  let texto = '';
+  try {
+    while (true) {
+      const { done, value } = await leitor.read();
+      if (done) break;
+      texto += decodificador.decode(value, { stream: true });
+    }
+  } catch {
+    // Aborto proposital do stream na desconexão.
+  }
+  return texto + decodificador.decode();
 }
 
 const chamada = (nome, args = {}) => ({ function: { name: nome, arguments: args } });
@@ -291,9 +314,13 @@ describe('autenticação no /analise', () => {
 
     expect(resposta.status).toBe(200);
     expect(resposta.headers.get('Content-Type')).toContain('text/event-stream');
-    expect(eventos(texto)).toEqual([
-      { nome: 'erro', dados: { codigo: 'sem_login', mensagem: expect.any(String) } },
-    ]);
+    const ev = eventos(texto);
+    expect(ev.map((e) => e.nome)).toEqual(['erro', 'fim']);
+    expect(ev[0]).toEqual({
+      nome: 'erro',
+      dados: { codigo: 'sem_login', mensagem: expect.any(String) },
+    });
+    expect(ev[1].dados).toMatchObject({ rodadas: 0 });
     expect(fetchFalso.chamadas).toHaveLength(0);
   });
 
@@ -391,9 +418,13 @@ describe('limite diário no fluxo', () => {
 
     const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
 
-    expect(eventos(texto)).toEqual([
-      { nome: 'erro', dados: { codigo: 'limite', mensagem: expect.any(String) } },
-    ]);
+    const ev = eventos(texto);
+    expect(ev.map((e) => e.nome)).toEqual(['erro', 'fim']);
+    expect(ev[0]).toEqual({
+      nome: 'erro',
+      dados: { codigo: 'limite', mensagem: expect.any(String) },
+    });
+    expect(ev[1].dados).toMatchObject({ rodadas: 0 });
     expect(fetchFalso.chamadas.some((c) => c.url.includes('ollama'))).toBe(false);
     expect(kv.mapa.get(chaveUso('u1', dia))).toBe('50');
   });
@@ -564,7 +595,16 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
 
   it('desconectar durante a chamada ao modelo aborta o fetch e encerra o laço', async () => {
     const controle = new AbortController();
-    const fetchFalso = fetchAmbiente({ ollamaPendente: true });
+    let ollamaIniciouResolver;
+    const ollamaIniciou = new Promise((resolve) => {
+      ollamaIniciouResolver = resolve;
+    });
+    const fetchFalso = fetchAmbiente({
+      ollamaPendente: true,
+      aoChamar: (url) => {
+        if (url === 'https://ollama.com/api/chat') ollamaIniciouResolver();
+      },
+    });
     vi.stubGlobal('fetch', fetchFalso);
 
     const ctx = contextoFalso();
@@ -573,13 +613,9 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
       { ...ENV, ANALISE_USO: kv },
       ctx,
     );
-    const leitura = resposta.text();
+    const leitura = lerAteFechar(resposta);
 
-    await vi.waitFor(() => {
-      expect(
-        fetchFalso.chamadas.some((c) => c.url === 'https://ollama.com/api/chat'),
-      ).toBe(true);
-    });
+    await ollamaIniciou;
     controle.abort();
 
     const texto = await leitura;
@@ -595,6 +631,10 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
   it('desconectar durante uma RPC aborta o fetch e encerra o laço', async () => {
     const controle = new AbortController();
     let contexto;
+    let rpcIniciouResolver;
+    const rpcIniciou = new Promise((resolve) => {
+      rpcIniciouResolver = resolve;
+    });
     const sessao = sessaoFalsa();
     sessao.sessao.executar = async (nome, args) => {
       const r = await contexto.rpc(nome, args);
@@ -617,14 +657,16 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
           },
         },
       ],
-      rpc: (_url, init) =>
-        new Promise((_resolve, reject) => {
+      rpc: (_url, init) => {
+        rpcIniciouResolver();
+        return new Promise((_resolve, reject) => {
           init.signal.addEventListener(
             'abort',
             () => reject(new DOMException('aborted', 'AbortError')),
             { once: true },
           );
-        }),
+        });
+      },
     });
     vi.stubGlobal('fetch', fetchFalso);
 
@@ -634,11 +676,9 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
       { ...ENV, ANALISE_USO: kv },
       ctx,
     );
-    const leitura = resposta.text();
+    const leitura = lerAteFechar(resposta);
 
-    await vi.waitFor(() => {
-      expect(fetchFalso.chamadas.some((c) => c.url.includes('/rest/v1/rpc/'))).toBe(true);
-    });
+    await rpcIniciou;
     controle.abort();
 
     const texto = await leitura;
@@ -670,6 +710,243 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
     });
     const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
     expect(eventos(texto)[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'modelo' } });
+  });
+});
+
+describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
+  function ctxFalso() {
+    return {
+      promessas: [],
+      waitUntil(promessa) {
+        this.promessas.push(promessa);
+      },
+    };
+  }
+
+  function pedidoAnalise(sinal) {
+    return new Request('https://worker.local/analise', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer jwt-bom',
+        Origin: ORIGEM,
+      },
+      body: JSON.stringify({ pergunta: 'x' }),
+      signal: sinal,
+    });
+  }
+
+  it('pausa depois de texto termina em ... → fim uma vez, sem erro depois', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchFalso = fetchAmbiente({
+        ollama: [{ message: { role: 'assistant', content: 'ok' } }],
+      });
+      vi.stubGlobal('fetch', fetchFalso);
+
+      const ctx = ctxFalso();
+      const resposta = await worker.fetch(
+        pedidoAnalise(),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      );
+      const leitor = resposta.body.getReader();
+      const decodificador = new TextDecoder();
+      let texto = '';
+
+      const primeira = await leitor.read();
+      expect(primeira.done).toBe(false);
+      texto += decodificador.decode(primeira.value, { stream: true });
+
+      // Pausa a leitura; o prazo chega com o `fim` já enfileirado.
+      await vi.advanceTimersByTimeAsync(120_001);
+
+      while (true) {
+        const { done, value } = await leitor.read();
+        if (done) break;
+        texto += decodificador.decode(value, { stream: true });
+      }
+      texto += decodificador.decode();
+
+      const ev = eventos(texto);
+      expect(ev.map((e) => e.nome)).toEqual(['texto', 'fim']);
+      expect(ev.filter((e) => e.nome === 'fim')).toHaveLength(1);
+      expect(ev.at(-1).nome).toBe('fim');
+      await Promise.all(ctx.promessas);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pausa antes do primeiro passo termina com fim, não EOF mudo', async () => {
+    vi.useFakeTimers();
+    try {
+      const sessao = sessaoFalsa();
+      sessao.sessao.executar = () => new Promise(() => {});
+      pacote.criarSessao.mockReturnValue(sessao.sessao);
+
+      const fetchFalso = fetchAmbiente({
+        ollama: [
+          {
+            message: {
+              role: 'assistant',
+              content: '',
+              tool_calls: [chamada('listar_centros')],
+            },
+          },
+        ],
+      });
+      vi.stubGlobal('fetch', fetchFalso);
+
+      const ctx = ctxFalso();
+      const resposta = await worker.fetch(
+        pedidoAnalise(),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      );
+
+      // Sem leitor, a escrita do passo fica bloqueada. O prazo chega; o
+      // encerrador descarta o que não é terminal e mantém erro + fim na fila.
+      await vi.advanceTimersByTimeAsync(120_001);
+
+      const texto = await lerAteFechar(resposta);
+      const ev = eventos(texto);
+
+      expect(ev.filter((e) => e.nome === 'fim')).toHaveLength(1);
+      expect(ev.at(-1).nome).toBe('fim');
+      expect(ev.some((e) => e.nome === 'passo')).toBe(true);
+      expect(ev.filter((e) => e.nome === 'erro')).toHaveLength(1);
+      expect(ev.find((e) => e.nome === 'erro').dados.codigo).toBe('tempo');
+      await Promise.all(ctx.promessas);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waitUntil resolve até prazo + 1 s com marcarTexto pendurado', async () => {
+    vi.useFakeTimers();
+    try {
+      pacote.criarSessao.mockReturnValue(
+        sessaoFalsa({ marcarTexto: () => new Promise(() => {}) }).sessao,
+      );
+      const fetchFalso = fetchAmbiente({
+        ollama: [{ message: { role: 'assistant', content: 'ok' } }],
+      });
+      vi.stubGlobal('fetch', fetchFalso);
+
+      const ctx = ctxFalso();
+      const resposta = await worker.fetch(
+        pedidoAnalise(),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      );
+      const leitura = lerAteFechar(resposta);
+      expect(ctx.promessas).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(121_001);
+
+      let resolveu = false;
+      ctx.promessas[0].then(
+        () => {
+          resolveu = true;
+        },
+        () => {
+          resolveu = true;
+        },
+      );
+      for (let i = 0; i < 100; i += 1) await Promise.resolve();
+      expect(resolveu).toBe(true);
+
+      const texto = await leitura;
+      const ev = eventos(texto);
+      expect(ev[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'tempo' } });
+      expect(ev.at(-1).nome).toBe('fim');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('413 não espera o cancel() do corpo', async () => {
+    let cancelChamado = false;
+    const fluxo = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(120_000).fill(97));
+      },
+      cancel() {
+        cancelChamado = true;
+        return new Promise(() => {});
+      },
+    });
+    const fetchFalso = fetchAmbiente();
+    vi.stubGlobal('fetch', fetchFalso);
+    const ctx = ctxFalso();
+
+    const promessa = worker
+      .fetch(
+        new Request('https://worker.local/analise', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer jwt-bom',
+            Origin: ORIGEM,
+          },
+          body: fluxo,
+          duplex: 'half',
+        }),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      )
+      .catch(() => null);
+
+    let resposta;
+    promessa.then((r) => {
+      resposta = r;
+    });
+    for (let i = 0; i < 100; i += 1) await Promise.resolve();
+
+    expect(resposta?.status).toBe(413);
+    expect(cancelChamado).toBe(true);
+    expect(fetchFalso.chamadas).toHaveLength(0);
+  });
+
+  it('corpo parado em read() vira 408 no prazo e cancela o leitor', async () => {
+    vi.useFakeTimers();
+    try {
+      let cancelChamado = false;
+      const fluxo = new ReadableStream({
+        pull() {
+          return new Promise(() => {});
+        },
+        cancel() {
+          cancelChamado = true;
+        },
+      });
+      vi.stubGlobal('fetch', fetchAmbiente());
+      const ctx = ctxFalso();
+
+      const promessa = worker.fetch(
+        new Request('https://worker.local/analise', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer jwt-bom',
+            Origin: ORIGEM,
+          },
+          body: fluxo,
+          duplex: 'half',
+        }),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      );
+
+      await vi.advanceTimersByTimeAsync(120_001);
+      const resposta = await promessa;
+
+      expect(resposta.status).toBe(408);
+      expect(cancelChamado).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

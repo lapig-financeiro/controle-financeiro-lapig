@@ -207,8 +207,13 @@ describe('corpo da resposta e desconexão', () => {
   it('desconexão aborta o fetch de login e devolve abortado', async () => {
     const controle = new AbortController();
     let sinalDoFetch;
+    let iniciouResolver;
+    const iniciou = new Promise((resolve) => {
+      iniciouResolver = resolve;
+    });
     const fetchImpl = async (_url, init) => {
       sinalDoFetch = init.signal;
+      iniciouResolver();
       return new Promise((_resolve, reject) => {
         init.signal.addEventListener(
           'abort',
@@ -225,7 +230,7 @@ describe('corpo da resposta e desconexão', () => {
       fetchImpl,
       sinal: controle.signal,
     });
-    await vi.waitFor(() => expect(sinalDoFetch).toBeDefined());
+    await iniciou;
     controle.abort();
     expect(sinalDoFetch.aborted).toBe(true);
 

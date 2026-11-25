@@ -33,7 +33,8 @@ import { autenticar, extrairJwt, papeisPermitidos } from './auth.js';
 import { consumir, diaBrasilia, tetoDoAmbiente } from './limite.js';
 import { criarRpc } from './rpc.js';
 import { ErroModelo, executarLaco } from './laco.js';
-import { CABECALHOS_SSE, criarEmissor } from './sse.js';
+import { CABECALHOS_SSE } from './sse.js';
+import { criarEncerrador } from './encerrador.js';
 import {
   PRAZO_PADRAO_MS,
   corrida,
@@ -121,26 +122,39 @@ async function lerCorpoComTeto(request, maxBytes, sinal) {
   const leitor = request.body?.getReader?.();
   if (!leitor) return { erro: 'JSON inválido.' };
 
+  // Corpo parado em `read()`: o aborto do prazo precisa cancelar o leitor, não
+  // só fazer o `corrida` desistir da promessa.
+  const aoCancelar = () => {
+    void leitor.cancel().catch(() => {});
+  };
+  if (sinal) {
+    if (sinal.aborted) aoCancelar();
+    else sinal.addEventListener('abort', aoCancelar, { once: true });
+  }
+
   let total = 0;
   const partes = [];
 
   try {
     while (true) {
       if (sinal?.aborted) {
-        await leitor.cancel().catch(() => {});
+        aoCancelar();
         return { cancelado: true };
       }
       const { done, value } = await leitor.read();
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
-        await leitor.cancel().catch(() => {});
+        // Dispara o cancelamento e responde já; não espera o stream fechar.
+        aoCancelar();
         return { excedeu: true };
       }
       partes.push(value);
     }
   } catch {
     return { erro: 'A leitura do corpo falhou.' };
+  } finally {
+    if (sinal) sinal.removeEventListener('abort', aoCancelar);
   }
 
   const bytes = new Uint8Array(total);
@@ -271,7 +285,7 @@ async function rodarAnalise({
   prazo,
   estado,
   emitir,
-  finalizar,
+  encerrar,
   sinal,
 }) {
   // ── Login e papel ───────────────────────────────────────────────────────
@@ -284,20 +298,25 @@ async function rodarAnalise({
     sinal,
   });
   if (!auth.ok) {
-    if (auth.codigo === 'abortado') return;
-    if (auth.codigo === 'tempo') {
-      await finalizar('tempo', MENSAGEM_TEMPO);
+    if (auth.codigo === 'abortado') {
+      await encerrar({ desconectado: true });
       return;
     }
-    await emitir('erro', { codigo: auth.codigo, mensagem: auth.mensagem });
+    if (auth.codigo === 'tempo') {
+      await encerrar({ erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO } });
+      return;
+    }
+    await encerrar({ erro: { codigo: auth.codigo, mensagem: auth.mensagem } });
     return;
   }
 
   // ── Limite do dia ───────────────────────────────────────────────────────
   if (!env.ANALISE_USO) {
-    await emitir('erro', {
-      codigo: 'interno',
-      mensagem: 'O limite de uso não está configurado no Worker.',
+    await encerrar({
+      erro: {
+        codigo: 'interno',
+        mensagem: 'O limite de uso não está configurado no Worker.',
+      },
     });
     return;
   }
@@ -310,14 +329,19 @@ async function rodarAnalise({
     sinal,
   });
   if (!uso.permitido) {
-    if (uso.codigo === 'abortado') return;
-    if (uso.codigo === 'tempo') {
-      await finalizar('tempo', MENSAGEM_TEMPO);
+    if (uso.codigo === 'abortado') {
+      await encerrar({ desconectado: true });
       return;
     }
-    await emitir('erro', {
-      codigo: uso.codigo === 'limite' ? 'limite' : 'interno',
-      mensagem: uso.mensagem,
+    if (uso.codigo === 'tempo') {
+      await encerrar({ erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO } });
+      return;
+    }
+    await encerrar({
+      erro: {
+        codigo: uso.codigo === 'limite' ? 'limite' : 'interno',
+        mensagem: uso.mensagem,
+      },
     });
     return;
   }
@@ -337,14 +361,19 @@ async function rodarAnalise({
     sessao = criarSessao({ rpc, hoje });
     tools = especificacoes();
   } catch {
-    if (sinal?.aborted) return;
-    if (Date.now() >= prazo) {
-      await finalizar('tempo', MENSAGEM_TEMPO);
+    if (sinal?.aborted) {
+      await encerrar({ desconectado: true });
       return;
     }
-    await emitir('erro', {
-      codigo: 'interno',
-      mensagem: 'O pacote de ferramentas da Análise não carregou.',
+    if (Date.now() >= prazo) {
+      await encerrar({ erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO } });
+      return;
+    }
+    await encerrar({
+      erro: {
+        codigo: 'interno',
+        mensagem: 'O pacote de ferramentas da Análise não carregou.',
+      },
     });
     return;
   }
@@ -353,6 +382,7 @@ async function rodarAnalise({
     sessao,
     chamarModelo: criarChamador(env),
     emitir,
+    encerrar,
     instrucoes: INSTRUCOES,
     pergunta: corpo.pergunta,
     anteriores: corpo.anteriores,
@@ -417,67 +447,87 @@ async function analisar(request, env, ctx, origem) {
 
   // ── SSE ──────────────────────────────────────────────────────────────────
   const fluxo = new TransformStream();
-  const emissor = criarEmissor(fluxo.writable);
   const controle = new AbortController();
+  const estado = { rodadas: 0, ferramentas: 0 };
+  const encerrador = criarEncerrador({
+    writable: fluxo.writable,
+    readable: fluxo.readable,
+    estado,
+    inicio,
+    prazo,
+    abortar: () => controle.abort(),
+  });
 
-  // Cliente que fecha a aba aborta o laço; a escrita também derruba (o emissor
-  // chama `abortar` quando o write rejeita). Duas detecções porque no Worker
-  // nem sempre a primeira chega antes do próximo fetch.
+  // Cliente que fecha a aba chama o encerrador no modo desconexão: nada mais
+  // é escrito. A falha de escrita no emissor faz o mesmo caminho.
   if (request.signal) {
-    if (request.signal.aborted) controle.abort();
-    else request.signal.addEventListener('abort', () => controle.abort(), { once: true });
+    if (request.signal.aborted) {
+      void encerrador.encerrar({ desconectado: true });
+    } else {
+      request.signal.addEventListener(
+        'abort',
+        () => {
+          void encerrador.encerrar({ desconectado: true });
+        },
+        { once: true },
+      );
+    }
   }
 
-  const estado = { rodadas: 0, ferramentas: 0 };
-  let terminal = false;
-
-  const emitir = async (nome, dados) => {
-    if (terminal) return false;
-    const ok = await emissor.emitir(nome, dados);
-    if (!ok) {
-      controle.abort();
-      terminal = true;
-    }
-    return ok;
-  };
-
-  const finalizar = async (codigo, mensagem) => {
-    if (terminal) return false;
-    terminal = true;
-    controle.abort();
-    await emissor.emitir('erro', { codigo, mensagem });
-    await emissor.emitir('fim', { rodadas: estado.rodadas, ms: Date.now() - inicio });
-    await emissor.fechar();
-    return true;
-  };
-
-  // Watchdog do prazo: fecha o stream mesmo que a chamada pendurada ignore o
-  // AbortSignal. Os timeouts por chamada são o primeiro freio; este é o último.
+  // Watchdog do prazo: o encerrador é o dono único do fim, então este é só
+  // mais um candidato; se o laço já encerrou, a chamada é ignorada.
   const relogioPrazo = setTimeout(
     () => {
-      void finalizar('tempo', MENSAGEM_TEMPO);
+      void encerrador.encerrar({
+        erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO },
+      });
     },
     Math.max(0, prazo - Date.now()),
   );
 
-  const tarefa = rodarAnalise({
-    corpo: validado,
-    env,
-    jwt: extrairJwt(request.headers.get('Authorization')),
-    inicio,
-    prazo,
-    estado,
-    emitir,
-    finalizar,
-    sinal: controle.signal,
-  })
+  // A promessa entregue ao waitUntil resolve até prazo + 1 s, mesmo que a
+  // sessão/marcarTexto/modelo pendure.
+  let estourou = false;
+  let relogioTarefa;
+  const esperaTarefa = new Promise((resolve) => {
+    relogioTarefa = setTimeout(
+      () => {
+        estourou = true;
+        resolve();
+      },
+      Math.max(0, prazo + 1_000 - Date.now()),
+    );
+  });
+
+  const tarefa = Promise.race([
+    rodarAnalise({
+      corpo: validado,
+      env,
+      jwt: extrairJwt(request.headers.get('Authorization')),
+      inicio,
+      prazo,
+      estado,
+      emitir: encerrador.emitir,
+      encerrar: encerrador.encerrar,
+      sinal: controle.signal,
+    }),
+    esperaTarefa,
+  ])
     .catch(async () => {
       // Última barreira. Sem detalhe da exceção: ela pode carregar conteúdo.
-      await finalizar('interno', 'A análise falhou por um erro interno. Tente de novo.');
+      await encerrador.encerrar({
+        erro: {
+          codigo: 'interno',
+          mensagem: 'A análise falhou por um erro interno. Tente de novo.',
+        },
+      });
     })
     .finally(async () => {
       clearTimeout(relogioPrazo);
-      await emissor.fechar();
+      clearTimeout(relogioTarefa);
+      await encerrador.encerrar(
+        estourou ? { erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO } } : {},
+      );
     });
 
   if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(tarefa);

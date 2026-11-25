@@ -18,12 +18,17 @@ como na tela. O Worker não tem `service_role` e não escreve no banco.
 | `POST /analise` | `Authorization: Bearer <JWT>` + `{ pergunta, anteriores? }` → `text/event-stream` |
 
 Eventos do `/analise`: `passo`, `bloco`, `texto`, `fim`, `erro` (contrato §7).
-Autenticação recusada chega como evento `erro` (`sem_login` / `sem_permissao`)
-dentro do stream, não como 401/403: a tela tem um caminho só para ler erro.
-Corpo inválido (JSON quebrado, pergunta vazia ou acima de 2.000 caracteres)
-responde 400 antes de abrir o stream. O corpo é lido com teto de **100.000
-bytes contados durante a leitura** (sem confiar em `Content-Length`): acima
-disso, a leitura é cancelada e a resposta é 413 antes de desserializar.
+Um único **encerrador** é dono do fim: laço, watchdog, desconexão e exceção
+chamam `encerrar`; só a primeira chamada vale, sai no máximo um `erro`, sempre
+um `fim` e o stream fecha. A exceção é a desconexão do cliente: nada mais é
+escrito. Autenticação recusada chega como evento `erro` (`sem_login` /
+`sem_permissao`) + `fim` dentro do stream, não como 401/403: a tela tem um
+caminho só para ler erro. Corpo inválido (JSON quebrado, pergunta vazia ou acima
+de 2.000 caracteres) responde 400 antes de abrir o stream. O corpo é lido com
+teto de **100.000 bytes contados durante a leitura** (sem confiar em
+`Content-Length`): acima disso, o `cancel()` é disparado sem esperar e a resposta
+é 413 antes de desserializar; um corpo parado em `read()` vira **408** no prazo,
+cancelando o leitor.
 
 CORS: só `https://lapig-financeiro.github.io` e `http://localhost:<porta>`.
 Qualquer outra origem recebe 403, sem cabeçalho de liberação.
@@ -79,8 +84,12 @@ pode ainda não existir na branch; os outros módulos são testados direto.
 - **Um prazo só, de 120 s**, contado do início do `POST /analise` (antes da
   autenticação). Ele é um timestamp passado a auth, limite, cada RPC e cada
   chamada ao modelo; cada um usa o menor entre o próprio teto e o restante. Um
-  watchdog fecha o stream com `erro` `tempo` + `fim` mesmo que uma chamada
-  pendure e ignore o `AbortSignal`.
+  watchdog chama o encerrador, que fecha o stream com `erro` `tempo` + `fim`
+  mesmo que uma chamada pendure e ignore o `AbortSignal`. A promessa entregue ao
+  `ctx.waitUntil` resolve até **prazo + 1 s**, mesmo com ferramenta,
+  `marcarTexto` ou modelo pendurados. Se o cliente parar de ler, a escrita
+  terminal é abortada no limite (`writer.abort()` + `readable.cancel()`), em vez
+  de segurar o Worker.
 - 8 rodadas de modelo, 30 chamadas de ferramenta e 60.000 caracteres por
   resultado (acima disso volta erro curto ao modelo pedindo filtro). Estourar
   vira `erro` (`tempo` ou `interno`) e `fim`.
@@ -95,9 +104,12 @@ pode ainda não existir na branch; os outros módulos são testados direto.
   não decide número: todo valor vem de RPC, e o bloco só sai depois de
   `sessao.criarBloco` + `sessao.reidratar`.
 - O texto do modelo sempre passa por `sessao.marcarTexto`; o texto não é
-  reidratado (só o bloco é). `content` vazio ou só espaços vira `erro` `modelo`
-  ("o modelo não respondeu"), não `texto: ""`; formato inválido de
-  `marcarTexto` vira `erro` `interno`.
+  reidratado (só o bloco é). `content` ausente, vazio, só com espaços ou que não
+  seja string (objeto, número, array) vira `erro` `modelo` ("o modelo não
+  respondeu"), não `texto: ""`; formato inválido de `marcarTexto` vira `erro`
+  `interno`.
+- RPC com 200 e JSON literal `null` é `resposta_invalida`: nenhuma das 7 RPCs do
+  contrato §4 devolve `null` com sucesso.
 - Erro de ferramenta (inclusive exceção) é cortado em **500 caracteres** tanto
   no evento `passo` quanto no que volta ao modelo.
 - Se o cliente desconectar, o `AbortSignal` da requisição chega a **todos** os

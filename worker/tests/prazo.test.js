@@ -54,6 +54,27 @@ describe('prazo', () => {
     await expect(corrida(Promise.reject(boom))).resolves.toEqual({ erro: 'falhou', causa: boom });
   });
 
+  it('sinal já abortado trata a rejeição da promessa abandonada', async () => {
+    const rejeicoes = [];
+    const aoRejeitar = (motivo) => rejeicoes.push(motivo);
+    process.on('unhandledRejection', aoRejeitar);
+
+    try {
+      const controle = new AbortController();
+      controle.abort();
+
+      const r = await corrida(Promise.reject(new Error('boom')), {
+        sinal: controle.signal,
+      });
+      expect(r).toEqual({ erro: 'sinal' });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(rejeicoes).toHaveLength(0);
+    } finally {
+      process.removeListener('unhandledRejection', aoRejeitar);
+    }
+  });
+
   it('PRAZO_PADRAO_MS é 120 s', () => {
     expect(PRAZO_PADRAO_MS).toBe(120_000);
   });

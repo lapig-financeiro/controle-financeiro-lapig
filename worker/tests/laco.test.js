@@ -500,6 +500,25 @@ describe('2ª rodada: prazo, texto vazio e erros longos', () => {
     expect(chamadas.marcarTexto).toHaveLength(0);
   });
 
+  it('content que não é string vira erro modelo, não [object Object]', async () => {
+    for (const valor of [{}, 42, []]) {
+      const { sessao, chamadas } = sessaoFalsa();
+      const emitir = emissorFalso();
+
+      const r = await executarLaco({
+        ...BASE,
+        sessao,
+        chamarModelo: modeloFalso([texto(valor)]),
+        emitir,
+      });
+
+      expect(r.ok).toBe(false);
+      expect(r.codigo).toBe('modelo');
+      expect(emitir.eventos.some((e) => e.nome === 'texto')).toBe(false);
+      expect(chamadas.marcarTexto).toHaveLength(0);
+    }
+  });
+
   it('marcarTexto com formato inválido vira erro interno', async () => {
     const { sessao } = sessaoFalsa({
       marcarTexto: () => ({ texto: 'ok', semOrigem: 'nada' }),

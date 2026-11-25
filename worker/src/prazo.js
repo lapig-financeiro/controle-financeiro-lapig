@@ -73,15 +73,19 @@ export function corrida(promessa, { sinal } = {}) {
     };
     const aoAbortar = () => finalizar({ erro: 'sinal' });
 
-    if (sinal) {
-      if (sinal.aborted) {
-        finalizar({ erro: 'sinal' });
-        return;
-      }
-      sinal.addEventListener('abort', aoAbortar, { once: true });
+    const promessaTratada = Promise.resolve(promessa);
+
+    if (sinal?.aborted) {
+      // O sinal já chegou abortado: ninguém vai esperar esta promessa, mas a
+      // rejeição dela precisa estar tratada para não virar unhandled.
+      promessaTratada.catch(() => {});
+      finalizar({ erro: 'sinal' });
+      return;
     }
 
-    Promise.resolve(promessa).then(
+    if (sinal) sinal.addEventListener('abort', aoAbortar, { once: true });
+
+    promessaTratada.then(
       (valor) => finalizar({ valor }),
       (causa) => finalizar({ erro: 'falhou', causa }),
     );

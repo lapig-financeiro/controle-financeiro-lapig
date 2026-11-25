@@ -172,6 +172,7 @@ export async function executarLaco({
   prazo,
   estado = { rodadas: 0, ferramentas: 0 },
   sinal,
+  encerrar: encerrarInjetado,
 }) {
   const limites = { ...TETOS, ...tetos };
   const inicio = Number.isFinite(inicioPedido) ? inicioPedido : agora();
@@ -185,11 +186,27 @@ export async function executarLaco({
   const decorrido = () => agora() - inicio;
   const expirado = () => agora() >= limite;
   const abortado = () => Boolean(sinal?.aborted);
-  const interromper = () => ({ ok: false, abortado: true, rodadas, ms: decorrido() });
   const duracaoSegundos = Math.max(1, Math.round((limite - inicio) / 1000));
   const mensagemTempo = () =>
     `A análise passou de ${duracaoSegundos} s e foi interrompida. ` +
     'Tente uma pergunta mais específica.';
+
+  // Em produção, `index.js` injeta o encerrador (dono único do `fim`). Sem ele
+  // — testes diretos do laço —, o padrão escreve os mesmos eventos pelo
+  // `emitir`, sem conhecer SSE.
+  const encerrar =
+    encerrarInjetado ??
+    (async ({ erro, desconectado = false } = {}) => {
+      if (desconectado) return false;
+      if (erro) await emitir('erro', erro);
+      await emitir('fim', { rodadas: estado.rodadas ?? 0, ms: decorrido() });
+      return true;
+    });
+
+  const interromper = async () => {
+    await encerrar({ desconectado: true });
+    return { ok: false, abortado: true, rodadas, ms: decorrido() };
+  };
 
   async function emitirPasso(ferramenta, estadoPasso, erro) {
     const dados = {
@@ -203,10 +220,8 @@ export async function executarLaco({
 
   async function encerrarComErro(codigo, mensagem) {
     if (abortado()) return interromper();
-    await emitir('erro', { codigo, mensagem });
-    const ms = decorrido();
-    await emitir('fim', { rodadas, ms });
-    return { ok: false, codigo, rodadas, ms };
+    await encerrar({ erro: { codigo, mensagem } });
+    return { ok: false, codigo, rodadas, ms: decorrido() };
   }
 
   // ── Contexto ────────────────────────────────────────────────────────────
@@ -275,7 +290,10 @@ export async function executarLaco({
 
       // ── Resposta final ────────────────────────────────────────────────
       if (!chamadas.length) {
-        const conteudo = String(mensagem.content ?? '').trim();
+        if (typeof mensagem.content !== 'string') {
+          return await encerrarComErro('modelo', 'O modelo não respondeu em texto.');
+        }
+        const conteudo = mensagem.content.trim();
         if (!conteudo) {
           return await encerrarComErro('modelo', 'O modelo não respondeu.');
         }
@@ -291,9 +309,8 @@ export async function executarLaco({
         }
 
         await emitir('texto', { texto: marcado.texto, semOrigem: marcado.semOrigem });
-        const ms = decorrido();
-        await emitir('fim', { rodadas, ms });
-        return { ok: true, rodadas, ms };
+        await encerrar();
+        return { ok: true, rodadas, ms: decorrido() };
       }
 
       // Chegou ao teto de rodadas ainda pedindo ferramenta: não adianta
@@ -308,7 +325,7 @@ export async function executarLaco({
 
       mensagens.push({
         role: 'assistant',
-        content: String(mensagem.content ?? ''),
+        content: typeof mensagem.content === 'string' ? mensagem.content : '',
         tool_calls: chamadas,
       });
 

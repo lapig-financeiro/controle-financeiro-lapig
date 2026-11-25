@@ -176,6 +176,19 @@ export function criarRpc({
         };
       }
 
+      // Nenhuma das 7 RPCs do contrato §4 devolve `null` com sucesso; um JSON
+      // literal `null` é resposta inválida, não dado vazio.
+      if (corpo === null) {
+        return {
+          data: null,
+          error: {
+            codigo: 'resposta_invalida',
+            mensagem: `A consulta ${nome} devolveu null.`,
+            status: resposta.status,
+          },
+        };
+      }
+
       return { data: corpo, error: null };
     } finally {
       combo.limpar();

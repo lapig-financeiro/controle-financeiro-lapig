@@ -147,4 +147,32 @@ describe('prazo e desconexão', () => {
     expect(r.permitido).toBe(false);
     expect(r.codigo).toBe('abortado');
   });
+
+  it('KV rejeitada com sinal já abortado não deixa unhandled rejection', async () => {
+    const rejeicoes = [];
+    const aoRejeitar = (motivo) => rejeicoes.push(motivo);
+    process.on('unhandledRejection', aoRejeitar);
+
+    try {
+      const controle = new AbortController();
+      controle.abort();
+      const kv = {
+        get: () => Promise.reject(new Error('kv quebrou')),
+        put: () => Promise.resolve(),
+      };
+      const r = await consumir({
+        kv,
+        userId: 'u1',
+        agora: () => 1_000,
+        sinal: controle.signal,
+      });
+      expect(r.permitido).toBe(false);
+      expect(r.codigo).toBe('abortado');
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(rejeicoes).toHaveLength(0);
+    } finally {
+      process.removeListener('unhandledRejection', aoRejeitar);
+    }
+  });
 });
