@@ -82,6 +82,110 @@ export function sanitizarSituacaoCentro(d) {
   };
 }
 
+const DATA_SALDO_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const MES_SALDO_RE = /^\d{4}-(0[1-9]|1[0-2])-01$/;
+const SITUACOES_FOLHA_CONFERENCIA = new Set([
+  'feita',
+  'sem_balancete_anterior',
+  'sem_balancete',
+]);
+
+function numeroDoSaldo(valor) {
+  return typeof valor === 'number' && Number.isFinite(valor) ? valor : null;
+}
+
+function dataDoSaldo(valor, formato) {
+  if (typeof valor !== 'string') return null;
+  const texto = valor.slice(0, 10);
+  return formato.test(texto) ? texto : null;
+}
+
+/**
+ * A 070 manda `folha_atrasada` quando a FUNAPE pagou, depois da data do
+ * balancete, uma folha que ele não viu. A chave é aditiva: ausente ou nula
+ * é a conta de hoje. Objeto sem valor numérico maior que zero é descartado
+ * com aviso, para o saldo continuar aparecendo.
+ */
+export function sanitizarFolhaAtrasada(folha) {
+  try {
+    if (folha === undefined || folha === null) return null;
+    if (typeof folha !== 'object' || Array.isArray(folha)) {
+      console.warn('[cf] saldo: folha_atrasada não é um objeto; descartada.');
+      return null;
+    }
+    const valorBruto = numeroDoSaldo(folha.valor);
+    if (valorBruto === null) {
+      console.warn(
+        '[cf] saldo: folha_atrasada sem valor numérico maior que zero; descartada.'
+      );
+      return null;
+    }
+    // O valor é dinheiro: arredonda ao centavo antes de decidir se existe.
+    const valor = Math.round(valorBruto * 100) / 100;
+    if (!Number.isFinite(valor) || valor <= 0) {
+      console.warn(
+        '[cf] saldo: folha_atrasada sem valor numérico maior que zero; descartada.'
+      );
+      return null;
+    }
+
+    const esperado =
+      folha.esperado === undefined || folha.esperado === null
+        ? null
+        : numeroDoSaldo(folha.esperado);
+    if (
+      esperado === null &&
+      folha.esperado !== undefined &&
+      folha.esperado !== null
+    ) {
+      console.warn(
+        '[cf] saldo: folha_atrasada com esperado inválido; campo descartado.'
+      );
+    }
+
+    const visto =
+      folha.visto === undefined || folha.visto === null
+        ? null
+        : numeroDoSaldo(folha.visto);
+    if (visto === null && folha.visto !== undefined && folha.visto !== null) {
+      console.warn(
+        '[cf] saldo: folha_atrasada com visto inválido; campo descartado.'
+      );
+    }
+
+    return {
+      ...folha,
+      valor,
+      esperado,
+      visto,
+      desde_balancete: dataDoSaldo(folha.desde_balancete, DATA_SALDO_RE),
+      balancete: dataDoSaldo(folha.balancete, DATA_SALDO_RE),
+      mes_inicio: dataDoSaldo(folha.mes_inicio, MES_SALDO_RE),
+      mes_fim: dataDoSaldo(folha.mes_fim, MES_SALDO_RE),
+    };
+  } catch {
+    console.warn('[cf] saldo: folha_atrasada inválida; descartada.');
+    return null;
+  }
+}
+
+export function sanitizarFolhaConferencia(valor) {
+  if (valor === undefined || valor === null) return null;
+  if (typeof valor === 'string' && SITUACOES_FOLHA_CONFERENCIA.has(valor)) {
+    return valor;
+  }
+  console.warn('[cf] saldo: folha_conferencia inválida; descartada.');
+  return null;
+}
+
+export function sanitizarSaldoLivre(d) {
+  return {
+    ...d,
+    folha_atrasada: sanitizarFolhaAtrasada(d?.folha_atrasada),
+    folha_conferencia: sanitizarFolhaConferencia(d?.folha_conferencia),
+  };
+}
+
 let exemploPromise = null;
 
 async function carregarExemplo() {
@@ -334,6 +438,7 @@ export async function saldoLivre(projectId) {
           typeof d.has_plano === 'boolean' &&
           typeof d.has_balancete === 'boolean'
       ),
+    sanitizar: sanitizarSaldoLivre,
   };
   const ex = await carregarExemplo();
   if (ex) {

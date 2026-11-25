@@ -1338,6 +1338,22 @@ export function Projeto({
   const respostaProjecao = temSecaoProjecao
     ? respostaDaProjecao(projetar, hasBalancete)
     : null;
+  const folhaAtrasadaSaldo = saldoSt.dados?.folha_atrasada;
+  const folhaAtrasadaValor = numeroFinito(folhaAtrasadaSaldo?.valor);
+  const temFolhaAtrasada = Boolean(
+    saldoDoCentroAtual &&
+      folhaAtrasadaSaldo &&
+      typeof folhaAtrasadaSaldo === 'object' &&
+      folhaAtrasadaValor !== null &&
+      folhaAtrasadaValor > 0
+  );
+  const dataBalanceteFolhaAtrasada =
+    typeof folhaAtrasadaSaldo?.balancete === 'string'
+      ? folhaAtrasadaSaldo.balancete.slice(0, 10)
+      : null;
+  const fraseFolhaAtrasadaPainel = temFolhaAtrasada
+    ? `Inclui ${dinheiro(folhaAtrasadaValor, { centavos: true })} de folha que ainda não apareceu no balancete${dataBalanceteFolhaAtrasada ? ` de ${dataCompleta(dataBalanceteFolhaAtrasada)}` : ''}.`
+    : '';
   const gruposComBolsas = new Set(
     rubricas
       .filter((rubrica) => rubrica?.compromisso_tipo === 'bolsas')
@@ -1380,6 +1396,17 @@ export function Projeto({
     </span>
   ) : null;
   const fraseProjecao = projetar?.estado === 'ok' ? fraseDaProjecao(projetar) : '';
+  const faltaFolhaAtrasadaProjecao =
+    numeroFinito(projetar?.falta_folha_atrasada) ?? 0;
+  const coberturaFolhaAtrasada = projetar?.folha_atrasada_coberta_por || null;
+  const fraseFaltaFolhaAtrasada =
+    faltaFolhaAtrasadaProjecao > 0
+      ? `O dinheiro em conta hoje não paga a folha atrasada: faltam ${dinheiro(faltaFolhaAtrasadaProjecao, { centavos: true })}. ${
+          coberturaFolhaAtrasada
+            ? `Ela fica paga se o desembolso ${coberturaFolhaAtrasada.parcela}${coberturaFolhaAtrasada.data ? ` (${dataCompleta(coberturaFolhaAtrasada.data)})` : ''} entrar antes.`
+            : 'Nenhum desembolso previsto antes da folha cobre essa falta.'
+        }`
+      : '';
 
   // Pendências do centro.
   const listaPendencias = [...(pendenciasSt.dados || [])].sort((a, b) => {
@@ -1877,6 +1904,12 @@ export function Projeto({
                 <p class="projeto__projecao-frase texto-corrido">{fraseProjecao}</p>
               )}
 
+              {fraseFaltaFolhaAtrasada && (
+                <p class="projeto__folha-atrasada-frase texto-corrido">
+                  {fraseFaltaFolhaAtrasada}
+                </p>
+              )}
+
               <div class="projeto__contar" role="group" aria-label="O que entra na conta">
                 <span class="projeto__nota-discreta">Contar:</span>
                 <Chip
@@ -1933,6 +1966,17 @@ export function Projeto({
                       : ''}
                     , sem o rendimento, a não ser que "Rendimento" esteja marcado.
                   </li>
+                  {projetar.folha_atrasada > 0 && (
+                    <li>
+                      A folha atrasada de{' '}
+                      {dinheiro(projetar.folha_atrasada, { centavos: true })}
+                      {dataBalanceteFolhaAtrasada
+                        ? `, que não está no balancete de ${dataCompleta(dataBalanceteFolhaAtrasada)},`
+                        : ''}{' '}
+                      sai do dinheiro em conta no primeiro mês, antes dos desembolsos e da
+                      folha, e também abate o orçamento de Bolsas.
+                    </li>
+                  )}
                   {projetar.meses.length > 0 && (
                     <li>
                       Sai a folha das bolsas cadastradas todo dia 07, de{' '}
@@ -2434,6 +2478,10 @@ export function Projeto({
       )}
     </p>
   );
+  const linhaFolhaAtrasadaPainel = () =>
+    fraseFolhaAtrasadaPainel ? (
+      <p class="projeto__folha-atrasada-painel">{fraseFolhaAtrasadaPainel}</p>
+    ) : null;
 
   const renderPainelGruposFallback = () => (
     <>
@@ -2578,6 +2626,7 @@ export function Projeto({
             : grupo.compromissos_cobertura === 'bolsas e taxas'
               ? 'Compromissos de bolsas e taxas da fundação e da universidade ainda a reter contam como comprometidos.'
               : 'Nenhum compromisso futuro descontado neste grupo além do já realizado.'}
+        {grupoTemBolsas && fraseFolhaAtrasadaPainel ? ` ${fraseFolhaAtrasadaPainel}` : null}
       </p>
 
       {rubricasGrupo.length > 0 && (
@@ -2628,6 +2677,7 @@ export function Projeto({
                   />
                 </span>
                 {r.compromisso_tipo === 'bolsas' && linhaCabeAtePainel()}
+                {r.compromisso_tipo === 'bolsas' && linhaFolhaAtrasadaPainel()}
               </div>
             ))}
           </dl>
@@ -2778,6 +2828,7 @@ export function Projeto({
           ) : noGrupoArvore ? (
             <>
               {grupoTemBolsas && linhaCabeAtePainel()}
+              {grupoTemBolsas && linhaFolhaAtrasadaPainel()}
               <DeOndeVem
                 arvore={noGrupoArvore}
                 valorEsperado={numeroFinito(grupoPainel.saldo_livre)}

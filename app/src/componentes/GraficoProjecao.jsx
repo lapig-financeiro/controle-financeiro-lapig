@@ -114,6 +114,9 @@ export function GraficoProjecao({
     entra: (linha.entra_antes || 0) + (linha.entra_depois || 0),
     falta: linha.mes === mesFalta,
   }));
+  const temFolhaAtrasada = meses.some(
+    (linha) => Number.isFinite(linha.folha_atrasada) && linha.folha_atrasada > 0
+  );
 
   return (
     <div class={`grafico-projecao${className ? ` ${className}` : ''}`}>
@@ -299,6 +302,27 @@ export function GraficoProjecao({
                   <span class="grafico-projecao__vazio">—</span>
                 ),
             },
+            ...(temFolhaAtrasada
+              ? [
+                  {
+                    chave: 'folha_atrasada',
+                    titulo: 'Folha atrasada (R$)',
+                    alinhamento: 'direita',
+                    render: (linha) =>
+                      Number.isFinite(linha.folha_atrasada) && linha.folha_atrasada > 0 ? (
+                        <Valor
+                          valor={linha.folha_atrasada}
+                          centavos={false}
+                          semPrefixo
+                          alinhadoDireita
+                          semOrigem="Folha paga depois do balancete, que ainda não apareceu nele"
+                        />
+                      ) : (
+                        <span class="grafico-projecao__vazio">—</span>
+                      ),
+                  },
+                ]
+              : []),
             {
               chave: 'folha',
               titulo: 'Folha (R$)',

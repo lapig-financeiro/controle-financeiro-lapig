@@ -12,6 +12,7 @@ const IDS = {
   corredor: '00000000-0000-4000-8000-000000030907',
   solos: '00000000-0000-4000-8000-000000030908',
   tarifa: '00000000-0000-4000-8000-000000030909',
+  restinga: '00000000-0000-4000-8000-000000030910',
 };
 
 const CENTROS_BASE = [
@@ -202,6 +203,28 @@ const CENTROS_BASE = [
         grupo_code: 'b',
         valor: 14.34,
         tarifa: 14.34,
+      },
+    ],
+  },
+  {
+    id: IDS.restinga,
+    code: '30.910',
+    name: 'Restinga Costeira Sul',
+    end_date: '2027-08-31',
+    drive_folder_url: null,
+    livre: 52000,
+    situacao: 'atenção',
+    data_referencia: '2026-10-15',
+    erro: null,
+    responsaveis: ['Profa. Beatriz Cunha'],
+    motivos: [
+      {
+        codigo: 'folha_atrasada',
+        nivel: 'atenção',
+        texto:
+          'A folha de out/26 foi paga depois do balancete de 15/10/2026 e ainda não aparece no realizado: R$ 8.000,00 somados aos compromissos de bolsas.',
+        grupo_code: 'a',
+        valor: 8000,
       },
     ],
   },
@@ -848,6 +871,79 @@ const SALDOS_EXEMPLO = {
     avisos: [],
     nota: 'Dados sintéticos de demonstração.',
   },
+  [IDS.restinga]: {
+    has_plano: true,
+    has_balancete: true,
+    project_id: IDS.restinga,
+    project_name: 'Restinga Costeira Sul',
+    end_date: '2027-08-31',
+    meses_restantes: 10,
+    data_referencia: '2026-10-15',
+    balancete_cobre_ate: '2026-10-01',
+    balancete_defasagem_meses: 1,
+    compromissos_inicio: '2026-11-01',
+    compromissos_fim: '2027-08-31',
+    saldo_disponivel_caixa: 60000,
+    rendimento_liquido: 0,
+    compromissos_bolsas: 88000,
+    folha_conferencia: 'feita',
+    folha_atrasada: {
+      valor: 8000,
+      esperado: 8000,
+      visto: 0,
+      desde_balancete: '2026-09-15',
+      balancete: '2026-10-15',
+      mes_inicio: '2026-10-01',
+      mes_fim: '2026-10-01',
+    },
+    bolsas_ativas: [
+      {
+        scholarship_id: 'b-910-1',
+        bolsista: 'Bolsista K (Campo)',
+        valor_mensal: 4000,
+        end_date: '2027-08-31',
+        meses: 10,
+        compromisso: 40000,
+      },
+      {
+        scholarship_id: 'b-910-2',
+        bolsista: 'Bolsista L (Laboratório)',
+        valor_mensal: 4000,
+        end_date: '2027-08-31',
+        meses: 10,
+        compromisso: 40000,
+      },
+    ],
+    grupos: [
+      {
+        grupo_code: 'a',
+        grupo_name: 'Pessoal',
+        previsto: 400000,
+        realizado: 260000,
+        saldo: 140000,
+        compromissos: 88000,
+        saldo_livre: 52000,
+        compromissos_cobertura: 'bolsas',
+      },
+    ],
+    rubricas: [
+      {
+        rubrica_code: 'a.bolsas',
+        rubrica_name: 'Bolsas de pesquisa',
+        grupo_code: 'a',
+        previsto: 400000,
+        realizado: 260000,
+        saldo: 140000,
+        compromissos: 88000,
+        saldo_livre: 52000,
+        compromisso_tipo: 'bolsas',
+      },
+    ],
+    avisos: [
+      'A folha de out/26 foi paga depois do balancete de 15/10/2026 e não aparece nele: R$ 8.000,00 somados aos compromissos de bolsas.',
+    ],
+    nota: 'Dados sintéticos de demonstração.',
+  },
 };
 
 const REPASSES_EXEMPLO = {
@@ -926,6 +1022,15 @@ const REPASSES_EXEMPLO = {
     valor_total_plano: 60000,
     data_balancete: '2026-10-25',
     recursos: { recebido: 30000, a_receber: 0 },
+  },
+  [IDS.restinga]: {
+    parcelas: [
+      { parcela: 1, data_prevista: '2026-03-10', data_texto: null, valor: 200000, valor_texto: null },
+      { parcela: 2, data_prevista: '2026-09-10', data_texto: null, valor: 200000, valor_texto: null },
+    ],
+    valor_total_plano: 400000,
+    data_balancete: '2026-10-15',
+    recursos: { recebido: 400000, a_receber: 0 },
   },
 };
 
@@ -1006,6 +1111,24 @@ const BALANCETES_EXEMPLO = {
       saldo_disponivel: 40000,
       rendimento_liquido: 500,
       created_at: '2026-10-26T10:00:00Z',
+    },
+  ],
+  [IDS.restinga]: [
+    {
+      id: '00000000-0000-4000-8000-000000091002',
+      data_referencia: '2026-10-15',
+      arquivo_nome: 'balancete-30910-out-26.pdf',
+      saldo_disponivel: 60000,
+      rendimento_liquido: 0,
+      created_at: '2026-10-16T10:00:00Z',
+    },
+    {
+      id: '00000000-0000-4000-8000-000000091001',
+      data_referencia: '2026-09-15',
+      arquivo_nome: 'balancete-30910-set-26.pdf',
+      saldo_disponivel: 68000,
+      rendimento_liquido: 0,
+      created_at: '2026-09-16T10:00:00Z',
     },
   ],
 };
@@ -2784,6 +2907,107 @@ export const ARVORES_EXEMPLO = {
                 valor: 14.34,
                 tipo: 'legado',
                 chave: 'linha:bl-909-2',
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  }),
+  [IDS.restinga]: noCalculo({
+    rotulo: 'Livre para gastar',
+    valor: 52000,
+    chave: 'livre',
+    conta: 'soma dos grupos',
+    partes: [
+      noCalculo({
+        rotulo: 'Pessoal',
+        valor: 52000,
+        chave: 'grupo:a',
+        conta: 'previsto − realizado − comprometido',
+        partes: [
+          noCalculo({
+            rotulo: 'Previsto — Bolsas de pesquisa',
+            valor: 400000,
+            chave: 'rubrica:a.bolsas:previsto',
+            conta: 'soma das linhas',
+            sinal: 1,
+            partes: [
+              noFolha({
+                rotulo: 'Bolsas de pesquisa',
+                valor: 400000,
+                tipo: 'legado',
+                chave: 'linha:pr-910-a1',
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Realizado — Bolsas de pesquisa',
+            valor: 260000,
+            chave: 'rubrica:a.bolsas:realizado',
+            conta: 'soma dos lançamentos',
+            sinal: -1,
+            partes: [
+              noFolha({
+                rotulo: '7.1.3.04.01.09142 — BOLSA DOACAO PESQUISA',
+                valor: 260000,
+                tipo: 'legado',
+                chave: 'linha:bl-910-1',
+              }),
+            ],
+          }),
+          noCalculo({
+            rotulo: 'Comprometido — Bolsas de pesquisa',
+            valor: 88000,
+            chave: 'rubrica:a.bolsas:comprometido',
+            conta: 'bolsas até o fim da vigência + folha atrasada',
+            sinal: -1,
+            partes: [
+              noCalculo({
+                rotulo: 'Bolsas até ago/27',
+                valor: 80000,
+                chave: 'compromisso:bolsas',
+                conta: '2 bolsas × R$ 4.000 × 10 meses',
+                sinal: 1,
+                partes: [
+                  noFolha({
+                    rotulo: 'Bolsista K (Campo)',
+                    valor: 40000,
+                    tipo: 'digitado',
+                    chave: 'linha:b-910-1',
+                    ref: {
+                      alvo_tabela: 'scholarships',
+                      alvo_id: 'b-910-1',
+                      campo: 'amount',
+                    },
+                  }),
+                  noFolha({
+                    rotulo: 'Bolsista L (Laboratório)',
+                    valor: 40000,
+                    tipo: 'digitado',
+                    chave: 'linha:b-910-2',
+                    ref: {
+                      alvo_tabela: 'scholarships',
+                      alvo_id: 'b-910-2',
+                      campo: 'amount',
+                    },
+                  }),
+                ],
+              }),
+              noCalculo({
+                rotulo: 'Folha atrasada de out/26',
+                valor: 8000,
+                chave: 'folha:atrasada',
+                conta: 'paga depois do balancete de 15/10/2026, fora do realizado',
+                sinal: 1,
+                partes: [
+                  noFolha({
+                    rotulo: 'Folha de out/26 fora do balancete',
+                    valor: 8000,
+                    tipo: 'digitado',
+                    chave: 'linha:folha-atrasada-910',
+                  }),
+                ],
               }),
             ],
           }),

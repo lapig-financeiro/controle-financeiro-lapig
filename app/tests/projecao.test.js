@@ -828,6 +828,294 @@ describe('projetarBolsas — 2ª rodada', () => {
   });
 });
 
+describe('projetarBolsas — folha atrasada (070)', () => {
+  function cenarioComAtrasada({
+    valor = 30000,
+    caixa = 220000,
+    orcamentoBolsas = 560000,
+  } = {}) {
+    const base = cenario({ caixa, orcamentoBolsas, rendimento: 0 });
+    base.saldo.folha_atrasada = {
+      valor,
+      esperado: valor,
+      visto: 0,
+      desde_balancete: '2026-10-15',
+      balancete: '2026-11-17',
+      mes_inicio: '2026-11-01',
+      mes_fim: '2026-11-01',
+    };
+    // A 070 já soma a folha atrasada no compromisso da janela.
+    base.saldo.compromissos_bolsas = 500000 + valor;
+    return base;
+  }
+
+  it('sai do caixa antes de tudo no 1º mês e antecipa a falta de abril para março', () => {
+    const { saldo, repasses } = cenarioComAtrasada();
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('ok');
+    expect(projecao.folha_atrasada).toBe(30000);
+    expect(projecao.meses[0]).toMatchObject({
+      mes: '2026-12',
+      folha: 50000,
+      folha_atrasada: 30000,
+      entra_antes: 0,
+      em_conta_apos_folha: 140000,
+      em_conta_fim: 140000,
+      orcamento_resta: 480000,
+    });
+    expect(projecao.meses.slice(1).every((linha) => linha.folha_atrasada === 0)).toBe(
+      true
+    );
+    expect(projecao.mes_falta).toBe('2027-03');
+    expect(projecao.falta_valor).toBe(10000);
+    expect(projecao.cabe_ate).toBe('2027-02');
+    expect(projecao.limite).toBe('caixa');
+    expect(projecao.depende_de).toBeNull();
+    expect(projecao.mes_mais_apertado).toBe('2027-04');
+    expect(projecao.sobra_orcamento).toBe(30000);
+    expect(projecao.avisos.some((aviso) => aviso.includes('difere'))).toBe(false);
+  });
+
+  function cenarioCurto({
+    folhaMensal,
+    desembolso,
+    orcamentoBolsas,
+    meses = 1,
+  }) {
+    const base = cenario({ caixa: 5000, rendimento: 0, orcamentoBolsas });
+    const fim = meses === 1 ? '2026-12-31' : '2027-01-31';
+    base.saldo.compromissos_inicio = '2026-12-01';
+    base.saldo.compromissos_fim = fim;
+    base.saldo.end_date = fim;
+    base.saldo.compromissos_bolsas = 8000 + folhaMensal * meses;
+    base.saldo.folha_atrasada = {
+      valor: 8000,
+      esperado: 8000,
+      visto: 0,
+      desde_balancete: '2026-10-15',
+      balancete: '2026-11-17',
+      mes_inicio: '2026-11-01',
+      mes_fim: '2026-11-01',
+    };
+    base.saldo.bolsas_ativas = [
+      {
+        scholarship_id: 'b-1',
+        valor_mensal: folhaMensal,
+        meses,
+        end_date: fim,
+      },
+    ];
+    base.saldo.rubricas = [
+      {
+        rubrica_code: 'a.bolsas',
+        grupo_code: 'a',
+        previsto: orcamentoBolsas,
+        realizado: 0,
+        saldo: orcamentoBolsas,
+        compromisso_tipo: 'bolsas',
+      },
+    ];
+    base.repasses.parcelas = [
+      {
+        parcela: 1,
+        data_prevista: '2026-12-05',
+        data_texto: null,
+        valor: desembolso,
+        valor_texto: null,
+      },
+    ];
+    base.repasses.valor_total_plano = desembolso;
+    base.repasses.recursos = { recebido: 0, a_receber: 0 };
+    return base;
+  }
+
+  it('(a) desembolso de 3.000 não cobre a atrasada quando a folha regular de 1.000 ainda falta', () => {
+    const { saldo, repasses } = cenarioCurto({
+      folhaMensal: 1000,
+      desembolso: 3000,
+      orcamentoBolsas: 100000,
+    });
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.falta_folha_atrasada).toBe(3000);
+    expect(projecao.folha_atrasada_coberta_por).toBeNull();
+    expect(projecao.mes_falta).toBe('2026-12');
+    expect(projecao.falta_valor).toBe(1000);
+    expect(projecao.cabe_ate).toBe('2026-11');
+    expect(projecao.limite).toBe('caixa');
+    expect(projecao.depende_de).toBeNull();
+    expect(projecao.meses[0]).toMatchObject({
+      mes: '2026-12',
+      entra_antes: 3000,
+      em_conta_apos_folha: -1000,
+      em_conta_fim: -1000,
+    });
+  });
+
+  it('(b) desembolso de 30.000 cobre a atrasada e o limite é o orçamento de 10.000', () => {
+    const { saldo, repasses } = cenarioCurto({
+      folhaMensal: 8000,
+      desembolso: 30000,
+      orcamentoBolsas: 10000,
+    });
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.falta_folha_atrasada).toBe(3000);
+    expect(projecao.folha_atrasada_coberta_por).toEqual({
+      parcela: 1,
+      data: '2026-12-05',
+    });
+    expect(projecao.mes_falta).toBeNull();
+    expect(projecao.falta_valor).toBeNull();
+    expect(projecao.limite).toBe('orcamento');
+    expect(projecao.cabe_ate).toBe('2026-11');
+    expect(projecao.depende_de).toBeNull();
+    expect(projecao.meses[0].em_conta_apos_folha).toBe(19000);
+  });
+
+  it('(c) desembolso de 11.000 cobre a atrasada, dezembro fecha em zero e janeiro falta 8.000', () => {
+    const { saldo, repasses } = cenarioCurto({
+      folhaMensal: 8000,
+      desembolso: 11000,
+      orcamentoBolsas: 100000,
+      meses: 2,
+    });
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.falta_folha_atrasada).toBe(3000);
+    expect(projecao.folha_atrasada_coberta_por).toEqual({
+      parcela: 1,
+      data: '2026-12-05',
+    });
+    expect(projecao.meses[0]).toMatchObject({
+      mes: '2026-12',
+      entra_antes: 11000,
+      em_conta_apos_folha: 0,
+      em_conta_fim: 0,
+    });
+    expect(projecao.mes_falta).toBe('2027-01');
+    expect(projecao.falta_valor).toBe(8000);
+    expect(projecao.cabe_ate).toBe('2026-12');
+    expect(projecao.limite).toBe('caixa');
+    expect(projecao.depende_de).toBeNull();
+  });
+
+  it('sem bolsas ativas, mantém sem_bolsas e diz que há folha atrasada com centavos', () => {
+    const { saldo, repasses } = cenario();
+    saldo.bolsas_ativas = [];
+    saldo.folha_atrasada = {
+      valor: 8000,
+      esperado: 8000,
+      visto: 0,
+      desde_balancete: '2026-10-15',
+      balancete: '2026-11-17',
+      mes_inicio: '2026-11-01',
+      mes_fim: '2026-11-01',
+    };
+
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('sem_bolsas');
+    expect(projecao.folha_atrasada).toBe(8000);
+    expect(projecao.motivo).toContain('8.000,00');
+    expect(projecao.motivo).toContain('folha atrasada que ainda vai sair do caixa');
+  });
+
+  it('abate o orçamento no 1º mês e antecipa o limite da rubrica de junho para maio', () => {
+    const { saldo, repasses } = cenarioComAtrasada({
+      caixa: 2000000,
+      orcamentoBolsas: 310000,
+    });
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.mes_falta).toBeNull();
+    expect(projecao.limite).toBe('orcamento');
+    expect(projecao.cabe_ate).toBe('2027-04');
+    expect(projecao.ate_o_fim).toBe(false);
+    expect(projecao.meses[0].orcamento_resta).toBe(230000);
+    expect(projecao.sobra_orcamento).toBe(-220000);
+  });
+
+  it('continua avisando quando a soma com a folha atrasada não bate com o compromisso', () => {
+    const { saldo, repasses } = cenarioComAtrasada();
+    saldo.compromissos_bolsas += 1000;
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(
+      projecao.avisos.some(
+        (aviso) => aviso.includes('difere') && aviso.includes('folha atrasada')
+      )
+    ).toBe(true);
+  });
+
+  it('sem a chave, com null e com valor inválido os números são idênticos aos de hoje', () => {
+    const { saldo, repasses } = cenario();
+    const conta = (folha) =>
+      projetarBolsas({
+        saldo: folha === undefined ? saldo : { ...saldo, folha_atrasada: folha },
+        repasses,
+        hoje: HOJE,
+        contar: { futuro: true, atrasado: false, rendimento: false },
+      });
+
+    const semChave = conta(undefined);
+    const comNull = conta(null);
+    const comZero = conta({ valor: 0 });
+    const comTexto = conta({ valor: 'sem valor' });
+    const comString = conta({ valor: '8000' });
+    const comBoolean = conta({ valor: true });
+    const comArray = conta({ valor: [8000] });
+
+    expect(comNull).toEqual(semChave);
+    expect(comZero).toEqual(semChave);
+    expect(comTexto).toEqual(semChave);
+    expect(comString).toEqual(semChave);
+    expect(comBoolean).toEqual(semChave);
+    expect(comArray).toEqual(semChave);
+    expect(semChave.folha_atrasada).toBe(0);
+    expect(semChave.meses.every((linha) => linha.folha_atrasada === 0)).toBe(true);
+    expect(semChave.cabe_ate).toBe('2027-03');
+    expect(semChave.mes_falta).toBe('2027-04');
+    expect(semChave.falta_valor).toBe(30000);
+  });
+});
+
 describe('projetarBolsas — modo exemplo coerente com a 066', () => {
   it('cada centro com bolsas tem fim de janela, fim de bolsa e compromisso igual à soma', async () => {
     const resumo = await dadosExemplo.resumoProjetos();
@@ -844,7 +1132,10 @@ describe('projetarBolsas — modo exemplo coerente com a 066', () => {
         (total, bolsa) => total + bolsa.valor_mensal * bolsa.meses,
         0
       );
-      expect(Math.abs(soma - saldo.compromissos_bolsas)).toBeLessThanOrEqual(1);
+      const atrasada = Number(saldo.folha_atrasada?.valor) || 0;
+      expect(Math.abs(soma + atrasada - saldo.compromissos_bolsas)).toBeLessThanOrEqual(
+        1
+      );
 
       for (const bolsa of saldo.bolsas_ativas) {
         expect(bolsa.end_date).toBeTruthy();
@@ -878,5 +1169,50 @@ describe('projetarBolsas — modo exemplo coerente com a 066', () => {
       return ano * 12 + (mes - 1) - (bolsa.meses - 1) > inicioEmMeses;
     });
     expect(comecaNoMeio).toBe(true);
+  });
+
+  it('o centro com folha atrasada tem o valor somado no compromisso e no livre, e a conta o desconta no 1º mês', async () => {
+    const id = '00000000-0000-4000-8000-000000030910';
+    const saldo = (await dadosExemplo.saldoLivre(id)).dados;
+    const atrasada = saldo.folha_atrasada.valor;
+    const rubrica = saldo.rubricas.find((item) => item.compromisso_tipo === 'bolsas');
+    const grupo = saldo.grupos.find((item) => item.grupo_code === rubrica.grupo_code);
+    const somaBolsas = saldo.bolsas_ativas.reduce(
+      (total, bolsa) => total + bolsa.valor_mensal * bolsa.meses,
+      0
+    );
+
+    expect(atrasada).toBe(8000);
+    expect(saldo.compromissos_bolsas).toBe(somaBolsas + atrasada);
+    expect(rubrica.compromissos).toBe(somaBolsas + atrasada);
+    expect(rubrica.saldo_livre).toBe(rubrica.saldo - rubrica.compromissos);
+    expect(grupo.compromissos).toBe(rubrica.compromissos);
+    expect(grupo.saldo_livre).toBe(rubrica.saldo_livre);
+
+    const resumo = await dadosExemplo.resumoProjetos();
+    const centro = resumo.dados.centros.find((item) => item.id === id);
+    expect(centro.livre).toBe(52000);
+    expect(grupo.saldo_livre).toBe(52000);
+
+    const arvore = await dadosExemplo.explicarLivre(id);
+    expect(arvore.erro).toBeNull();
+    expect(arvore.dados.valor).toBe(52000);
+
+    const repasses = (await dadosExemplo.repasses(id)).dados;
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('ok');
+    expect(projecao.folha_atrasada).toBe(8000);
+    expect(projecao.meses[0].folha_atrasada).toBe(8000);
+    expect(projecao.meses[0].em_conta_apos_folha).toBe(44000);
+    expect(projecao.mes_falta).toBe('2027-05');
+    expect(projecao.falta_valor).toBe(4000);
+    expect(projecao.cabe_ate).toBe('2027-04');
+    expect(projecao.avisos.some((aviso) => aviso.includes('difere'))).toBe(false);
   });
 });

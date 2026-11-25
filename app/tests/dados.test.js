@@ -38,6 +38,7 @@ import {
   resolverPendencia,
   resumoProjetos,
   saldoLivre,
+  sanitizarFolhaAtrasada,
   salvarFiltroVisao,
   termosContrato,
   usarVigenciaDoContrato,
@@ -129,6 +130,62 @@ describe('camada de dados', () => {
     const repassesInvalido = await repasses('proj-1');
     expect(repassesInvalido.dados).toBeNull();
     expect(repassesInvalido.erro).toContain('Não foi possível');
+  });
+
+  it('sanitiza folha_atrasada: valor só number finito, esperado/visto inválidos viram null e cada entrada avisa', () => {
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(sanitizarFolhaAtrasada(undefined)).toBeNull();
+    expect(sanitizarFolhaAtrasada(null)).toBeNull();
+    expect(sanitizarFolhaAtrasada({ valor: 8000 })).toMatchObject({ valor: 8000 });
+    expect(sanitizarFolhaAtrasada({ valor: 0.005 })).toMatchObject({ valor: 0.01 });
+
+    const invalidos = [
+      true,
+      [8000],
+      { toString: null },
+      { valor: 0.004 },
+      { valor: '8000' },
+      { valor: '8.000' },
+      { valor: true },
+      { valor: [8000] },
+      { valor: { toString: null } },
+    ];
+    for (const invalido of invalidos) {
+      aviso.mockClear();
+      let resultado;
+      expect(() => {
+        resultado = sanitizarFolhaAtrasada(invalido);
+      }).not.toThrow();
+      expect(resultado).toBeNull();
+      expect(aviso).toHaveBeenCalledTimes(1);
+    }
+
+    aviso.mockClear();
+    expect(sanitizarFolhaAtrasada({ valor: 8000, esperado: true })).toMatchObject({
+      valor: 8000,
+      esperado: null,
+    });
+    expect(aviso).toHaveBeenCalledTimes(1);
+
+    aviso.mockClear();
+    expect(
+      sanitizarFolhaAtrasada({ valor: 8000, esperado: 7000, visto: [] })
+    ).toMatchObject({ valor: 8000, esperado: 7000, visto: null });
+    expect(aviso).toHaveBeenCalledTimes(1);
+
+    aviso.mockClear();
+    const explosivo = {
+      get valor() {
+        throw new Error('explodiu ao ler o valor');
+      },
+    };
+    let resultadoExplosivo;
+    expect(() => {
+      resultadoExplosivo = sanitizarFolhaAtrasada(explosivo);
+    }).not.toThrow();
+    expect(resultadoExplosivo).toBeNull();
+    expect(aviso).toHaveBeenCalledTimes(1);
   });
 
   it('usa as RPCs separadas get_balancetes_by_project e get_planos_historico para documentos', async () => {
@@ -590,7 +647,7 @@ describe('camada de dados', () => {
       const centrosPorId = new Map(resumoTodos.dados.centros.map((c) => [c.id, c]));
 
       const idsArvores = Object.keys(dadosExemplo.ARVORES_EXEMPLO);
-      expect(idsArvores.length).toBe(8);
+      expect(idsArvores.length).toBe(9);
 
       for (const projectId of idsArvores) {
         const centro = centrosPorId.get(projectId);
