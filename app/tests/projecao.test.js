@@ -1021,6 +1021,79 @@ describe('projetarBolsas — folha atrasada (070)', () => {
     expect(projecao.depende_de).toBeNull();
   });
 
+  it('cita o desembolso que completa a cobertura pela data, não pelo número da parcela', () => {
+    const { saldo, repasses } = cenarioCurto({
+      folhaMensal: 1000,
+      desembolso: 2000,
+      orcamentoBolsas: 100000,
+    });
+    // Parcela 1 entra em 06/12 e a 2 em 05/12: só juntas cobrem atrasada + folha.
+    repasses.parcelas = [
+      { parcela: 1, data_prevista: '2026-12-06', data_texto: null, valor: 2000, valor_texto: null },
+      { parcela: 2, data_prevista: '2026-12-05', data_texto: null, valor: 2000, valor_texto: null },
+    ];
+    repasses.valor_total_plano = 4000;
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.falta_folha_atrasada).toBe(3000);
+    expect(projecao.folha_atrasada_coberta_por).toEqual({ parcela: 1, data: '2026-12-06' });
+  });
+
+  it('sem folha regular no 1º mês, o caixa negativo da atrasada não vira falta do dia 07', () => {
+    // Janela dez–jan, mas a única bolsa só paga em janeiro: dezembro não tem folha regular.
+    const { saldo, repasses } = cenarioCurto({
+      folhaMensal: 1000,
+      desembolso: 0,
+      orcamentoBolsas: 100000,
+      meses: 2,
+    });
+    saldo.bolsas_ativas[0].meses = 1;
+    saldo.compromissos_bolsas = 8000 + 1000;
+    repasses.parcelas = [];
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.falta_folha_atrasada).toBe(3000);
+    // Dezembro não tem folha regular: a falta do dia 07 só aparece em janeiro
+    // (caixa −3.000 diante de uma folha de 1.000).
+    expect(projecao.meses[0]).toMatchObject({ mes: '2026-12', folha: 0 });
+    expect(projecao.mes_falta).toBe('2027-01');
+    expect(projecao.falta_valor).toBe(4000);
+  });
+
+  it('sem bolsas ativas e caixa menor que a atrasada, a falta aparece no retorno e no motivo', () => {
+    const { saldo, repasses } = cenario({ caixa: 5000, rendimento: 0 });
+    saldo.bolsas_ativas = [];
+    saldo.folha_atrasada = {
+      valor: 8000,
+      esperado: 8000,
+      visto: 0,
+      desde_balancete: '2026-10-15',
+      balancete: '2026-11-17',
+      mes_inicio: '2026-11-01',
+      mes_fim: '2026-11-01',
+    };
+    const projecao = projetarBolsas({
+      saldo,
+      repasses,
+      hoje: HOJE,
+      contar: { futuro: true, atrasado: false, rendimento: false },
+    });
+
+    expect(projecao.estado).toBe('sem_bolsas');
+    expect(projecao.falta_folha_atrasada).toBe(3000);
+    expect(projecao.motivo).toMatch(/faltam R\$\s3\.000,00/);
+  });
+
   it('sem bolsas ativas, mantém sem_bolsas e diz que há folha atrasada com centavos', () => {
     const { saldo, repasses } = cenario();
     saldo.bolsas_ativas = [];

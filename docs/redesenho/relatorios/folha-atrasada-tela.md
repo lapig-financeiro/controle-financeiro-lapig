@@ -252,3 +252,17 @@ estourava no mesmo mês). A 3ª rodada simplificou.
 - Não houve teste com login real nem no banco de produção; a conferência foi no modo exemplo.
 - Falta a revisão e o "ok" do Victor para juntar/publicar. Nada foi enviado (`sem push`), nada foi aplicado no
   banco e não há migração.
+
+## Ajustes do Claude depois da 3ª revisão (25/11)
+
+A 3ª revisão do GPT-6.2 Sol confirmou os pontos da 2ª e apontou três casos de borda, corrigidos direto (sem nova rodada):
+
+- **Cobertura citada pela parcela errada.** A frase "fica paga se o desembolso N entrar antes" acumulava os desembolsos na
+  ordem da parcela. Agora acumula na ordem da data, e cita o desembolso que completa a cobertura.
+- **Falta do dia 07 sem folha no mês.** Quando a primeira folha regular da janela só vem no mês seguinte, um caixa negativo
+  causado só pela folha atrasada virava "falta no dia 07" de um mês sem folha. A checagem agora exige folha > 0; a falta
+  da atrasada continua em `falta_folha_atrasada`, e a das folhas regulares aparece no primeiro mês que tem folha.
+- **Sem bolsas ativas.** O estado `sem_bolsas` devolvia `falta_folha_atrasada` 0. Agora calcula a falta com a mesma base
+  de caixa da projeção (sem o rendimento, a não ser que ele conte) e o motivo diz quanto falta.
+
+Testes novos em `app/tests/projecao.test.js` para os três casos.
