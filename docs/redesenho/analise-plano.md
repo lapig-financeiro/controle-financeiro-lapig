@@ -80,9 +80,9 @@ bloco) é escrito pelo Claude **antes**, na tarefa, para que ninguém espere o o
   ESTADO já previa: "vira RPC quando a IA precisar"). O roteiro PGlite compara com o JS nos casos
   sintéticos, incluindo a folha atrasada e o exemplo 30.910. A tela do projeto continua no JS até a RPC
   bater em todos os centros. Pelo cofre, com o ok do Victor.
-- **Bateria**: as 20 perguntas contra o DeepSeek V4.1 Flash **high** e, para comparar, o MiniMax 3.1 Flash
-  (o GLM 5.3 do README saiu por causa da cota). Nota por pergunta: número certo, origem certa, recusa
-  honesta quando não há dado. O Victor fixa o modelo com essa tabela.
+- **Bateria**: as 20 perguntas contra o DeepSeek V4.1 Flash **high** (o único modelo, decisão do Victor).
+  Nota por pergunta: número certo, origem certa (o clique chega ao documento), recusa honesta quando não
+  há dado.
 - Pronto quando: o Victor faz 5 perguntas dele com o próprio login e todo número da tela tem origem.
 
 ### Etapa 3 — Gráficos
@@ -151,12 +151,15 @@ Rodadas: até 3 por etapa. Se a 3ª ainda tiver achado alto, o Claude para e tra
 - **Número inventado**: a IA não tem como pôr número em bloco sem ref; no texto, a marca "sem origem".
 - **Divergência com a tela do projeto**: as mesmas RPCs; a 071 só substitui o JS depois de bater.
 
-## 7. Decisões do Victor antes da Etapa 1
+## 7. Decisões do Victor (25/11/2026)
 
-1. **Conta na Cloudflare**: existe? Criar a conta e pôr o segredo `OLLAMA_API_KEY`
-   (`wrangler secret put`) é com você; o Claude não digita chave.
-2. **Limite por usuário**: proposta de 50 perguntas por dia por login, contadas num KV da Cloudflare,
-   sem guardar a pergunta.
-3. **Quem vê a Análise**: só admin no começo, e a Mariana a partir da Etapa 2?
-4. **A bateria** do §5: cortar ou acrescentar perguntas.
-5. **Comparar com o MiniMax** na bateria ou ficar só com o DeepSeek high.
+1. **Cloudflare**: a conta existe e o `wrangler` deste PC está logado nela. O segredo `OLLAMA_API_KEY`
+   quem põe é o Victor (`wrangler secret put`); o Claude não digita chave.
+2. **Limite**: 50 perguntas por dia por login, contadas num KV, sem guardar a pergunta.
+3. **Quem vê**: **só o Victor (admin) por enquanto.** O Worker recusa outro papel e a tela some do menu
+   para quem não é admin.
+4. **Bateria**: as 20 perguntas do §5, sem mudança.
+5. **Modelo**: **só DeepSeek V4.1 Flash high**, sem comparação com o MiniMax.
+6. **Origem clicável é requisito, não enfeite** (lembrete do Victor, 25/11): todo número da resposta abre o
+   mesmo "De onde vem" e o mesmo documento do site. O formato está em
+   [`analise-contrato.md`](analise-contrato.md) §3.

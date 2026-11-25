@@ -74,7 +74,11 @@ de verdade (leitura automática), F4 (o resto dos contratos), F5 (Análise) e o 
    ser manual. Antes: decidir o repositório privado e o login `automacao`.
 6. **Análise** (a F5 do plano): Worker + ferramentas + blocos com origem. **Plano de execução em
    [`analise-plano.md`](analise-plano.md) (25/11)**: 5 etapas, 2 DeepSeek max executando em worktrees e o
-   GPT-6.2 Sol medium revisando cada etapa (pedido do Victor, 25/11). Esperando as decisões do §7 do plano.
+   GPT-6.2 Sol medium revisando cada etapa (pedido do Victor, 25/11). Decisões do Victor no §7 do plano (só ele
+   vê a Análise por enquanto; 50 perguntas/dia; só DeepSeek high; origem clicável igual à do site). Contrato em
+   [`analise-contrato.md`](analise-contrato.md). **Etapa 1 em execução desde 25/11**: tarefas
+   `tarefas/analise-1a-ferramentas.md` (worktree `C:/Users/amara/dev/cf-analise-a`) e `analise-1b-worker.md`
+   (`cf-analise-b`).
 7. **Corte**: quando o `/v2/` cobrir o uso diário, o novo vai para `/` e o antigo sai. No corte: (a) o nome visível
    do sistema passa a ser **Buriti** (decisão do Victor, 23/11: título, cabeçalho e login; **o endereço e o nome do
    repositório não mudam**, porque o login mora no `localStorage` por endereço e o cofre usa o redirecionamento);
