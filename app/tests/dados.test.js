@@ -38,6 +38,7 @@ import {
   resolverPendencia,
   resumoProjetos,
   saldoLivre,
+  sanitizarFolhaAtrasada,
   salvarFiltroVisao,
   termosContrato,
   usarVigenciaDoContrato,
@@ -129,6 +130,42 @@ describe('camada de dados', () => {
     const repassesInvalido = await repasses('proj-1');
     expect(repassesInvalido.dados).toBeNull();
     expect(repassesInvalido.erro).toContain('Não foi possível');
+  });
+
+  it('sanitiza folha_atrasada: só número ou string numérica, arredonda ao centavo e nunca lança', () => {
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    expect(sanitizarFolhaAtrasada(undefined)).toBeNull();
+    expect(sanitizarFolhaAtrasada(null)).toBeNull();
+    expect(sanitizarFolhaAtrasada({ valor: 8000 })).toMatchObject({ valor: 8000 });
+    expect(sanitizarFolhaAtrasada({ valor: '8000' })).toMatchObject({ valor: 8000 });
+    expect(sanitizarFolhaAtrasada({ valor: '8.000' })).toMatchObject({ valor: 8000 });
+    expect(sanitizarFolhaAtrasada({ valor: 0.005 })).toMatchObject({ valor: 0.01 });
+
+    const invalidos = [
+      true,
+      [8000],
+      { toString: null },
+      { valor: 0.004 },
+      { valor: true },
+      { valor: [8000] },
+      { valor: { toString: null } },
+      { valor: 8000, esperado: true },
+      { valor: 8000, visto: [] },
+    ];
+    for (const invalido of invalidos) {
+      expect(() => sanitizarFolhaAtrasada(invalido)).not.toThrow();
+      expect(sanitizarFolhaAtrasada(invalido)).toBeNull();
+    }
+
+    const explosivo = {
+      get valor() {
+        throw new Error('explodiu ao ler o valor');
+      },
+    };
+    expect(() => sanitizarFolhaAtrasada(explosivo)).not.toThrow();
+    expect(sanitizarFolhaAtrasada(explosivo)).toBeNull();
+    expect(aviso).toHaveBeenCalled();
   });
 
   it('usa as RPCs separadas get_balancetes_by_project e get_planos_historico para documentos', async () => {

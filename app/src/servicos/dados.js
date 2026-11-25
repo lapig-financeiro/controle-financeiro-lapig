@@ -91,9 +91,14 @@ const SITUACOES_FOLHA_CONFERENCIA = new Set([
 ]);
 
 function numeroDoSaldo(valor) {
-  if (valor === null || valor === undefined || valor === '') return null;
-  const n = typeof valor === 'number' ? valor : Number(valor);
-  return Number.isFinite(n) ? n : null;
+  if (typeof valor === 'number') {
+    return Number.isFinite(valor) ? valor : null;
+  }
+  if (typeof valor === 'string') {
+    // Mesmo leitor de dinheiro digitado que o resto da camada usa.
+    return parseValorBR(valor);
+  }
+  return null;
 }
 
 function dataDoSaldo(valor, formato) {
@@ -109,28 +114,64 @@ function dataDoSaldo(valor, formato) {
  * com aviso, para o saldo continuar aparecendo.
  */
 export function sanitizarFolhaAtrasada(folha) {
-  if (folha === undefined || folha === null) return null;
-  if (typeof folha !== 'object' || Array.isArray(folha)) {
-    console.warn('[cf] saldo: folha_atrasada não é um objeto; descartada.');
+  try {
+    if (folha === undefined || folha === null) return null;
+    if (typeof folha !== 'object' || Array.isArray(folha)) {
+      console.warn('[cf] saldo: folha_atrasada não é um objeto; descartada.');
+      return null;
+    }
+    const valorBruto = numeroDoSaldo(folha.valor);
+    if (valorBruto === null) {
+      console.warn(
+        '[cf] saldo: folha_atrasada sem valor numérico maior que zero; descartada.'
+      );
+      return null;
+    }
+    // O valor é dinheiro: arredonda ao centavo antes de decidir se existe.
+    const valor = Math.round(valorBruto * 100) / 100;
+    if (!Number.isFinite(valor) || valor <= 0) {
+      console.warn(
+        '[cf] saldo: folha_atrasada sem valor numérico maior que zero; descartada.'
+      );
+      return null;
+    }
+
+    const esperado =
+      folha.esperado === undefined || folha.esperado === null
+        ? null
+        : numeroDoSaldo(folha.esperado);
+    if (
+      esperado === null &&
+      folha.esperado !== undefined &&
+      folha.esperado !== null
+    ) {
+      console.warn('[cf] saldo: folha_atrasada com esperado inválido; descartada.');
+      return null;
+    }
+
+    const visto =
+      folha.visto === undefined || folha.visto === null
+        ? null
+        : numeroDoSaldo(folha.visto);
+    if (visto === null && folha.visto !== undefined && folha.visto !== null) {
+      console.warn('[cf] saldo: folha_atrasada com visto inválido; descartada.');
+      return null;
+    }
+
+    return {
+      ...folha,
+      valor,
+      esperado,
+      visto,
+      desde_balancete: dataDoSaldo(folha.desde_balancete, DATA_SALDO_RE),
+      balancete: dataDoSaldo(folha.balancete, DATA_SALDO_RE),
+      mes_inicio: dataDoSaldo(folha.mes_inicio, MES_SALDO_RE),
+      mes_fim: dataDoSaldo(folha.mes_fim, MES_SALDO_RE),
+    };
+  } catch {
+    console.warn('[cf] saldo: folha_atrasada inválida; descartada.');
     return null;
   }
-  const valor = numeroDoSaldo(folha.valor);
-  if (valor === null || valor <= 0) {
-    console.warn(
-      '[cf] saldo: folha_atrasada sem valor numérico maior que zero; descartada.'
-    );
-    return null;
-  }
-  return {
-    ...folha,
-    valor: Math.round(valor * 100) / 100,
-    esperado: numeroDoSaldo(folha.esperado),
-    visto: numeroDoSaldo(folha.visto),
-    desde_balancete: dataDoSaldo(folha.desde_balancete, DATA_SALDO_RE),
-    balancete: dataDoSaldo(folha.balancete, DATA_SALDO_RE),
-    mes_inicio: dataDoSaldo(folha.mes_inicio, MES_SALDO_RE),
-    mes_fim: dataDoSaldo(folha.mes_fim, MES_SALDO_RE),
-  };
 }
 
 export function sanitizarFolhaConferencia(valor) {

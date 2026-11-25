@@ -75,7 +75,7 @@ Branch `redesenho/folha-atrasada-tela`, worktree `C:/Users/amara/dev/cf-folha-te
 
 - `npm run lint`: sem erro nem aviso.
 - `npm test` (raiz): **685 passaram, 19 pulados**; 43 arquivos passaram e 1 foi pulado.
-- `npm --prefix app test`: **245 passaram** em 24 arquivos.
+- `npm --prefix app test`: **250 passaram** em 24 arquivos.
 - `npm --prefix app run build`: verde; guarda de estilo sem violação e verificação de build sem dado de
   exemplo no bundle.
 - `bolsistas.test.jsx` estourou o timeout de 5 s uma vez na primeira execução completa depois de mexer no
@@ -94,15 +94,79 @@ Servidor `npm --prefix app run dev:exemplo` (porta 5173) e Chrome headless.
   rolagem horizontal da página. A tabela mês a mês mostra o cabeçalho `Mês | Entra (R$) | Folha atrasada (R$)
   | Folha (R$) | Em conta depois da folha (R$) | Orçamento de Bolsas que resta (R$)`, com 8.000 na coluna
   "Folha atrasada" em nov/26 e "—" em dez/26. O painel de Pessoal mostra "Cabe até abr/27 · falta dinheiro em
-  conta em mai/27", a árvore fechando em 52.000 e "Inclui R$ 8.000 de folha que ainda não apareceu no
+  conta em mai/27", a árvore fechando em 52.000 e "Inclui R$ 8.000,00 de folha que ainda não apareceu no
   balancete de 15/10/2026".
+
+## 2ª rodada (25/11/2026 — revisão do GPT-6.2 Sol, conferida pelo Claude)
+
+### Conta (`projecao.js`)
+
+- **A folha atrasada sai antes dos desembolsos do dia 07, e a falta é medida ali.** No 1º mês a conta faz
+  `caixa − folha_atrasada`; se o resultado for negativo, registra a falta naquele ponto. Só depois entram os
+  desembolsos com vencimento até o dia 07 e, por fim, a folha regular. Antes, o desembolso do dia 05 entrava
+  junto e podia esconder a falta da folha atrasada.
+- **Caso da revisão** (caixa 5.000, folha atrasada 8.000, desembolso 30.000 no dia 05, folha regular 8.000,
+  janela de um mês): `mes_falta` = dez/26, `falta_valor` = 3.000, `em_conta_apos_folha` = 19.000 e
+  `depende_de` = `{ parcela: 1, mes: '2026-12', antes_da_folha: true }`. `cabe_ate` = nov/26, como no modelo
+  atual de `depende_de` (o mês só fecha com o desembolso).
+- **`falta_valor` é o maior entre as duas faltas do mês**: a da folha atrasada (medida logo depois dela) e a da
+  folha regular (medida depois dos desembolsos do dia 07). Sem o desembolso de 30.000, o mesmo caso reporta
+  11.000 (3.000 da atrasada + 8.000 da folha), não 3.000.
+- **`depende_de` ganhou o caso "antes da folha".** O modelo antigo só olhava desembolsos que entram depois da
+  folha. Agora, se a falta nasceu na folha atrasada e os desembolsos que entram antes da folha pagam a folha
+  regular e não deixam mês seguinte negativo, o primeiro desembolso que fecha essa conta vira
+  `depende_de` com `antes_da_folha: true`. Se nenhum desembolso resolve, ou se algum mês seguinte fica
+  negativo, continua `null`. A escolha preserva a semântica existente ("com esse desembolso, a conta segue") e
+  evita dizer que o mês depende de um dinheiro que não o salva.
+- A frase da página para esse caso diz "faltam R$ X,00 para a folha atrasada; o desembolso N entra antes da
+  folha e, com ele, a conta segue até ...". O cartão continua com a frase curta "mês depende do desembolso N".
+
+### Dados (`dados.js`)
+
+- `valor`, `esperado` e `visto` só aceitam `number` finito ou string numérica lida pelo `parseValorBR` (o
+  mesmo leitor de dinheiro do resto da camada). `true`, array, objeto, `NaN` e `Infinity` invalidam a
+  `folha_atrasada` inteira com `console.warn`; nenhum caminho lança exceção que derrube o saldo (a
+  sanitização da chave inteira está em `try/catch`).
+- O `valor` é arredondado ao centavo **antes** do teste `> 0`: `0.004` vira `0` e é descartado; `0.005` vira
+  `0.01` e é aceito. `valor: '8000'` vira `8000` (e `'8.000'` também, pelo `parseValorBR`).
+- A conta repete a regra estrita em `lerFolhaAtrasada`, para chamadas diretas sem passar pela camada de dados:
+  `true`, array ou objeto viram zero, sem contaminar o saldo.
+- Testes em `app/tests/dados.test.js` para `true`, `[8000]`, `{ toString: null }`, `{ valor: 0.004 }`,
+  `{ valor: '8000' }`, `{ valor: 0.005 }`, campos `esperado`/`visto` inválidos e objeto que lança ao ler
+  `valor`; todos conferem `console.warn` e ausência de exceção.
+
+### Tela
+
+- **`sem_bolsas` não esconde a folha atrasada**: o estado continua `sem_bolsas`, mas o motivo agora diz
+  "Há R$ 8.000,00 de folha atrasada que ainda vai sair do caixa." (com centavos). O cartão "Bolsas por mês",
+  o motivo da seção e o painel mostram essa frase; o gráfico continua ausente porque não há mês a mês.
+- **Centavos nas frases e no painel**: a frase "Inclui R$ X de folha...", a regra do "Como a conta é feita" e
+  a frase do caso "desembolso antes da folha" usam `centavos: true`. As frases gerais da projeção e a célula da
+  tabela "Folha atrasada (R$)" continuam **sem** centavos, como antes e como manda `estetica.md` para célula de
+  tabela; assim, sem `folha_atrasada`, nenhum texto muda. O teste novo confere a célula específica, não a linha
+  inteira.
+- A frase do painel da rubrica é buscada dentro de `.projeto__subrubricas` (rubrica `a.bolsas`), não no texto
+  do painel inteiro, para não passar por causa da frase da cobertura do grupo.
+- Testes de tela: célula por `data-rotulo="Folha atrasada (R$)"` e `—` na linha seguinte; frase dentro da
+  rubrica com `20.000,00`; motivo de `sem_bolsas` com `8.000,00`; a regra do "Como a conta é feita" com
+  centavos; e a frase do caso "desembolso antes da folha" com `3.000,00` e "antes da folha".
+
+### Testes e conferência desta rodada
+
+- `npm run lint`: limpo.
+- `npm test` (raiz): **685 passaram, 19 pulados**.
+- `npm --prefix app test`: **250 passaram** em 24 arquivos.
+- `npm --prefix app run build`: verde, sem violação de estilo e sem dado de exemplo no bundle.
+- Nenhuma outra IA foi chamada; nada foi enviado (`sem push`). O `PEDIDO-rev-tela.txt` que apareceu no
+  worktree é só o pedido de revisão: não foi versionado.
 
 ## Desvios do plano da tarefa
 
 - **`docs/redesenho/ESTADO.md`**: fora da lista "Arquivos", atualizado no mesmo commit por exigência do
   `CLAUDE.md` (linha de "Onde está" e "Registro").
-- **`app/tests/dados.test.js`**: fora da lista, mudou só a contagem de árvores de exemplo de 8 para 9, por
-  causa da árvore nova do 30.910. Necessário para a árvore do exemplo não ficar sem cobertura de fechamento.
+- **`app/tests/dados.test.js`**: fora da lista, ganhou os testes de sanitização da `folha_atrasada` e mudou
+  a contagem de árvores de exemplo de 8 para 9, por causa da árvore nova do 30.910. Necessário para a árvore
+  do exemplo não ficar sem cobertura de fechamento.
 - **Centro novo em vez de mexer em um existente**: para cumprir "os outros centros do exemplo não mudam", o
   30.910 foi acrescentado com balancetes e árvore próprios; os 9 centros anteriores ficaram intactos.
 - **Nenhuma mudança em `frontend/`, `database/` ou `mcp/`.**

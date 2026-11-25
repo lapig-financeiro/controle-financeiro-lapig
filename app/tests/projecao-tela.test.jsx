@@ -727,16 +727,19 @@ describe('Projeto — projeção das bolsas na tela', () => {
       (th) => th.textContent
     );
     expect(cabecalhoTabela).toContain('Folha atrasada (R$)');
+    const indiceAtrasada = cabecalhoTabela.indexOf('Folha atrasada (R$)');
     const linhas = detalhes.querySelectorAll('tbody tr');
-    expect(linhas[0].textContent).toContain('20.000');
-    expect(linhas[1].textContent).not.toContain('20.000');
+    const celulasPrimeira = linhas[0].querySelectorAll('td');
+    const celulasSegunda = linhas[1].querySelectorAll('td');
+    expect(celulasPrimeira[indiceAtrasada].textContent.trim()).toBe('20.000');
+    expect(celulasSegunda[indiceAtrasada].textContent.trim()).toBe('—');
 
     const detalhesConta = Array.from(document.querySelectorAll('details')).find(
       (item) => item.querySelector('summary')?.textContent === 'Como a conta é feita'
     );
     const regras = detalhesConta.textContent;
     expect(regras).toContain('A folha atrasada de');
-    expect(regras).toContain('20.000');
+    expect(regras).toContain('20.000,00');
     expect(regras).toContain('17/11/2026');
     expect(regras).toContain('abate o orçamento de Bolsas');
 
@@ -748,7 +751,14 @@ describe('Projeto — projeção das bolsas na tela', () => {
 
     const painel = document.querySelector('.painel-lateral');
     expect(painel.textContent).toContain('Cabe até');
-    expect(painel.textContent).toContain(
+    const rubricaBolsas = Array.from(
+      painel.querySelectorAll('.projeto__subrubricas .projeto__par-conta')
+    ).find((item) => item.textContent.includes('a.bolsas'));
+    expect(rubricaBolsas).toBeTruthy();
+    const fraseRubrica = rubricaBolsas.querySelector('.projeto__folha-atrasada-painel');
+    expect(fraseRubrica).toBeTruthy();
+    expect(fraseRubrica.textContent).toContain('20.000,00');
+    expect(fraseRubrica.textContent).toContain(
       'de folha que ainda não apareceu no balancete de 17/11/2026'
     );
   });
@@ -783,6 +793,97 @@ describe('Projeto — projeção das bolsas na tela', () => {
 
     const painel = document.querySelector('.painel-lateral');
     expect(painel.textContent).not.toContain('ainda não apareceu no balancete');
+  });
+
+  it('sem bolsas ativas, o cartão e o motivo mostram a folha atrasada com centavos', async () => {
+    const { saldo } = configurarPadrao();
+    saldo.bolsas_ativas = [];
+    saldo.compromissos_bolsas = 8000;
+    saldo.folha_atrasada = {
+      valor: 8000,
+      esperado: 8000,
+      visto: 0,
+      desde_balancete: '2026-10-15',
+      balancete: '2026-11-17',
+      mes_inicio: '2026-11-01',
+      mes_fim: '2026-11-01',
+    };
+
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const cartao = cartaoBolsas();
+    expect(cartao.textContent).toContain('8.000,00');
+    expect(cartao.textContent).toContain('folha atrasada');
+
+    const motivo = document.querySelector('.projeto__projecao-motivo');
+    expect(motivo).toBeTruthy();
+    expect(motivo.textContent).toContain('8.000,00');
+    expect(motivo.textContent).toContain(
+      'folha atrasada que ainda vai sair do caixa'
+    );
+    expect(document.querySelector('.grafico-projecao')).toBeNull();
+  });
+
+  it('com desembolso antes da folha, a frase diz que a falta é da folha atrasada', async () => {
+    const { saldo, repasses } = configurarPadrao();
+    saldo.compromissos_inicio = '2026-12-01';
+    saldo.compromissos_fim = '2026-12-31';
+    saldo.end_date = '2026-12-31';
+    saldo.saldo_disponivel_caixa = 5000;
+    saldo.rendimento_liquido = 0;
+    saldo.compromissos_bolsas = 16000;
+    saldo.folha_atrasada = {
+      valor: 8000,
+      esperado: 8000,
+      visto: 0,
+      desde_balancete: '2026-10-15',
+      balancete: '2026-11-17',
+      mes_inicio: '2026-11-01',
+      mes_fim: '2026-11-01',
+    };
+    saldo.bolsas_ativas = [
+      {
+        scholarship_id: 'b-1',
+        bolsista: 'Bolsista Único',
+        valor_mensal: 8000,
+        meses: 1,
+        end_date: '2026-12-31',
+      },
+    ];
+    saldo.rubricas = [
+      {
+        rubrica_code: 'a.bolsas',
+        rubrica_name: 'Bolsas de pesquisa',
+        grupo_code: 'a',
+        previsto: 100000,
+        realizado: 0,
+        saldo: 100000,
+        compromissos: 16000,
+        saldo_livre: 84000,
+        compromisso_tipo: 'bolsas',
+      },
+    ];
+    repasses.parcelas = [
+      {
+        parcela: 1,
+        data_prevista: '2026-12-05',
+        data_texto: null,
+        valor: 30000,
+        valor_texto: null,
+      },
+    ];
+    repasses.valor_total_plano = 30000;
+    repasses.recursos = { recebido: 0, a_receber: 0 };
+
+    render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
+    await tick();
+
+    const frase = document.querySelector('.projeto__projecao-frase');
+    expect(frase.textContent).toContain('3.000,00');
+    expect(frase.textContent).toContain('para a folha atrasada');
+    expect(frase.textContent).toContain('antes da folha');
+    expect(cartaoBolsas().textContent).toContain('dez/26 depende do desembolso 1');
   });
 });
 

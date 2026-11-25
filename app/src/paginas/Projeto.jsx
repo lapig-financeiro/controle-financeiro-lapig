@@ -493,6 +493,9 @@ function fraseDaProjecao(projecao) {
       ? mesAnteriorProjecao(mesLimiteOrcamento)
       : ultimoMes;
   if (projecao.depende_de) {
+    if (projecao.depende_de.antes_da_folha) {
+      return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: true })} para a folha atrasada; o desembolso ${projecao.depende_de.parcela} entra antes da folha e, com ele, a conta segue até ${dataCompacta(fimDoDepende)}.`;
+    }
     return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07; o desembolso ${projecao.depende_de.parcela} entra depois da folha e, com ele, a conta segue até ${dataCompacta(fimDoDepende)}.`;
   }
   return `O dinheiro em conta paga a folha até ${dataCompacta(projecao.cabe_ate)}. Em ${dataCompacta(projecao.mes_falta)} faltam ${dinheiro(projecao.falta_valor, { centavos: false })} no dia 07 e a conta não se recupera dentro das bolsas cadastradas.`;
@@ -1352,7 +1355,7 @@ export function Projeto({
       ? folhaAtrasadaSaldo.balancete.slice(0, 10)
       : null;
   const fraseFolhaAtrasadaPainel = temFolhaAtrasada
-    ? `Inclui ${dinheiro(folhaAtrasadaValor, { centavos: false })} de folha que ainda não apareceu no balancete${dataBalanceteFolhaAtrasada ? ` de ${dataCompleta(dataBalanceteFolhaAtrasada)}` : ''}.`
+    ? `Inclui ${dinheiro(folhaAtrasadaValor, { centavos: true })} de folha que ainda não apareceu no balancete${dataBalanceteFolhaAtrasada ? ` de ${dataCompleta(dataBalanceteFolhaAtrasada)}` : ''}.`
     : '';
   const gruposComBolsas = new Set(
     rubricas
@@ -1952,7 +1955,7 @@ export function Projeto({
                   {projetar.folha_atrasada > 0 && (
                     <li>
                       A folha atrasada de{' '}
-                      {dinheiro(projetar.folha_atrasada, { centavos: false })}
+                      {dinheiro(projetar.folha_atrasada, { centavos: true })}
                       {dataBalanceteFolhaAtrasada
                         ? `, que não está no balancete de ${dataCompleta(dataBalanceteFolhaAtrasada)},`
                         : ''}{' '}

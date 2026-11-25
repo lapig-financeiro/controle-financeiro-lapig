@@ -17,6 +17,7 @@
    ============================================================ */
 
 import { situacaoDasParcelas, vencimento } from '../../../frontend/js/planejamento-dinheiro.js';
+import { parseValorBR } from '../util/moeda.js';
 import { dinheiro } from '../util/formato.js';
 
 const DATA_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])/;
@@ -93,8 +94,15 @@ function lerFolhaAtrasada(saldo) {
   if (!bruto || typeof bruto !== 'object' || Array.isArray(bruto)) {
     return { valor: 0, balancete: null };
   }
-  const valor = numero(bruto.valor);
-  if (valor === null || valor <= 0) return { valor: 0, balancete: null };
+  const valor =
+    typeof bruto.valor === 'number'
+      ? bruto.valor
+      : typeof bruto.valor === 'string'
+        ? parseValorBR(bruto.valor)
+        : null;
+  if (valor === null || !Number.isFinite(valor) || valor <= 0) {
+    return { valor: 0, balancete: null };
+  }
   return {
     ...bruto,
     valor: r2(valor),
@@ -103,6 +111,12 @@ function lerFolhaAtrasada(saldo) {
         ? bruto.balancete.slice(0, 10)
         : null,
   };
+}
+
+/** Motivo de `sem_bolsas` que não esconde a folha atrasada da 070. */
+function motivoSemBolsas(motivo, folhaAtrasada) {
+  if (!(folhaAtrasada > 0)) return motivo;
+  return `${motivo} Há ${dinheiro(folhaAtrasada, { centavos: true })} de folha atrasada que ainda vai sair do caixa.`;
 }
 
 /**
@@ -184,7 +198,10 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   if (bolsas.length === 0) {
     return respostaSemConta(
       'sem_bolsas',
-      'Nenhuma bolsa ativa para pagar na janela do balancete.',
+      motivoSemBolsas(
+        'Nenhuma bolsa ativa para pagar na janela do balancete.',
+        folhaAtrasada.valor
+      ),
       folhaAtrasada.valor
     );
   }
@@ -252,7 +269,10 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   if (!fim || fim < inicio) {
     return respostaSemConta(
       'sem_bolsas',
-      'As bolsas cadastradas terminam antes do início da janela do balancete.',
+      motivoSemBolsas(
+        'As bolsas cadastradas terminam antes do início da janela do balancete.',
+        folhaAtrasada.valor
+      ),
       folhaAtrasada.valor
     );
   }
@@ -462,6 +482,8 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   let mesFalta = null;
   let faltaValor = null;
   let mesOrcamento = null;
+  let faltaAtrasadaNoMes = false;
+  let faltaAtrasadaValor = null;
 
   for (let indice = 0; indice < mesesConta.length; indice += 1) {
     const mes = mesesConta[indice];
@@ -480,10 +502,30 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
     let emContaAposFolha = null;
     let emContaFim = null;
     if (saldoConta !== null) {
-      saldoConta = r2(saldoConta - atrasadaDoMes + antes);
-      if (saldoConta < folha && mesFalta === null) {
-        mesFalta = mes;
-        faltaValor = r2(folha - saldoConta);
+      // 1) A folha atrasada sai primeiro. A falta é medida aqui, antes de
+      // entrar qualquer desembolso do mês: um desembolso que entra antes
+      // da folha pode cobri-la, e é isso que `depende_de` registra.
+      if (atrasadaDoMes > 0) {
+        saldoConta = r2(saldoConta - atrasadaDoMes);
+        if (saldoConta < 0 && mesFalta === null) {
+          mesFalta = mes;
+          faltaValor = r2(-saldoConta);
+          faltaAtrasadaNoMes = true;
+          faltaAtrasadaValor = r2(-saldoConta);
+        }
+      }
+
+      // 2) Depois entram os desembolsos com vencimento até o dia 07 e,
+      // por fim, a folha regular do mês.
+      saldoConta = r2(saldoConta + antes);
+      if (saldoConta < folha) {
+        const faltaFolha = r2(folha - saldoConta);
+        if (mesFalta === null) {
+          mesFalta = mes;
+          faltaValor = faltaFolha;
+        } else if (mes === mesFalta && faltaFolha > faltaValor) {
+          faltaValor = faltaFolha;
+        }
       }
       emContaAposFolha = r2(saldoConta - folha);
       saldoConta = r2(emContaAposFolha + depois);
@@ -541,6 +583,7 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
   if (mesFalta) {
     const indiceFalta = meses.findIndex((linha) => linha.mes === mesFalta);
     const linhaFalta = meses[indiceFalta];
+    const antesDaFolha = antesPorMes.get(mesFalta) || [];
     const depoisDaFolha = depoisPorMes.get(mesFalta) || [];
     const negativoDepois = meses
       .slice(indiceFalta + 1)
@@ -548,10 +591,39 @@ export function projetarBolsas({ saldo, repasses, hoje, contar } = {}) {
         (linha) =>
           linha.em_conta_apos_folha !== null && linha.em_conta_apos_folha < 0
       );
+
+    // A folha atrasada pode ser coberta por um desembolso que entra antes
+    // da folha. Só conta como dependência quando, com ele, a folha regular
+    // do mês também é paga e nenhum mês seguinte fica negativo.
     if (
+      faltaAtrasadaNoMes &&
       !negativoDepois &&
-      depoisDaFolha.length > 0 &&
-      linhaFalta.em_conta_apos_folha !== null
+      antesDaFolha.length > 0 &&
+      linhaFalta.em_conta_apos_folha !== null &&
+      linhaFalta.em_conta_apos_folha >= 0
+    ) {
+      let acumulado = r2(-faltaAtrasadaValor);
+      for (const desembolso of antesDaFolha) {
+        acumulado = r2(acumulado + desembolso.liquido);
+        if (acumulado >= linhaFalta.folha) {
+          dependeDe = {
+            parcela: desembolso.parcela,
+            mes: mesFalta,
+            antes_da_folha: true,
+          };
+          break;
+        }
+      }
+    }
+
+    // Sem o desembolso de antes, a folha regular pode ser coberta por um
+    // desembolso que entra depois dela (regra que já existia).
+    if (
+      !dependeDe &&
+      !negativoDepois &&
+      linhaFalta.em_conta_apos_folha !== null &&
+      linhaFalta.em_conta_apos_folha < 0 &&
+      depoisDaFolha.length > 0
     ) {
       let acumulado = linhaFalta.em_conta_apos_folha;
       for (const desembolso of depoisDaFolha) {
