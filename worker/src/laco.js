@@ -153,7 +153,8 @@ function textoMarcadoValido(marcado) {
  * @param {number} [opts.inicio]      instante do começo do POST (para `fim.ms`)
  * @param {number} [opts.prazo]       instante absoluto do fim (timestamp)
  * @param {object} [opts.estado]      `{rodadas, ferramentas}` compartilhado com o watchdog
- * @param {AbortSignal} [opts.sinal]  aborta quando o cliente desconecta
+ * @param {AbortSignal} [opts.sinal]  aborta quando o encerramento/erro manda parar
+ * @param {AbortSignal} [opts.sinalCliente] sinal da requisição (desconexão real do cliente)
  * @returns {Promise<{ok: boolean, rodadas: number, ms: number,
  *                    codigo?: string, abortado?: boolean}>}
  */
@@ -172,6 +173,7 @@ export async function executarLaco({
   prazo,
   estado = { rodadas: 0, ferramentas: 0 },
   sinal,
+  sinalCliente,
   encerrar: encerrarInjetado,
 }) {
   const limites = { ...TETOS, ...tetos };
@@ -204,7 +206,10 @@ export async function executarLaco({
     });
 
   const interromper = async () => {
-    await encerrar({ desconectado: true });
+    // Só a desconexão do cliente encerra em modo desconexão. O sinal interno
+    // também aborta quando o encerrador erra/praza; tratar isso como
+    // desconexão apagaria o `erro`/`fim` que já estavam na fila.
+    if (sinalCliente?.aborted) await encerrar({ desconectado: true });
     return { ok: false, abortado: true, rodadas, ms: decorrido() };
   };
 
@@ -287,6 +292,17 @@ export async function executarLaco({
       }
 
       const chamadas = Array.isArray(mensagem.tool_calls) ? mensagem.tool_calls : [];
+
+      // Com tool_calls, `content` nulo/ausente é normal. Qualquer outro tipo
+      // (objeto, número, array) é resposta inválida do modelo e não pode ir
+      // para o histórico como `[object Object]`.
+      if (
+        chamadas.length &&
+        mensagem.content != null &&
+        typeof mensagem.content !== 'string'
+      ) {
+        return await encerrarComErro('modelo', 'O modelo não respondeu em texto.');
+      }
 
       // ── Resposta final ────────────────────────────────────────────────
       if (!chamadas.length) {

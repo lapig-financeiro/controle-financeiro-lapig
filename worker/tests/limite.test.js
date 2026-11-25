@@ -169,7 +169,7 @@ describe('prazo e desconexão', () => {
       expect(r.permitido).toBe(false);
       expect(r.codigo).toBe('abortado');
 
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => setImmediate(resolve));
       expect(rejeicoes).toHaveLength(0);
     } finally {
       process.removeListener('unhandledRejection', aoRejeitar);

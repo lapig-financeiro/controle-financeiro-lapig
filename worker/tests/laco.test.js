@@ -519,6 +519,55 @@ describe('2ª rodada: prazo, texto vazio e erros longos', () => {
     }
   });
 
+  it('content inválido com tool_calls vira erro modelo antes de executar', async () => {
+    const { sessao, chamadas } = sessaoFalsa();
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      sessao,
+      chamarModelo: modeloFalso([
+        {
+          message: {
+            role: 'assistant',
+            content: {},
+            tool_calls: [chamada('listar_centros')],
+          },
+        },
+      ]),
+      emitir,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('modelo');
+    expect(chamadas.executar).toHaveLength(0);
+    expect(emitir.eventos.some((e) => e.nome === 'passo')).toBe(false);
+  });
+
+  it('content nulo com tool_calls continua válido', async () => {
+    const { sessao, chamadas } = sessaoFalsa();
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      sessao,
+      chamarModelo: modeloFalso([
+        {
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [chamada('listar_centros')],
+          },
+        },
+        texto('ok'),
+      ]),
+      emitir,
+    });
+
+    expect(r.ok).toBe(true);
+    expect(chamadas.executar).toHaveLength(1);
+  });
+
   it('marcarTexto com formato inválido vira erro interno', async () => {
     const { sessao } = sessaoFalsa({
       marcarTexto: () => ({ texto: 'ok', semOrigem: 'nada' }),

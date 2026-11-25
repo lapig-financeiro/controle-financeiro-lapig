@@ -24,28 +24,18 @@ export function formatarEvento(nome, dados) {
   return `event: ${nome}\ndata: ${JSON.stringify(dados)}\n\n`;
 }
 
-function abortarEscritor(escritor, readable) {
+function abortarEscritor(escritor, motivo) {
   try {
-    const promessa = escritor.abort();
+    // Sem await: um write pendurado pode segurar a promessa do abort, e o
+    // encerramento não pode depender dela. A rejeição é tratada aqui.
+    const promessa = escritor.abort(motivo);
     if (promessa && typeof promessa.catch === 'function') promessa.catch(() => {});
   } catch {
     // O stream já estava fechado/errado; não há o que fazer.
   }
-
-  // `writer.abort()` pode ficar na fila atrás de um write pendurado (é o que
-  // acontece no runtime do Node). Cancelar o lado legível libera o transform e
-  // rejeita o write; no Worker, é o caminho para o cliente que parou de ler.
-  if (readable && typeof readable.cancel === 'function') {
-    try {
-      const promessa = readable.cancel();
-      if (promessa && typeof promessa.catch === 'function') promessa.catch(() => {});
-    } catch {
-      // O lado legível já estava travado/cancelado pelo runtime.
-    }
-  }
 }
 
-export function criarEmissor(writable, readable) {
+export function criarEmissor(writable) {
   const escritor = writable.getWriter();
   const codificador = new TextEncoder();
 
@@ -157,7 +147,7 @@ export function criarEmissor(writable, readable) {
           terminou = true;
           estado = 'fechado';
           resolverFila(false);
-          abortarEscritor(escritor, readable);
+          abortarEscritor(escritor, 'prazo da análise');
           finalizar();
           resolve();
         }, ms);
@@ -171,7 +161,7 @@ export function criarEmissor(writable, readable) {
       if (estado === 'fechado') return finalizado;
       estado = 'fechado';
       resolverFila(false);
-      abortarEscritor(escritor, readable);
+      abortarEscritor(escritor, 'cliente desconectou');
       finalizar();
       return finalizado;
     },

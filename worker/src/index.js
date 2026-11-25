@@ -287,6 +287,7 @@ async function rodarAnalise({
   emitir,
   encerrar,
   sinal,
+  sinalCliente,
 }) {
   // ── Login e papel ───────────────────────────────────────────────────────
   const auth = await autenticar({
@@ -392,6 +393,7 @@ async function rodarAnalise({
     prazo,
     estado,
     sinal,
+    sinalCliente,
   });
 }
 
@@ -451,7 +453,6 @@ async function analisar(request, env, ctx, origem) {
   const estado = { rodadas: 0, ferramentas: 0 };
   const encerrador = criarEncerrador({
     writable: fluxo.writable,
-    readable: fluxo.readable,
     estado,
     inicio,
     prazo,
@@ -510,6 +511,7 @@ async function analisar(request, env, ctx, origem) {
       emitir: encerrador.emitir,
       encerrar: encerrador.encerrar,
       sinal: controle.signal,
+      sinalCliente: request.signal,
     }),
     esperaTarefa,
   ])

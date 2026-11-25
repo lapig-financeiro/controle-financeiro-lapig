@@ -68,7 +68,7 @@ describe('prazo', () => {
       });
       expect(r).toEqual({ erro: 'sinal' });
 
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => setImmediate(resolve));
       expect(rejeicoes).toHaveLength(0);
     } finally {
       process.removeListener('unhandledRejection', aoRejeitar);

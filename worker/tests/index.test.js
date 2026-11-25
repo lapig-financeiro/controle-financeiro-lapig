@@ -950,6 +950,108 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
   });
 });
 
+describe('4ª rodada: escrita bloqueada e desconexão', () => {
+  function ctxFalso() {
+    return {
+      promessas: [],
+      waitUntil(promessa) {
+        this.promessas.push(promessa);
+      },
+    };
+  }
+
+  function pedidoAnalise(sinal) {
+    return new Request('https://worker.local/analise', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer jwt-bom',
+        Origin: ORIGEM,
+      },
+      body: JSON.stringify({ pergunta: 'x' }),
+      signal: sinal,
+    });
+  }
+
+  it('leitor lê texto e para; waitUntil resolve no prazo + 1 s', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchFalso = fetchAmbiente({
+        ollama: [{ message: { role: 'assistant', content: 'ok' } }],
+      });
+      vi.stubGlobal('fetch', fetchFalso);
+
+      const ctx = ctxFalso();
+      const resposta = await worker.fetch(
+        pedidoAnalise(),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      );
+      const leitor = resposta.body.getReader();
+      const primeira = await leitor.read();
+      expect(primeira.done).toBe(false);
+
+      // O leitor para aqui. O `fim` fica bloqueado no stream de verdade.
+      await vi.advanceTimersByTimeAsync(121_001);
+
+      let resolveu = false;
+      ctx.promessas[0].then(
+        () => {
+          resolveu = true;
+        },
+        () => {
+          resolveu = true;
+        },
+      );
+      for (let i = 0; i < 100; i += 1) await Promise.resolve();
+      expect(resolveu).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('desconectar com o fim bloqueado encerra sem esperar o limite', async () => {
+    vi.useFakeTimers();
+    try {
+      const controle = new AbortController();
+      const fetchFalso = fetchAmbiente({
+        ollama: [{ message: { role: 'assistant', content: 'ok' } }],
+      });
+      vi.stubGlobal('fetch', fetchFalso);
+
+      const ctx = ctxFalso();
+      const resposta = await worker.fetch(
+        pedidoAnalise(controle.signal),
+        { ...ENV, ANALISE_USO: kv },
+        ctx,
+      );
+      const leitor = resposta.body.getReader();
+      const primeira = await leitor.read();
+      expect(primeira.done).toBe(false);
+
+      // Deixa o laço chamar o encerramento de sucesso e o `fim` entrar na
+      // escrita bloqueada.
+      for (let i = 0; i < 30; i += 1) await Promise.resolve();
+
+      controle.abort();
+
+      let resolveu = false;
+      ctx.promessas[0].then(
+        () => {
+          resolveu = true;
+        },
+        () => {
+          resolveu = true;
+        },
+      );
+      for (let i = 0; i < 100; i += 1) await Promise.resolve();
+      expect(resolveu).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('nenhum conteúdo no console', () => {
   it('pergunta, argumentos, resultado, bloco e texto não aparecem em console.*', async () => {
     const espioes = ['log', 'info', 'warn', 'error', 'debug'].map((metodo) =>

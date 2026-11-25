@@ -393,3 +393,72 @@ conferidos contra o backup e a suíte voltou a 111/111. A suíte final também p
   bloqueada. Os dois juntos cobrem o runtime local e o Worker.
 - Os erros de autenticação/limite agora também terminam com `fim` (antes a 2ª rodada só emitia
   `erro`): é o que "sempre um `fim`" do dono único exige.
+
+## 4ª rodada (revisão)
+
+Data: 25/11/2026. Branch `redesenho/analise-1-b`. Commit:
+`fix(analise): Worker — 4ª rodada da revisão`. Só `worker/` e este relatório. A conferência da 3ª
+rodada (`.revisao-b3.md`) foi corrigida item a item.
+
+### O que mudou
+
+1. **Escrita bloqueada não segura mais o `waitUntil`.** O `sse.js` não usa `readable.cancel()`
+   (com o leitor travado ele rejeita e não libera nada). No limite, chama `writer.abort(motivo)`
+   **sem `await`**, trata a rejeição e resolve a promessa do encerramento; a escrita pendente pode
+   ficar pendente, mas o Worker não fica preso. O teste novo usa o stream de verdade: lê `texto`,
+   para de ler e prova que a promessa do `waitUntil` resolve em `prazo + 1 s`.
+2. **Desconexão durante a escrita do `fim`.** O `encerrador` processa `desconectado` mesmo quando
+   `fase === 'encerrando'`: aborta o sinal interno e a escrita na hora, sem esperar o limite. O laço
+   ganhou `sinalCliente` (o sinal original da requisição) para diferenciar a queda do cliente do
+   aborto interno que o próprio encerrador provoca em erros/prazo; sem isso, o `interromper()` do
+   laço chamava a desconexão e descartava o `erro`/`fim` que já estavam na fila.
+3. **`content` inválido com `tool_calls`.** Objeto, número ou array (e não `null`/ausente) em uma
+   resposta que pede ferramenta vira `erro` `modelo` antes de executar qualquer consulta. `null` e
+   ausente continuam válidos nesse caso; a mensagem ao modelo é normalizada para `''`.
+4. **Testes sem espera real.** Os dois `setTimeout(20)` de `unhandledRejection` (`prazo.test.js` e
+   `limite.test.js`) viraram `setImmediate`, que só espera o próximo tick, sem tempo de relógio.
+
+### Testes
+
+```
+npm --prefix worker test   → 9 arquivos, 115 testes, todos verdes; 20/20 execuções seguidas
+npm run lint               → limpo
+npm test                   → 44 arquivos passando + 1 pulado; 692 testes passando + 19 pulados (711)
+```
+
+Novos testes desta rodada:
+
+- `index.test.js` › "4ª rodada": leitor lê `texto` e para, com o stream real, e o `waitUntil`
+  resolve em `prazo + 1 s`; desconectar com o `fim` bloqueado encerra sem esperar o limite.
+- `laco.test.js`: `content: {}` com `tool_calls` vira `erro` `modelo` antes de executar a
+  ferramenta; `content: null` com `tool_calls` segue válido e executa.
+- `encerrador.test.js`: o teste de escrita bloqueada agora usa um writer cujo `write` nunca resolve
+  e não tem dublê de `cancel`; prova que o encerramento resolve mesmo assim.
+- Os dois testes de `unhandledRejection` usam `setImmediate` em vez de `setTimeout(20)`.
+
+### Mutantes
+
+Cada um foi aplicado, rodado contra o teste indicado e revertido; os hashes de `src/` foram
+conferidos contra o backup e a suíte voltou a 115/115, 20/20.
+
+| # | Item | Mutante | Teste que pega | O que falhou |
+|---|---|---|---|---|
+| 1 | Escrita bloqueada | `sse.js` `encerrar` devolve `finalizado` sem a corrida do limite | `index.test.js` › "leitor lê texto e para..." | `resolveu` ficou `false` |
+| 2 | Desconexão no `fim` | guarda `if (fase !== 'aberto')` antes de processar `desconectado` | `index.test.js` › "desconectar com o fim bloqueado..." | `resolveu` ficou `false` |
+| 3 | `content` com tool_calls | removida a checagem de `content` com `tool_calls` | `laco.test.js` › "content inválido com tool_calls..." | a ferramenta foi executada (`chamadas.executar` = 1) |
+| 4 | Espera real | `corrida` sem o `.catch` da promessa abandonada | `prazo.test.js` › "sinal já abortado..." | `unhandledRejection` com `Error: boom` |
+
+### Fica de fora, de propósito
+
+- **KV → Durable Object** segue fora: leitura eventualmente consistente por até ~60 s, aceitável
+  com um único admin; é freio de fatura, não segurança.
+- O **stub do `shared/ai-tools`** continua sendo o motivo de `wrangler dev` não montar nesta branch
+  isolada; foi usado só no teste e removido.
+- A suíte usa **timers falsos** para o prazo de 120 s e para os cenários de pausa; a queda real de
+  socket no workerd não é simulada no `wrangler dev` (evidência: registro de
+  `enable_request_signal` no binário, teste de config e testes de sinal).
+- `think: 'high'` segue sem conferência contra a API real (proibido chamar o Ollama).
+- O item 4 é só higiene de teste: o mutante de produção é o mesmo da 3ª rodada (remover o `.catch`
+  da `corrida`), e o `setImmediate` continua pegando a rejeição sem esperar 20 ms.
+- Nada de push, deploy, login ou produção. `.revisao-b3.md` e os demais `.revisao-*.md` ficaram
+  fora do commit.

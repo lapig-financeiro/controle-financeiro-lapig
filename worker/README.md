@@ -87,9 +87,10 @@ pode ainda não existir na branch; os outros módulos são testados direto.
   watchdog chama o encerrador, que fecha o stream com `erro` `tempo` + `fim`
   mesmo que uma chamada pendure e ignore o `AbortSignal`. A promessa entregue ao
   `ctx.waitUntil` resolve até **prazo + 1 s**, mesmo com ferramenta,
-  `marcarTexto` ou modelo pendurados. Se o cliente parar de ler, a escrita
-  terminal é abortada no limite (`writer.abort()` + `readable.cancel()`), em vez
-  de segurar o Worker.
+  `marcarTexto` ou modelo pendurados. Se o cliente parar de ler, o encerramento
+  não espera a escrita: chama `writer.abort(motivo)` sem `await` (a rejeição é
+  tratada) e libera a promessa. Não usa `readable.cancel()` — com o leitor
+  travado ele rejeita e não resolve nada.
 - 8 rodadas de modelo, 30 chamadas de ferramenta e 60.000 caracteres por
   resultado (acima disso volta erro curto ao modelo pedindo filtro). Estourar
   vira `erro` (`tempo` ou `interno`) e `fim`.
@@ -107,12 +108,16 @@ pode ainda não existir na branch; os outros módulos são testados direto.
   reidratado (só o bloco é). `content` ausente, vazio, só com espaços ou que não
   seja string (objeto, número, array) vira `erro` `modelo` ("o modelo não
   respondeu"), não `texto: ""`; formato inválido de `marcarTexto` vira `erro`
-  `interno`.
+  `interno`. Em resposta **com** `tool_calls`, `content` nulo/ausente é normal;
+  qualquer outro tipo (objeto, número, array) também vira `erro` `modelo` antes
+  de executar a ferramenta.
 - RPC com 200 e JSON literal `null` é `resposta_invalida`: nenhuma das 7 RPCs do
   contrato §4 devolve `null` com sucesso.
 - Erro de ferramenta (inclusive exceção) é cortado em **500 caracteres** tanto
   no evento `passo` quanto no que volta ao modelo.
 - Se o cliente desconectar, o `AbortSignal` da requisição chega a **todos** os
   fetch (auth, RPC e modelo) e o laço para; a falha de escrita no stream é a
-  segunda detecção.
+  segunda detecção. A desconexão é processada **mesmo com um `fim` já em
+  escrita**: o encerrador aborta o sinal interno e a escrita na hora, sem esperar
+  o limite.
 - Não publica: deploy é do Claude, com o ok do Victor.
