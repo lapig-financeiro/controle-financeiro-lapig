@@ -1,0 +1,20 @@
+name = "analise-lapig"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+# Limite diário por login (contrato §7). Em produção, crie o namespace e troque
+# o id abaixo pelo devolvido:
+#   wrangler kv namespace create ANALISE_USO
+# Em `wrangler dev`, o KV é simulado localmente e o id não precisa existir.
+[[kv_namespaces]]
+binding = "ANALISE_USO"
+id = "00000000000000000000000000000000"
+
+[vars]
+# Públicas, as mesmas que o frontend carrega em frontend/js/supabase-config.js.
+# A chave do Ollama NÃO mora aqui: é segredo (`wrangler secret put OLLAMA_API_KEY`).
+SUPABASE_URL = "https://skxiivmkhpegefafdlty.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_cWm8BfwIb2JQ-WIOOjkQfA_jvTt7OmG"
+ANALISE_MODELO = "deepseek-v4.1-flash:cloud"
+ANALISE_PAPEIS = "admin"
+ANALISE_LIMITE_DIA = "50"

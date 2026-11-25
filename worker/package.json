@@ -1,0 +1,15 @@
+{
+  "name": "analise-lapig-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worker da Análise (F5): laço de ferramentas sobre as RPCs do site, com SSE.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^5.1.2",
+    "wrangler": "^4.168.0"
+  }
+}
