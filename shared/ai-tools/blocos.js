@@ -298,6 +298,18 @@ export function criarCalculadora({ registro, citados = [] }) {
       return erro('calcular recusa total fora da faixa segura.');
     }
     const valor = Number(totalInteiro) / escala;
+    // Perto do limite seguro, dividir pela escala pode mudar o último dígito
+    // (R$ 90.071.992.547.409,87 vira ,88). Só publica o que volta igual.
+    const exato = (numero, inteiro) => {
+      try {
+        return inteiroBigInt(numero, casas) === inteiro;
+      } catch {
+        return false;
+      }
+    };
+    if (!exato(valor, totalInteiro) || !inteiros.every((inteiro) => exato(Number(inteiro) / escala, inteiro))) {
+      return erro('calcular recusa valores fora da faixa exata.');
+    }
 
     const partes = nos.map((no, indice) => ({
       id: no.id,

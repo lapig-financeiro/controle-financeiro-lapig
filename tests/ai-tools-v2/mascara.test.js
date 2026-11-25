@@ -90,6 +90,39 @@ describe('máscara de nomes', () => {
   });
 });
 
+describe('máscara — conferência final da 4ª rodada', () => {
+  it('emoji antes do nome não desloca o corte', async () => {
+    const { sessao } = montar();
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const marcado = sessao.marcarTexto('📋 Pessoa Exemplo Um 📋 e 👩‍🔬 Pessoa Exemplo Dois');
+    expect(marcado.texto).toBe('📋 ⟦P1⟧ 📋 e 👩‍🔬 ⟦P2⟧');
+  });
+
+  it('acento decomposto antes do nome não deixa pedaço do nome', async () => {
+    const { sessao } = montar();
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const marcado = sessao.marcarTexto('Café com Pessoa Exemplo Um.');
+    expect(marcado.texto).not.toMatch(/Pessoa|Exemplo|Um/);
+    expect(marcado.texto).toContain('⟦P1⟧.');
+  });
+
+  it('nomes que só diferem no acento são duas pessoas', async () => {
+    const pedido = fixture('pedido_bolsas');
+    pedido.bolsistas[0].nome = 'Joao Exemplo';
+    pedido.bolsistas[1].nome = 'João Exemplo';
+    const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
+    await sessao.executar('pendencias', { project_id: '30.901' });
+    const sem = sessao.marcarTexto('Joao Exemplo').texto;
+    const com = sessao.marcarTexto('João Exemplo').texto;
+    expect(sem).toMatch(/^⟦P\d+⟧$/);
+    expect(com).toMatch(/^⟦P\d+⟧$/);
+    expect(sem).not.toBe(com);
+    expect(sessao.reidratar({ tipo: 'texto', texto: `${sem} e ${com}`, semOrigem: [] }).texto).toBe(
+      'Joao Exemplo e João Exemplo'
+    );
+  });
+});
+
 describe('CPF e e-mail', () => {
   it('saem do texto com e sem pontuação', async () => {
     const { sessao } = montar();

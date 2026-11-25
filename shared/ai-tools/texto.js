@@ -19,8 +19,9 @@ function perto(a, b) {
 
 function valorNumerico(texto) {
   let limpo = String(texto)
-    .replace(/^R\$\s?/, '')
     .replace(/−/g, '-')
+    // "-R$ 1200" e "R$ -1200" são negativos; "-R$ -1200" não.
+    .replace(/^(-?)R\$\s?(-?)/, (_, antes, depois) => (antes === depois ? '' : '-'))
     .replace(/%$/, '')
     .trim();
   if (limpo.includes(',')) {
@@ -86,7 +87,8 @@ function coletarCandidatos(texto) {
     });
   }
 
-  for (const m of texto.matchAll(/R\$\s?[-−]?\d+(?:\.\d{3})*(?:[.,]\d{1,2})?/g)) {
+  // O sinal colado antes de R$ ("-R$ 1200") faz parte do valor.
+  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])[-−]?R\$\s?[-−]?\d+(?:\.\d{3})*(?:[.,]\d{1,2})?/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'moeda', valor });
@@ -132,7 +134,8 @@ function intervalosProibidos(texto) {
   }
   // Código de centro (30.109/78.116) não é número... a menos que venha com R$:
   // aí é moeda, e o candidato de moeda tem de prevalecer.
-  for (const m of texto.matchAll(/\b(?:30|78)\.\d{3}\b/g)) {
+  // Só o código inteiro: "30.109,50" e "1.030.109" são números.
+  for (const m of texto.matchAll(/(?<![\d.,])\b(?:30|78)\.\d{3}\b(?![.,]\d)/g)) {
     const antes = texto.slice(Math.max(0, m.index - 6), m.index);
     if (/(?:R\$\s*[+\-−]?|[+\-−])\s*$/.test(antes)) continue;
     intervalos.push({ inicio: m.index, fim: m.index + m[0].length });

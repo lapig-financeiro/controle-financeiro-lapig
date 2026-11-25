@@ -395,3 +395,21 @@ Cada mutante foi revertido; a suíte nova fechou em **122/122** e a raiz em **81
   classificação da 069. Total do plano segue `sem_documento`.
 - Permanecem: `numero.contexto.origem`, `motivos_falharam`/`falha_motivos`, `bolsas` com
   `total_global`/`aviso`/`itens_ocultos` e a regra de bolsa vigente em centro oculto.
+
+## Ajuste do Claude depois da conferência final da 4ª rodada (25/11/2026)
+
+O GPT-6.2 Sol (medium) conferiu `3f609a1` e achou 2 itens altos, 1 médio e 1 baixo. O Claude conferiu cada
+um no código e corrigiu os quatro, cada um com teste que falha sem a correção (a versão anterior do arquivo foi
+reposta, o teste foi visto falhar, e a correção voltou).
+
+| Achado | Correção | Teste |
+|---|---|---|
+| Alto: emoji ou acento decomposto antes do nome deslocava o corte da máscara e deixava o nome (ou parte dele) ir ao modelo | `normalizarComparavel` mapeia cada **unidade UTF-16** do texto comparável e devolve `fonte` (o texto em NFC); a troca corta `fonte`. Bordas por `\p{L}\p{N}` | `mascara.test.js`: emoji (inclusive ZWJ) e `e` + U+0301 antes do nome |
+| Alto: `-R$ 1200` aceito com nó de +R$ 1.200; `30.109,50` passava como código de centro | o sinal **colado** antes de `R$` entra no valor (`-R$ -x` volta positivo); com espaço (`R$ 1.200 - R$ 300`) é subtração e não gruda. Código de centro só sem `,`/`.` e dígito em volta | `texto.test.js`: os três casos e o código de centro sozinho |
+| Médio: `Joao Exemplo` e `João Exemplo` recebiam o mesmo ⟦Pn⟧ e a reidratação trocava a pessoa | identidade pela chave **com acento** (`chaveExataDoNome`); a busca faz duas passadas, primeiro com acento e depois sem | `mascara.test.js`: duas fichas e reidratação correta |
+| Baixo: `R$ 90.071.992.547.409,00 + R$ 0,87` publicava `,88` | `calcular` só publica valor (total e partes) que volta igual em centavos; senão, "fora da faixa exata" | `calcular.test.js` |
+
+Limite que fica: um texto que escreve sem acento o nome de quem tem acento, quando existe outra pessoa com o
+mesmo nome sem acento, cai na ficha da segunda. O nome continua mascarado; só a ficha pode ser a errada.
+
+Pacote: 129 testes. Raiz: 821 passando, lint limpo.

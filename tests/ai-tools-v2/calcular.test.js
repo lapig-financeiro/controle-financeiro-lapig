@@ -226,6 +226,13 @@ describe('calcular', () => {
     expect(JSON.parse(resultado.paraModelo).resultado.valor).toBe(0.9);
   });
 
+  it('recusa resultado cujo centavo muda na volta para Number (conferência final)', async () => {
+    const sessao = montar([90071992547409, 0.87]);
+    const { um, dois } = await livrosDosCentros(sessao);
+    const resultado = sessao.calcular({ op: 'soma', ids: [um.id, dois.id] });
+    expect(resultado.erro).toContain('faixa exata');
+  });
+
   it('recusa id inexistente', async () => {
     const sessao = montar();
     const { um } = await livrosDosCentros(sessao);

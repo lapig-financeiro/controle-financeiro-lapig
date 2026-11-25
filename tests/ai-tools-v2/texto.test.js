@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 import { criarSessao } from '../../shared/ai-tools/index.js';
+import { marcarNumeros } from '../../shared/ai-tools/texto.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
@@ -206,5 +207,26 @@ describe('marcarTexto', () => {
       reidratado.texto.semOrigem[0].fim
     );
     expect(trecho).toBe('R$ 500,00');
+  });
+});
+
+describe('números — conferência final da 4ª rodada', () => {
+  const moeda = (valor) => ({ unidade: 'moeda', valor });
+  const numero = (valor) => ({ unidade: 'numero', valor });
+
+  it('sinal colado antes de R$ faz parte do valor', () => {
+    expect(marcarNumeros('Desconto -R$ 1200', [moeda(1200)])).toEqual([{ inicio: 9, fim: 17 }]);
+    expect(marcarNumeros('Desconto -R$ 1200', [moeda(-1200)])).toEqual([]);
+    expect(marcarNumeros('Desconto R$ -1200', [moeda(-1200)])).toEqual([]);
+  });
+
+  it('subtração com espaço não gruda o sinal no valor seguinte', () => {
+    expect(marcarNumeros('R$ 1.200 - R$ 300', [moeda(1200), moeda(300)])).toEqual([]);
+  });
+
+  it('código de centro seguido de decimal é número', () => {
+    expect(marcarNumeros('30.109,50', [numero(50)])).toEqual([{ inicio: 0, fim: 9 }]);
+    expect(marcarNumeros('30.109,50', [numero(30109.5)])).toEqual([]);
+    expect(marcarNumeros('O centro 30.109 tem saldo.', [])).toEqual([]);
   });
 });

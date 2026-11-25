@@ -20,16 +20,17 @@ function normalizarNome(valor) {
 }
 
 /**
- * Texto comparável (NFC, espaços Unicode colapsados, minúsculas e sem acento)
- * com o mapa de cada caractere de volta para o texto original. É o mapa que
- * permite trocar o trecho original — inclusive com NBSP/tab — por ⟦Pn⟧.
+ * Texto comparável (NFC, espaços Unicode colapsados, minúsculas e, com
+ * `semAcento`, sem acento) com o mapa de cada unidade UTF-16 dele de volta
+ * para `fonte` (o texto em NFC). A troca por ⟦Pn⟧ corta `fonte`, nunca o
+ * texto recebido: acento decomposto ou emoji antes do nome não desloca o corte.
  */
-function normalizarComparavel(valor) {
-  const original = String(valor ?? '');
+function normalizarComparavel(valor, { semAcento = true } = {}) {
+  const fonte = String(valor ?? '').normalize('NFC');
   let texto = '';
   const mapa = [];
   let deslocamento = 0;
-  for (const caractere of Array.from(original.normalize('NFC'))) {
+  for (const caractere of Array.from(fonte)) {
     const inicio = deslocamento;
     const fim = deslocamento + caractere.length;
     deslocamento = fim;
@@ -45,25 +46,33 @@ function normalizarComparavel(valor) {
       continue;
     }
 
-    const decomposto = caractere
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase();
-    if (decomposto === '') {
+    const base = semAcento
+      ? caractere.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      : caractere.toLowerCase();
+    if (base === '') {
       const ultimo = mapa[mapa.length - 1];
       if (ultimo) ultimo.fim = fim;
       continue;
     }
-    for (const base of Array.from(decomposto)) {
-      texto += base;
-      mapa.push({ inicio, fim });
-    }
+    texto += base;
+    // Uma entrada por unidade UTF-16: \u00e9 nessa unidade que o RegExp devolve
+    // `index`. Emoji (2 unidades) com uma entrada s\u00f3 deslocava o corte.
+    for (let unidade = 0; unidade < base.length; unidade += 1) mapa.push({ inicio, fim });
   }
-  return { texto, mapa };
+  return { texto, mapa, fonte };
 }
 
+/** Chave sem acento: s\u00f3 para achar o nome no texto, nunca como identidade. */
 function chaveDoNome(valor) {
   return normalizarComparavel(normalizarNome(valor)).texto;
+}
+
+/**
+ * Chave de identidade (com acento): "Jo\u00e3o Exemplo" e "Joao Exemplo" s\u00e3o duas
+ * pessoas e recebem dois \u27e6Pn\u27e7.
+ */
+function chaveExataDoNome(valor) {
+  return normalizarComparavel(normalizarNome(valor), { semAcento: false }).texto;
 }
 
 function escaparRegex(valor) {
@@ -87,7 +96,7 @@ function limparCpfEEmail(valor) {
  */
 export function criarMascara({ rpc } = {}) {
   const porMarcador = new Map(); // ⟦P1⟧ -> nome real
-  const porNome = new Map(); // chave normalizada -> ⟦P1⟧
+  const porNome = new Map(); // chave exata (com acento) -> ⟦P1⟧
   const porAlvo = new Map(); // alvo_id (ex.: scholarship) -> ⟦P1⟧
   const nomesParaBusca = []; // { nome, marcador }, maior primeiro na hora de usar
   let proximo = 0;
@@ -96,16 +105,16 @@ export function criarMascara({ rpc } = {}) {
 
   function criarMarcador(nome) {
     const marcador = `⟦P${++proximo}⟧`;
-    porNome.set(chaveDoNome(nome), marcador);
+    porNome.set(chaveExataDoNome(nome), marcador);
     porMarcador.set(marcador, nome);
-    nomesParaBusca.push({ nome, marcador, chave: chaveDoNome(nome) });
+    nomesParaBusca.push({ nome, marcador, chave: chaveDoNome(nome), chaveExata: chaveExataDoNome(nome) });
     return marcador;
   }
 
   function registrarNome(valor) {
     const nome = limparCpfEEmail(normalizarNome(valor));
     if (!nome) return '';
-    const chave = chaveDoNome(nome);
+    const chave = chaveExataDoNome(nome);
     if (porNome.has(chave)) return porNome.get(chave);
     return criarMarcador(nome);
   }
@@ -114,10 +123,10 @@ export function criarMascara({ rpc } = {}) {
     const partes = normalizarNome(nomeCompleto).split(' ').filter(Boolean);
     if (partes.length <= 2) return;
     const curto = `${partes[0]} ${partes[partes.length - 1]}`;
-    const chave = chaveDoNome(curto);
-    if (chave.length < 3 || porNome.has(chave)) return;
-    porNome.set(chave, marcador);
-    nomesParaBusca.push({ nome: curto, marcador, chave });
+    const chaveExata = chaveExataDoNome(curto);
+    if (chaveExata.length < 3 || porNome.has(chaveExata)) return;
+    porNome.set(chaveExata, marcador);
+    nomesParaBusca.push({ nome: curto, marcador, chave: chaveDoNome(curto), chaveExata });
   }
 
   /**
@@ -131,11 +140,11 @@ export function criarMascara({ rpc } = {}) {
     if (alvo && porAlvo.has(alvo)) {
       const marcador = porAlvo.get(alvo);
       if (nome) {
-        const chave = chaveDoNome(nome);
-        if (!porNome.has(chave)) porNome.set(chave, marcador);
+        const chaveExata = chaveExataDoNome(nome);
+        if (!porNome.has(chaveExata)) porNome.set(chaveExata, marcador);
         if (!porMarcador.has(marcador)) porMarcador.set(marcador, nome);
         if (!nomesParaBusca.some((item) => item.nome === nome && item.marcador === marcador)) {
-          nomesParaBusca.push({ nome, marcador, chave: chaveDoNome(nome) });
+          nomesParaBusca.push({ nome, marcador, chave: chaveDoNome(nome), chaveExata });
         }
       }
       return marcador;
@@ -214,13 +223,15 @@ export function criarMascara({ rpc } = {}) {
     return registrarNome(valor);
   }
 
-  function substituirNome(texto, item) {
-    const chave = item.chave ?? chaveDoNome(item.nome);
+  function substituirNome(texto, item, semAcento) {
+    const chave = semAcento
+      ? item.chave ?? chaveDoNome(item.nome)
+      : item.chaveExata ?? chaveExataDoNome(item.nome);
     if (!chave) return texto;
-    const { texto: comparavel, mapa } = normalizarComparavel(texto);
+    const { texto: comparavel, mapa, fonte } = normalizarComparavel(texto, { semAcento });
     const padrao = new RegExp(
-      `(^|[^0-9a-z])(${escaparRegex(chave)})(?=$|[^0-9a-z])`,
-      'g'
+      `(^|[^\\p{L}\\p{N}])(${escaparRegex(chave)})(?=$|[^\\p{L}\\p{N}])`,
+      'gu'
     );
     const trechos = [];
     for (const achado of comparavel.matchAll(padrao)) {
@@ -232,7 +243,8 @@ export function criarMascara({ rpc } = {}) {
       if (trechos.length > 0 && inicio < trechos[trechos.length - 1].fim) continue;
       trechos.push({ inicio, fim });
     }
-    let saida = texto;
+    if (trechos.length === 0) return texto;
+    let saida = fonte;
     for (let indice = trechos.length - 1; indice >= 0; indice -= 1) {
       const trecho = trechos[indice];
       saida = saida.slice(0, trecho.inicio) + item.marcador + saida.slice(trecho.fim);
@@ -246,9 +258,10 @@ export function criarMascara({ rpc } = {}) {
     let saida = limparCpfEEmail(valor);
     if (nomesParaBusca.length > 0) {
       const ordenados = [...nomesParaBusca].sort((a, b) => b.nome.length - a.nome.length);
-      for (const item of ordenados) {
-        saida = substituirNome(saida, item);
-      }
+      // Primeiro com acento (identidade exata), depois sem: "João" acha a
+      // ficha do João mesmo quando existe um "Joao" no dicionário.
+      for (const item of ordenados) saida = substituirNome(saida, item, false);
+      for (const item of ordenados) saida = substituirNome(saida, item, true);
     }
     return saida;
   }
