@@ -413,3 +413,29 @@ Limite que fica: um texto que escreve sem acento o nome de quem tem acento, quan
 mesmo nome sem acento, cai na ficha da segunda. O nome continua mascarado; só a ficha pode ser a errada.
 
 Pacote: 129 testes. Raiz: 821 passando, lint limpo.
+
+### Segunda conferência curta do Sol (sobre `dffea1f`)
+
+Achou 3 altos criados pelas próprias correções; os três conferidos e corrigidos, com teste que falha sem a correção:
+
+- **Duas passadas na máscara** deixavam `Joao` exposto em `Joao Pedro Silva` quando `Pedro Silva` (outra pessoa)
+  casava na passada com acento. Agora é **uma passada**: os trechos dos dois modos concorrem juntos, ganha o mais
+  longo e, no mesmo trecho, o com acento.
+- **Sinal e moeda**: a guarda "sem letra antes" impedia `Desconto-R$ 1200` de levar o sinal e `TotalR$ 1200` de ser
+  lido como moeda. Agora o sinal colado conta sempre que não vem depois de dígito (`1200-R$ 300` é subtração) e
+  `R$` é moeda com qualquer coisa antes.
+
+Pacote: 131 testes.
+
+### Terceira conferência curta do Sol (sobre `e8e38ed`)
+
+Dois altos, ambos conferidos e corrigidos com teste que falha sem a correção:
+
+- O `\p{L}` da borda do nome perdeu o escape na reescrita (`{Ana Paula}` passava inteiro). Voltou a `\p{L}` no
+  template.
+- "Ganha o mais longo" deixava `Maria` exposto quando `Ines Ana Paula` (outra pessoa) cruzava `Maria Inês` e
+  `Ana Paula`. A escolha agora é a combinação sem sobreposição que **cobre mais texto** (agendamento ponderado de
+  intervalos; no empate, com acento), e o que sobrar descoberto dentro de qualquer trecho achado também vira
+  marcador (só espaço ou pontuação entre dois nomes não conta como sobra).
+
+Pacote: 134 testes.

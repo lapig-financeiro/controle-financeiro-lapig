@@ -87,8 +87,10 @@ function coletarCandidatos(texto) {
     });
   }
 
-  // O sinal colado antes de R$ ("-R$ 1200") faz parte do valor.
-  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])[-−]?R\$\s?[-−]?\d+(?:\.\d{3})*(?:[.,]\d{1,2})?/g)) {
+  // O sinal colado antes de R$ ("-R$ 1200", "Desconto-R$ 1200") faz parte do
+  // valor; depois de dígito ("1200-R$ 300") é subtração. Letra colada antes
+  // de R$ ("TotalR$ 1200") não impede ler moeda.
+  for (const m of texto.matchAll(/(?:(?<!\d)[-−])?R\$\s?[-−]?\d+(?:\.\d{3})*(?:[.,]\d{1,2})?/g)) {
     const valor = valorNumerico(m[0]);
     if (valor === null) continue;
     achados.push({ inicio: m.index, fim: m.index + m[0].length, tipo: 'moeda', valor });
