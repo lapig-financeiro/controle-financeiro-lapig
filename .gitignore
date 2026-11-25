@@ -76,3 +76,8 @@ supabase/.temp/
 # ── Vigia (tools/vigia) ──────────────────────────────────────
 # Palco do clasp: tem .clasp.json com o scriptId do projeto na conta do Victor.
 tools/vigia/.publicar/
+
+# ── Bancada da Análise (worker/bancada) ──────────────────────
+# A saída guarda eventos, textos e blocos de uma execução; com o retrato real
+# ela carrega dado financeiro. O retrato real nunca entra no repositório.
+worker/bancada/saida/

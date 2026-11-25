@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bancada": "node bancada/rodar.mjs"
   },
   "devDependencies": {
     "vitest": "^5.1.2",

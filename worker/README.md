@@ -79,6 +79,28 @@ Vitest, sem rede: `fetch`, KV, sessão e modelo são dublês. O `index.js` é
 testado com `vi.mock` do pacote `shared/ai-tools`, que é do outro executor e
 pode ainda não existir na branch; os outros módulos são testados direto.
 
+## Bancada
+
+`worker/bancada/` roda o próprio `worker/src/index.js` no Node, sem `wrangler`,
+com o Supabase simulado a partir de um retrato das RPCs e o modelo em três
+modos: **roteiro** (respostas prontas, sem rede, usado nos testes), **local**
+(Ollama deste PC, em `localhost:11434`) e **chave** (`--chave <arquivo>`, chama
+`ollama.com` de verdade). O retrato real fica fora do git; o exemplo versionado
+usa três centros fictícios (`30.9xx`).
+
+```bash
+node worker/bancada/rodar.mjs \
+  --roteiro worker/bancada/exemplo/roteiro.json \
+  --retrato worker/bancada/exemplo/retrato.json \
+  --perguntas worker/bancada/exemplo/perguntas.json
+```
+
+A saída (`eventos.jsonl` e `relatorio.md`) vai para `worker/bancada/saida/`,
+ignorada pelo git, e o código de saída é 0 só se todas as perguntas passarem.
+`--so 3,8` roda só esses ids; `--modelo` troca o modelo. As perguntas rodam uma
+de cada vez e o roteador só deixa sair o que vai para `bancada.invalid` ou para
+o `/api/chat` do Ollama.
+
 ## Tetos e o que o Worker NÃO faz
 
 - **Um prazo só, de 120 s**, contado do início do `POST /analise` (antes da

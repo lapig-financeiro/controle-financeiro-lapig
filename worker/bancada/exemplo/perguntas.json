@@ -1,0 +1,39 @@
+[
+  {
+    "id": 1,
+    "pergunta": "Quanto o 30.901 tem livre?",
+    "espera": {
+      "numeros": [120000.5],
+      "texto_contem": "bloco",
+      "sem_lista_markdown": true,
+      "max_segundos": 30
+    }
+  },
+  {
+    "id": 2,
+    "pergunta": "Qual a bolsa vigente no Centro Exemplo Beta?",
+    "espera": {
+      "numeros": [2500],
+      "texto_contem": "bolsa",
+      "max_segundos": 30
+    }
+  },
+  {
+    "id": 3,
+    "pergunta": "Qual a taxa CIP da UFG do 30.901?",
+    "espera": {
+      "numeros": [4.5],
+      "texto_contem": "taxa",
+      "max_segundos": 30
+    }
+  },
+  {
+    "id": 4,
+    "pergunta": "Qual o valor da primeira parcela do plano do 30.901?",
+    "espera": {
+      "numeros": [100000],
+      "texto_contem": "parcela",
+      "max_segundos": 30
+    }
+  }
+]

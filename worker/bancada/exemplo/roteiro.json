@@ -1,0 +1,164 @@
+{
+  "respostas": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "explicar_livre",
+              "arguments": {
+                "project_id": "30.901"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "criar_bloco",
+              "arguments": {
+                "tipo": "numero",
+                "titulo": "Livre do 30.901",
+                "no": "r1.1"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": "O saldo livre está no bloco acima."
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "bolsas",
+              "arguments": {
+                "project_id": "30.902"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "criar_bloco",
+              "arguments": {
+                "tipo": "numero",
+                "titulo": "Bolsa vigente no 30.902",
+                "no": "r1.4"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": "A bolsa vigente está no bloco."
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "termos_contrato",
+              "arguments": {
+                "project_id": "30.901"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "criar_bloco",
+              "arguments": {
+                "tipo": "numero",
+                "titulo": "Taxa CIP da UFG do 30.901",
+                "no": "r1.3"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": "A taxa está no bloco."
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "desembolsos",
+              "arguments": {
+                "project_id": "30.901"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "function": {
+              "name": "criar_bloco",
+              "arguments": {
+                "tipo": "numero",
+                "titulo": "Primeira parcela do plano do 30.901",
+                "no": "r1.3"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "message": {
+        "role": "assistant",
+        "content": "A primeira parcela está no bloco."
+      }
+    }
+  ]
+}
