@@ -1,65 +1,52 @@
 .analise__pergunta-cartao .cartao__corpo {
-  gap: var(--esp-3);
+  gap: var(--esp-2);
 }
 
-/* Layout de conversa contínua: lista à esquerda a partir de 1024 px e o
-   campo fixo no fim da área de rolagem. A página não rola; quem rola é a
-   conversa, para o campo ficar sempre visível. */
+/* A conversa acompanha a rolagem da página. A coluna tem a altura mínima de
+   uma tela para o compositor ficar no rodapé da janela; o campo é sticky e a
+   lista ganha espaço no fim para o último turno não ficar atrás dele. */
 .analise {
-  height: calc(var(--altura-tela) - var(--altura-topo));
-  min-height: 0;
-  overflow: hidden;
+  padding-bottom: 0;
 }
 
 .analise__layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
   gap: var(--esp-5);
-  flex: 1;
-  min-height: 0;
+  align-items: start;
 }
 
 .analise__coluna-conversas {
   display: none;
-  min-height: 0;
 }
 
 .analise__conversa {
   display: flex;
   flex-direction: column;
   gap: var(--esp-3);
-  min-height: 0;
   min-width: 0;
-}
-
-.analise__barra-conversas {
-  display: flex;
-  flex: none;
-}
-
-.analise__rolagem {
-  display: flex;
-  flex-direction: column;
-  gap: var(--esp-4);
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: var(--esp-1);
+  min-height: calc(var(--altura-tela) - var(--altura-topo) - var(--esp-8));
 }
 
 .analise__fim {
-  height: 0;
-  scroll-margin-bottom: var(--esp-7);
+  height: var(--espaco-fim-conversa);
+  flex: none;
 }
 
-.analise__pergunta-fixa {
+.analise__compositor {
   position: sticky;
   bottom: 0;
   z-index: var(--z-base);
   margin-top: auto;
+  padding-top: var(--esp-3);
+  padding-bottom: var(--esp-3);
   flex: none;
-  background-color: var(--cor-superficie);
+  background-color: var(--cor-fundo);
+  border-top: var(--borda);
+}
+
+.analise__pergunta-cartao {
+  padding: var(--esp-3) var(--esp-4);
 }
 
 .analise__cabecalho-conversa {
@@ -72,12 +59,16 @@
 .analise__titulo-linha {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--esp-3);
+  gap: var(--esp-2);
+  min-width: 0;
+}
+
+.analise__botao-conversas {
+  flex: none;
 }
 
 .analise__titulo-conversa {
+  flex: 1;
   font-size: var(--fs-4);
   line-height: var(--lh-4);
   font-weight: var(--fw-semi);
@@ -90,7 +81,8 @@
 .analise__titulo-acoes {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: none;
   gap: var(--esp-1);
 }
 
@@ -160,6 +152,23 @@
   color: var(--cor-problema);
 }
 
+.analise__campo-linha {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+}
+
+.analise__campo-bloco {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-1);
+  min-width: 0;
+}
+
+.analise__campo-linha .analise__acoes {
+  padding-top: 0;
+}
+
 @media (min-width: 1024px) {
   .analise__layout {
     grid-template-columns: var(--largura-conversas) minmax(0, 1fr);
@@ -168,12 +177,28 @@
 
   .analise__coluna-conversas {
     display: block;
+    position: sticky;
+    top: calc(var(--altura-topo) + var(--esp-4));
+    max-height: calc(var(--altura-tela) - var(--altura-topo) - var(--esp-7));
     overflow-y: auto;
     padding-right: var(--esp-2);
   }
 
-  .analise__barra-conversas {
+  .analise__botao-conversas {
     display: none;
+  }
+
+  .analise__campo-linha {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .analise__campo-bloco {
+    flex: 1;
+  }
+
+  .analise__campo-linha .analise__acoes {
+    flex: none;
   }
 }
 
@@ -192,7 +217,8 @@
 
 .analise__campo {
   width: 100%;
-  min-height: calc(var(--altura-controle) * 3);
+  min-height: calc(var(--lh-2) * 2 + var(--esp-4));
+  max-height: calc(var(--lh-2) * 8 + var(--esp-4));
   padding: var(--esp-2) var(--esp-3);
   background-color: var(--cor-superficie);
   border: var(--borda-controle);
@@ -200,7 +226,9 @@
   font-size: var(--fs-2);
   line-height: var(--lh-2);
   color: var(--cor-texto);
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
+  overflow-y: auto;
   transition: border-color var(--rapido) var(--curva), box-shadow var(--rapido) var(--curva);
 }
 
@@ -238,6 +266,10 @@
   font-size: var(--fs-1);
   line-height: var(--lh-1);
   color: var(--cor-texto-3);
+}
+
+.analise__aviso-curto {
+  display: none;
 }
 
 .analise__acoes {
@@ -518,7 +550,39 @@
     flex-direction: column;
   }
 
+  .analise__cabecalho-conversa {
+    gap: var(--esp-1);
+  }
+
   .analise__titulo-linha {
-    align-items: flex-start;
+    gap: var(--esp-1);
+  }
+
+  .analise__titulo-conversa {
+    font-size: var(--fs-3);
+    line-height: var(--lh-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .analise__titulo-acoes .botao > span {
+    display: none;
+  }
+
+  .analise__pergunta-cartao {
+    padding: var(--esp-3);
+  }
+
+  .analise__compositor {
+    padding-bottom: var(--esp-2);
+  }
+
+  .analise__aviso-completo {
+    display: none;
+  }
+
+  .analise__aviso-curto {
+    display: inline;
   }
 }

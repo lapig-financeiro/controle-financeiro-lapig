@@ -95,7 +95,8 @@ tocado em produção; a migração 075 está marcada como **não aplicada** em
   `PainelLateral`. O componente novo `ListaConversas` entrou no catálogo
   `#/componentes`.
 - Conversa contínua: turnos do mais antigo ao mais novo; o campo fica embaixo,
-  `position: sticky`, no fim da área com rolagem própria. Enter envia,
+  `position: sticky`, no fim da área da conversa (a rolagem é da página; ver
+  §6, rodada 2). Enter envia,
   Shift+Enter quebra; ao enviar, rola até o fim.
 - Abrir `#/analise`: carrega a lista; se a conversa mais recente teve atividade
   hoje (fuso `America/Sao_Paulo`), abre essa; senão abre uma conversa nova vazia
@@ -124,14 +125,15 @@ tocado em produção; a migração 075 está marcada como **não aplicada** em
   `analise-historico-servico.test.js`, além dos ajustes de contrato em
   `analise.test.js`, `analise-tela.test.jsx`, `analise-exemplo*.test.js`.
 
-### Conferência visual
+### Conferência visual (rodada 1)
 
 Além dos testes, subi o modo exemplo (`npm --prefix app run dev:exemplo`) e
 conferi a tela no Chrome headless. A captura real a 390 px CSS (via
 `Emulation.setDeviceMetricsOverride`, porque o `--window-size` do Windows em
 125% entrega um viewport CSS de 504 px e recorta a imagem) mostra o conteúdo
 dentro da largura, o campo fixo embaixo e a lista no painel. A captura de 1280 px
-mostra a coluna de conversas, o turno carregado com a data e o campo fixo.
+mostra a coluna de conversas, o turno carregado com a data e o campo fixo. **A
+medição final do layout, depois da rodada 2, está no §6.**
 
 ## 2. Decisões tomadas sozinho (e por quê)
 
@@ -181,10 +183,10 @@ mostra a coluna de conversas, o turno carregado com a data e o campo fixo.
 9. **`ListaConversas` como componente.** A lista é usada na coluna e no painel;
    virou componente em `app/src/componentes/` e entrou no catálogo
    `#/componentes`, como a tarefa pede para componente novo.
-10. **A tela usa a altura do viewport e rola a conversa, não a página.** O
-    `.analise` ocupa `100vh - --altura-topo`; a área de rolagem fica entre o
-    cabeçalho e o campo. É o que mantém o campo `sticky` visível de verdade, e
-    não só no fim do documento.
+10. **Rodada 1 — a tela usava a altura do viewport e rolava a conversa, não a
+    página.** O `.analise` ocupava `100vh - --altura-topo` e a área de rolagem
+    ficava entre o cabeçalho e o campo. **Substituído na rodada 2** (§6): a
+    página rola e o compositor é `position: sticky` no rodapé da coluna.
 11. **`test_074` não é rodado depois da 075.** A 075 dropa de propósito a
     `analise_registro_concluir` antiga; o roteiro da 074 é específico daquele
     estado. O executor da 075 prova o comportamento antigo antes de aplicar a
@@ -283,7 +285,7 @@ Saída resumida (última execução verde):
 |---|---|
 | `npm run lint` | limpo |
 | `npm test` (raiz) | 54 arquivos, **933 passaram**, 5 pulados |
-| `npm --prefix app test` | 34 arquivos, **364 passaram** |
+| `npm --prefix app test` | 34 arquivos, **365 passaram** (365 depois da rodada 2) |
 | `npm --prefix app run build` | guarda de estilo ok, Vite ok, verificação de build ok (sem dado de exemplo; sem chunk `analiseExemplo`) |
 | `npm --prefix worker test` | 15 arquivos, **211 passaram** |
 | `npm --prefix worker run build:edge` | `nucleo.gerado.js` (186.582 bytes) |
@@ -296,8 +298,48 @@ timeout de 5 s; a suíte do app sozinha passou **364/364**. É o mesmo tipo de
 falha intermitente de disco/CPU já anotado no `ESTADO.md` para testes alheios à
 Análise; não alterei esses testes. O gate final é a execução limpa.
 
-## 6. Fora do escopo (não feito)
+## 6. Rodada 2 — layout da conversa (26/11/2026)
 
+O Claude conferiu a entrega no navegador, em modo exemplo, e aprovou migração,
+núcleo e fluxos. Só o layout da conversa ficou apertado: a área tinha rolagem
+própria (~330 px úteis em 1280×800) e o cartão do campo, alto, cobria metade da
+resposta. Esta rodada mexeu só em CSS/marcação, sem revisor (como pedido).
+
+- **Rolagem**: a área da conversa não tem mais `overflow`/altura fixa; quem rola
+  é a página. A `.analise__rolagem` saiu do JSX e do CSS.
+- **Campo**: o compositor é `position: sticky; bottom: 0` na coluna da conversa,
+  com fundo `--cor-fundo`, borda de token e sem sombra. O `textarea` começa com
+  duas linhas (`rows={2}`), cresce com o texto via `field-sizing: content` até
+  8 linhas (`max-height` com `--lh-2`) e depois rola dentro dele. O rótulo
+  "Pergunta" ficou só para leitor de tela (`sr-only`, ainda com `for`/`id`);
+  o aviso é uma linha pequena (`--fs-1`). Em ≥1024 px o botão "Perguntar"/"Parar"
+  fica ao lado do campo; abaixo, embaixo. No celular o aviso visível virou
+  "Histórico salvo. Limite de 50 perguntas por dia." (a frase completa continua
+  no desktop e no DOM).
+- **Fim da lista**: um espaço de `--espaco-fim-conversa` (320 px) depois do
+  último turno garante que ele fica acima do campo mesmo com o textarea no
+  tamanho máximo; ao abrir uma conversa e ao enviar, a página rola até esse
+  ponto.
+- **Cabeçalho no celular**: "Conversas", título e Renomear/Excluir na mesma
+  faixa; o título trunca com reticências e os botões viram ícones com
+  `aria-label` abaixo de 640 px. Em ≥1024 px a coluna da esquerda substitui o
+  botão "Conversas".
+- **Medições no navegador** (Chrome, viewport CSS real via
+  `Emulation.setDeviceMetricsOverride`): em **1280×800**, a área de conversa
+  acima do campo tem **452 px** no topo da página (496 px desde o topo da
+  coluna) e a abertura rola até o último turno; em **375×812**, **418 px** no
+  topo (430 px desde o cabeçalho da conversa). O campo de 2 linhas mede 56 px
+  (58 px no celular); no máximo, 176 px (8 linhas). Os alvos de ~450 px e
+  ~400 px foram atendidos. A barra do topo a 375 px continua cortando
+  "Admin"/sino/avatar — é anterior a esta tarefa e vale para as outras telas.
+- **Teste**: além dos ajustes, um teste garante que o `<label>` "Pergunta"
+  continua associado ao campo, com a classe `sr-only`, e que o campo tem
+  `rows="2"`.
+- **Gates da rodada**: `npm run lint` limpo, `npm --prefix app test` **365
+  passaram**, `npm --prefix app run build` verde (guarda de estilo e build sem
+  dado de exemplo). Migração, núcleo e PGlite não mudaram nesta rodada.
+
+## 7. Fora do escopo (não feito)
 - Esconder turnos de centros a que a pessoa perdeu acesso (pré-requisito antes de
   abrir a Análise para professores).
 - Exportação (XLSX/imagem), resumo automático da conversa, detecção de mudança de

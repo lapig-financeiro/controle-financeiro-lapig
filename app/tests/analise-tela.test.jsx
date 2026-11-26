@@ -210,6 +210,18 @@ describe('pergunta e envio', () => {
     expect(executarAnalise).toHaveBeenCalledTimes(1);
   });
 
+  it('mantém o label "Pergunta" associado ao campo, só para leitor de tela', async () => {
+    renderizar(criarExecucao());
+
+    const campo = await esperarPor(() => document.querySelector('.analise__campo'));
+    const label = document.querySelector(`label[for="${campo.id}"]`);
+    expect(label).not.toBeNull();
+    expect(label.textContent.trim()).toBe('Pergunta');
+    expect(label.classList.contains('sr-only')).toBe(true);
+    expect(campo.getAttribute('aria-describedby')).toBe(`${campo.id}-aviso`);
+    expect(campo.getAttribute('rows')).toBe('2');
+  });
+
   it('chip de sugestão preenche sem enviar e o aviso literal está na tela', async () => {
     const executarAnalise = criarExecucao();
     renderizar(executarAnalise);

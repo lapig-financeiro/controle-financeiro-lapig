@@ -81,6 +81,7 @@
   --altura-linha: 44px;
   --largura-conteudo: 1120px;
   --largura-conversas: 280px;
+  --espaco-fim-conversa: 320px;
   --largura-painel: 480px;
   --largura-documento: min(1100px, 94vw);
   --altura-documento: 90vh;

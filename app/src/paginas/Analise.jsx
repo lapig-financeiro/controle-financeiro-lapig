@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
-import { Pencil } from 'lucide-preact';
+import { Pencil, Trash2 } from 'lucide-preact';
 import {
   AvisoFalha,
   Botao,
@@ -436,7 +436,10 @@ export function Analise({
     setConfirmandoExclusao(false);
     setErroTitulo(null);
     setErroExclusao(null);
-    if (!forcar && carregadas[chave]) return;
+    if (!forcar && carregadas[chave]) {
+      setScrollSeq((seq) => seq + 1);
+      return;
+    }
 
     setCarregandoConversa(chave);
     setErroConversa(null);
@@ -465,6 +468,7 @@ export function Analise({
         .map((turno) => mapearTurnoCarregado(turno, chave)),
     }));
     setCarregadas((prev) => ({ ...prev, [chave]: true }));
+    setScrollSeq((seq) => seq + 1);
     setConversas((prev) => {
       const item = {
         id: chave,
@@ -1591,12 +1595,6 @@ export function Analise({
         </aside>
 
         <div class="analise__conversa">
-          <div class="analise__barra-conversas">
-            <Botao variante="secundario" onClick={() => setPainelConversas(true)}>
-              Conversas
-            </Botao>
-          </div>
-
           <div class="analise__cabecalho-conversa">
             {renomeando && ativaChave !== CHAVE_NOVA ? (
               <form class="analise__renomear" onSubmit={salvarTitulo}>
@@ -1633,13 +1631,24 @@ export function Analise({
               </form>
             ) : (
               <div class="analise__titulo-linha">
-                <h2 class="analise__titulo-conversa">{tituloAtivo}</h2>
+                <Botao
+                  variante="secundario"
+                  tamanho="compacto"
+                  className="analise__botao-conversas"
+                  onClick={() => setPainelConversas(true)}
+                >
+                  Conversas
+                </Botao>
+                <h2 class="analise__titulo-conversa" title={tituloAtivo}>
+                  {tituloAtivo}
+                </h2>
                 {ativaChave !== CHAVE_NOVA && (
                   <div class="analise__titulo-acoes">
                     <Botao
                       variante="fantasma"
                       tamanho="compacto"
                       icone={Pencil}
+                      aria-label="Renomear conversa"
                       onClick={() => {
                         setRenomeando(true);
                         setTituloRascunho(conversaAberta?.titulo || tituloAtivo);
@@ -1651,6 +1660,8 @@ export function Analise({
                     <Botao
                       variante="fantasma"
                       tamanho="compacto"
+                      icone={Trash2}
+                      aria-label="Excluir conversa"
                       onClick={() => {
                         setConfirmandoExclusao(true);
                         setErroExclusao(null);
@@ -1700,46 +1711,49 @@ export function Analise({
             <AvisoFalha mensagem={listaSt.erro} aoTentarNovamente={tentarLista} />
           )}
 
-          <div class="analise__rolagem">
-            {anterior && ativaChave === CHAVE_NOVA && turnosAtivos.length === 0 && (
-              <div class="analise__anterior">
-                <p class="analise__nota">
-                  Sua última conversa foi em {dataCurtaBrasilia(anterior.atualizada_em)}: «
-                  {anterior.titulo}»
-                </p>
-                <Botao
-                  variante="secundario"
-                  tamanho="compacto"
-                  onClick={() => abrirConversa(anterior.id, { forcar: true })}
-                >
-                  Continuar
-                </Botao>
-              </div>
-            )}
-
-            {conversaEmCarregamento && (
-              <Esqueleto variante="cartao" linhas={4} rotulo="Carregando conversa" />
-            )}
-
-            {conversaComErro && (
-              <AvisoFalha
-                mensagem={conversaComErro.mensagem}
-                aoTentarNovamente={() => abrirConversa(ativaChave, { forcar: true })}
-              />
-            )}
-
-            {!conversaEmCarregamento && !conversaComErro && turnosAtivos.length === 0 && (
-              <Vazio mensagem="Faça a primeira pergunta para ver os números com a origem de cada um." />
-            )}
-
-            <div class="analise__lista">
-              {!conversaEmCarregamento &&
-                !conversaComErro &&
-                turnosAtivos.map((turno) => renderTurno(turno, ativaChave))}
+          {anterior && ativaChave === CHAVE_NOVA && turnosAtivos.length === 0 && (
+            <div class="analise__anterior">
+              <p class="analise__nota">
+                Sua última conversa foi em {dataCurtaBrasilia(anterior.atualizada_em)}: «
+                {anterior.titulo}»
+              </p>
+              <Botao
+                variante="secundario"
+                tamanho="compacto"
+                onClick={() => abrirConversa(anterior.id, { forcar: true })}
+              >
+                Continuar
+              </Botao>
             </div>
-            <div ref={fimListaRef} class="analise__fim" aria-hidden="true" />
+          )}
 
-            <Cartao className="analise__pergunta-cartao analise__pergunta-fixa">
+          {conversaEmCarregamento && (
+            <Esqueleto variante="cartao" linhas={4} rotulo="Carregando conversa" />
+          )}
+
+          {conversaComErro && (
+            <AvisoFalha
+              mensagem={conversaComErro.mensagem}
+              aoTentarNovamente={() => abrirConversa(ativaChave, { forcar: true })}
+            />
+          )}
+
+          {!conversaEmCarregamento && !conversaComErro && turnosAtivos.length === 0 && (
+            <Vazio mensagem="Faça a primeira pergunta para ver os números com a origem de cada um." />
+          )}
+
+          <div class="analise__lista">
+            {!conversaEmCarregamento &&
+              !conversaComErro &&
+              turnosAtivos.map((turno) => renderTurno(turno, ativaChave))}
+          </div>
+
+          {turnosAtivos.length > 0 && (
+            <div ref={fimListaRef} class="analise__fim" aria-hidden="true" />
+          )}
+
+          <div class="analise__compositor">
+            <Cartao className="analise__pergunta-cartao">
               <form
                 class="analise__form"
                 onSubmit={(evento) => {
@@ -1747,57 +1761,69 @@ export function Analise({
                   enviar();
                 }}
               >
-                <label class="analise__rotulo" for={campoId}>
+                <label class="sr-only" for={campoId}>
                   Pergunta
                 </label>
-                <textarea
-                  ref={campoRef}
-                  id={campoId}
-                  class="analise__campo"
-                  rows={3}
-                  value={pergunta}
-                  placeholder="Ex.: Quanto o 30.109 tem livre hoje, e de onde vem?"
-                  disabled={!podeDigitar}
-                  onInput={(evento) =>
-                    setRascunhos((prev) => ({
-                      ...prev,
-                      [ativaChave]: evento.currentTarget.value,
-                    }))
-                  }
-                  onKeyDown={aoTeclar}
-                  aria-describedby={`${campoId}-aviso`}
-                />
 
-                {pergunta.length >= CONTADOR_A_PARTIR_DE && (
-                  <span
-                    class={`analise__contador${
-                      pergunta.length > LIMITE_PERGUNTA ? ' analise__contador--excedido' : ''
-                    }`}
-                  >
-                    {pergunta.length > LIMITE_PERGUNTA
-                      ? `${pergunta.length - LIMITE_PERGUNTA} ${
-                          pergunta.length - LIMITE_PERGUNTA === 1 ? 'caractere' : 'caracteres'
-                        } acima do limite de 2.000.`
-                      : `${pergunta.length} de 2.000 caracteres`}
-                  </span>
-                )}
+                <div class="analise__campo-linha">
+                  <div class="analise__campo-bloco">
+                    <textarea
+                      ref={campoRef}
+                      id={campoId}
+                      class="analise__campo"
+                      rows={2}
+                      value={pergunta}
+                      placeholder="Ex.: Quanto o 30.109 tem livre hoje, e de onde vem?"
+                      disabled={!podeDigitar}
+                      onInput={(evento) =>
+                        setRascunhos((prev) => ({
+                          ...prev,
+                          [ativaChave]: evento.currentTarget.value,
+                        }))
+                      }
+                      onKeyDown={aoTeclar}
+                      aria-describedby={`${campoId}-aviso`}
+                    />
+
+                    {pergunta.length >= CONTADOR_A_PARTIR_DE && (
+                      <span
+                        class={`analise__contador${
+                          pergunta.length > LIMITE_PERGUNTA ? ' analise__contador--excedido' : ''
+                        }`}
+                      >
+                        {pergunta.length > LIMITE_PERGUNTA
+                          ? `${pergunta.length - LIMITE_PERGUNTA} ${
+                              pergunta.length - LIMITE_PERGUNTA === 1
+                                ? 'caractere'
+                                : 'caracteres'
+                            } acima do limite de 2.000.`
+                          : `${pergunta.length} de 2.000 caracteres`}
+                      </span>
+                    )}
+                  </div>
+
+                  <div class="analise__acoes">
+                    {correndo?.chave === ativaChave ? (
+                      <Botao variante="secundario" onClick={parar}>
+                        Parar
+                      </Botao>
+                    ) : (
+                      <Botao variante="primario" tipo="submit" desabilitado={!podeEnviar}>
+                        Perguntar
+                      </Botao>
+                    )}
+                  </div>
+                </div>
 
                 <p id={`${campoId}-aviso`} class="analise__aviso">
-                  As conversas ficam no seu histórico e ajudam a melhorar a Análise. Limite de 50
-                  perguntas por dia.
+                  <span class="analise__aviso-completo">
+                    As conversas ficam no seu histórico e ajudam a melhorar a Análise. Limite de
+                    50 perguntas por dia.
+                  </span>
+                  <span class="analise__aviso-curto">
+                    Histórico salvo. Limite de 50 perguntas por dia.
+                  </span>
                 </p>
-
-                <div class="analise__acoes">
-                  {correndo?.chave === ativaChave ? (
-                    <Botao variante="secundario" onClick={parar}>
-                      Parar
-                    </Botao>
-                  ) : (
-                    <Botao variante="primario" tipo="submit" desabilitado={!podeEnviar}>
-                      Perguntar
-                    </Botao>
-                  )}
-                </div>
 
                 {turnosAtivos.length === 0 && (
                   <div class="analise__sugestoes" aria-label="Sugestões de pergunta">
