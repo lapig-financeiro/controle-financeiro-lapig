@@ -168,6 +168,20 @@ com a ressalva que vale para o **líquido** (o do site), as `INSTRUCOES` citam f
 não tem, e o "sem origem" marca dígito de nome de centro e ano sozinho. Em aberto: o plano da conta do
 Cloudflare (no gratuito, 50 subrequests por pergunta; suspeita do Gemini).
 
+**A Análise vai para uma Edge Function do Supabase (decisão do Victor, 25/11)**: o Cloudflare gratuito limita
+a 50 chamadas externas por pergunta e o Victor não vai pagar o plano. Avaliado com o Gemini 4 Neon medium (a
+alternativa dele, o laço no navegador, ficou anotada no `analise-plano.md` §2 como plano B). Branch
+`redesenho/analise-edge` (DeepSeek max, 2 rodadas; MiniMax max revisou; Claude conferiu): núcleo comum
+`worker/src/nucleo.js` com duas entradas (Worker, que segue publicado até a troca, e
+`supabase/functions/analise/`, gerada por `npm --prefix worker run build:edge`), contador diário em tabela pela
+**071 `analise_uso`** (escrita, ensaiada só no PGlite com 6 mutantes, **não aplicada**), ping SSE a cada 15 s e a
+bancada contando chamadas externas. 2ª bateria real pelo núcleo novo: 9/20 de novo (as falhas variam com o modelo),
+e a pergunta 9 chegou a **43 chamadas**, parada pelo teto de 30 consultas: as perguntas "por centro" pedem consulta
+de todos os centros de uma vez (Etapa 2). Testes: Worker 168, raiz 858, lint verde. Relatório
+`relatorios/analise-edge.md`. Falta, com o ok do Victor: publicar no master, ensaiar e aplicar a 071 pelo cofre,
+publicar a Edge Function e provar uma pergunta real (limite de fetch não documentado, `request.signal` e SSE pelo
+gateway). A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
+
 **Próximo passo, nesta ordem:**
 0. Rodada de correção dos achados da revisão (pergunta mascarada, texto reidratado, rendimento líquido,
    instruções da Análise, falso "sem origem"), medida pela bancada antes e depois.

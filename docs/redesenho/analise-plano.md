@@ -87,7 +87,7 @@ bloco) é escrito pelo Claude **antes**, na tarefa, para que ninguém espere o o
   situacao_centro_v2…"), blocos número e tabela com origem clicável (reaproveita "De onde vem" e
   `OrigemDocumento`), marca "sem origem", banner de falha, parar a resposta. Modo exemplo com um Worker
   falso. Estética e guarda de estilo como nas outras telas.
-- **Executor B — migração 071 `projecao_bolsas_v2`**: porta `app/src/servicos/projecao.js` para SQL (o
+- **Executor B — migração 072 `projecao_bolsas_v2`**: porta `app/src/servicos/projecao.js` para SQL (o
   ESTADO já previa: "vira RPC quando a IA precisar"). O roteiro PGlite compara com o JS nos casos
   sintéticos, incluindo a folha atrasada e o exemplo 30.910. A tela do projeto continua no JS até a RPC
   bater em todos os centros. Pelo cofre, com o ok do Victor.
@@ -104,7 +104,7 @@ bloco) é escrito pelo Claude **antes**, na tarefa, para que ninguém espere o o
   escolha de forma pelo tipo de dado, para a IA não desenhar pizza de série temporal.
 
 ### Etapa 4 — Análises salvas e exportação
-- **Migração 072**: `analises` (dono, título, pergunta, blocos com refs e o retrato dos valores, data) e
+- **Migração 073**: `analises` (dono, título, pergunta, blocos com refs e o retrato dos valores, data) e
   `derivacoes` (as contas do `calcular`, que o README previa para a F5). RLS por dono, `revoke` de `anon`,
   RPCs `security definer` com `search_path`, gatilho `trg_bloqueia_agente`, roteiro em `tests/sql/`.
 - Reabrir uma análise mostra o retrato ("valores de 25/11") com o botão "refazer com os dados de hoje".
