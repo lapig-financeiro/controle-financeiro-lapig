@@ -97,6 +97,28 @@ function textoFolha(no, estadoFolha) {
   return '';
 }
 
+// Árvore pequena abre inteira: o documento mora na folha, e esconder a folha
+// atrás de setas fazia a pessoa não achar o caminho (retorno do Victor, 26/11).
+export const ABRE_TUDO_ATE = 15;
+
+function contarNos(no) {
+  if (!no || typeof no !== 'object') return 0;
+  const partes = Array.isArray(no.partes) ? no.partes : [];
+  return 1 + partes.reduce((soma, parte) => soma + contarNos(parte), 0);
+}
+
+// Só onde há documento para abrir: bolsa digitada não tem arquivo, e o
+// atalho prometeria um destino que não existe.
+const DESTINO_DA_REF = {
+  balancete_lancamentos: 'Ver no balancete',
+  plano_rubricas: 'Ver no plano',
+};
+
+function textoDoAtalho(no) {
+  if (!no?.ref || no.tipo === 'digitado') return '';
+  return DESTINO_DA_REF[no.ref.alvo_tabela] || '';
+}
+
 function ehNoRaizOuGrupo(no, nivel) {
   if (nivel === 0) return true;
   const chave = String(no?.chave || '');
@@ -118,6 +140,7 @@ export function DeOndeVem({
   carregarArquivo = arquivoDeOrigem,
   carregadorPdf = undefined,
   carregadorMammoth = undefined,
+  abrirTudoAte = ABRE_TUDO_ATE,
 }) {
   const baseId = useId();
   const [abertos, setAbertos] = useState({});
@@ -144,6 +167,7 @@ export function DeOndeVem({
     () => verificarFechamentoArvore(arvore, valorEsperado),
     [arvore, valorEsperado]
   );
+  const abreTudo = useMemo(() => contarNos(arvore) <= abrirTudoAte, [arvore, abrirTudoAte]);
 
   useEffect(() => {
     setAbertos({});
@@ -271,7 +295,7 @@ export function DeOndeVem({
     if (Object.prototype.hasOwnProperty.call(abertos, caminho)) {
       return Boolean(abertos[caminho]);
     }
-    return caminhosAbrir.has(caminho);
+    return abreTudo || caminhosAbrir.has(caminho);
   };
 
   const alternarNo = (caminho, nivel) => {
@@ -354,6 +378,15 @@ export function DeOndeVem({
                     onOrigem={temRef ? () => consultarFolha(no, caminho) : null}
                     semOrigem={!temRef ? subFolha || 'Valor calculado pelas partes abaixo' : ''}
                   />
+                  {temRef && textoDoAtalho(no) && (
+                    <button
+                      type="button"
+                      class="de-onde-vem__atalho"
+                      onClick={() => consultarFolha(no, caminho)}
+                    >
+                      {textoDoAtalho(no)} ›
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -422,6 +455,16 @@ export function DeOndeVem({
         }
         contexto={contextoRaiz || undefined}
       />
+
+      {raizEhFolhaComRef && textoDoAtalho(arvore) && (
+        <button
+          type="button"
+          class="de-onde-vem__atalho de-onde-vem__atalho--raiz"
+          onClick={() => consultarFolha(arvore, '0')}
+        >
+          {textoDoAtalho(arvore)} ›
+        </button>
+      )}
 
       {raizEhFolhaComRef && textoFolha(arvore, estadoRaiz) && (
         <p class="de-onde-vem__nota">{textoFolha(arvore, estadoRaiz)}</p>

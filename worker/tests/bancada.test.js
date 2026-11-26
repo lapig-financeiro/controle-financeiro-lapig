@@ -423,7 +423,7 @@ describe('pergunta de ponta a ponta (modo roteiro)', () => {
     expect(resultado.chamadasModelo).toBe(3);
     expect(resultado.blocos).toHaveLength(1);
     expect(resultado.blocos[0].numero.valor).toBe(120000.5);
-    expect(resultado.textoFinal).toBe('O saldo livre está no bloco acima.');
+    expect(resultado.textoFinal).toBe('O saldo livre está no bloco abaixo.');
     expect(resultado.chamadas.contador).toBe(1);
     expect(resultado.chamadas.auth).toBe(2);
     expect(resultado.chamadas.total).toBe(

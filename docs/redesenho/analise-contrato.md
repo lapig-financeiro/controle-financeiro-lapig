@@ -231,6 +231,12 @@ Além disso:
   e diga o porquê só quando a ferramenta informar o motivo.
 - **Não escrever id de nó** (`r2.7`, `c1`, `{{r2.7}}`) no texto final nem em bloco de texto.
 - **Número no texto só se for valor de nó já citado** em bloco ou `calcular`; o texto final tem no
-  máximo 3 frases corridas, sem repetir tabela markdown nem listas de números.
+  máximo 6 frases curtas, repete só o número principal (na primeira frase) e não traz tabela markdown nem
+  listas de números.
+- **O texto final aparece antes dos blocos** na tela: o modelo se refere a eles como "abaixo", nunca
+  "acima", e não cria bloco de texto que repita o texto final.
+- **Linguagem para leigos** (26/11, pedido do Victor): resposta direta na primeira frase, depois como se
+  chega ao número em palavras do dia a dia, cada termo (previsto, realizado, comprometido, livre)
+  explicado na primeira vez, e o que olhar nos blocos abaixo.
 - Em tabelas (`criar_bloco`), a **primeira coluna** pode ser texto literal (rótulo de linha) e as
   demais colunas citam ids de nós.

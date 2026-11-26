@@ -168,7 +168,7 @@ const ARVORE_COMPLETA = {
 
 describe('DeOndeVem', () => {
   it('renderiza os quatro tipos, sinal de subtração, problema só em raiz/grupo negativo e alterna aria-expanded', async () => {
-    render(<DeOndeVem arvore={ARVORE_COMPLETA} />, document.body);
+    render(<DeOndeVem arvore={ARVORE_COMPLETA} abrirTudoAte={0} />, document.body);
     await tick();
 
     // Primeiro nível aberto mostra os dois grupos.
@@ -313,7 +313,7 @@ describe('DeOndeVem', () => {
 
     render(null, document.body);
     render(
-      <DeOndeVem
+      <DeOndeVem abrirTudoAte={0}
         arvore={ARVORE_COMPLETA}
         buscarOrigem={buscarOrigem}
         carregarArquivo={carregarArquivo}
@@ -457,7 +457,7 @@ describe('DeOndeVem', () => {
     const pdfjsMock = criarPdfjsSimulado([['7.1.3.05.01.08124 CONSULTORIA 41.549,25']]);
 
     render(
-      <DeOndeVem
+      <DeOndeVem abrirTudoAte={0}
         arvore={ARVORE_COMPLETA}
         buscarOrigem={buscarOrigem}
         carregarArquivo={vi.fn().mockResolvedValue({ dados: new Uint8Array([1, 2]).buffer, erro: null })}
@@ -542,6 +542,7 @@ describe('DeOndeVem', () => {
     expect(document.body.textContent).toContain('anterior à rastreabilidade: a linha é procurada ao abrir');
     const botao = document.querySelector('button[aria-label*="Ver origem"]');
     expect(botao).not.toBeNull();
+    expect(document.querySelector('.de-onde-vem__atalho')).toBeNull();
     botao.click();
     await tick();
     expect(buscarOrigem).toHaveBeenCalledWith(folha.ref);
@@ -561,6 +562,26 @@ describe('DeOndeVem', () => {
     await tick();
     const destaque = document.querySelector('.de-onde-vem').firstElementChild;
     expect(destaque.querySelector('button[aria-label*="Ver origem"]')).toBeNull();
+  });
+
+  it('árvore pequena abre inteira e a folha com documento ganha o atalho "Ver no balancete"', async () => {
+    const buscarOrigem = vi.fn().mockResolvedValue({ dados: null, erro: 'teste' });
+    render(<DeOndeVem arvore={ARVORE_COMPLETA} buscarOrigem={buscarOrigem} />, document.body);
+    await tick();
+
+    const alternar = Array.from(document.querySelectorAll('.de-onde-vem__alternar'));
+    expect(alternar.length).toBeGreaterThan(0);
+    expect(alternar.every((b) => b.getAttribute('aria-expanded') === 'true')).toBe(true);
+
+    const atalhos = Array.from(document.querySelectorAll('.de-onde-vem__atalho'));
+    // Bolsa digitada (sem arquivo) não ganha atalho.
+    expect(atalhos.some((b) => b.textContent.includes('bolsa'))).toBe(false);
+    const balancete = atalhos.find((b) => b.textContent.includes('Ver no balancete'));
+    expect(balancete).toBeTruthy();
+    balancete.click();
+    await tick();
+    expect(buscarOrigem).toHaveBeenCalledTimes(1);
+    expect(buscarOrigem.mock.calls[0][0].alvo_tabela).toBe('balancete_lancamentos');
   });
 });
 

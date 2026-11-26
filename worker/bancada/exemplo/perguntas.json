@@ -4,7 +4,8 @@
     "pergunta": "Quanto o 30.901 tem livre?",
     "espera": {
       "numeros": [120000.5],
-      "texto_contem": "bloco",
+      "texto_contem": "abaixo",
+      "texto_nao_contem": "acima",
       "sem_lista_markdown": true,
       "max_segundos": 30
     }

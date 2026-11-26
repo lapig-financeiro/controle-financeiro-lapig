@@ -69,3 +69,37 @@ migração das análises salvas e entra no lugar da Etapa 4 do `analise-plano.md
 `npm run lint` limpo; raiz 931; app 338; `npm --prefix app run build` ok. A conferência do item 3 foi feita em
 produção, no navegador do app, com o login do Victor (uma pergunta gasta). As correções 1, 2 e 3 **não estão
 publicadas** até o push para o `master`.
+
+## 5. Segunda rodada de retorno (26/11, pergunta do 30.109)
+
+**Decisões do Victor sobre o histórico**: guardar enquanto a conta existir; nomes de bolsistas podem ficar na
+resposta salva; tela como sugerido (lista de conversas, "Nova conversa", conversa parada de um dia para o outro abre
+nova por padrão). A implementação fica para depois destes ajustes.
+
+**"Bloco acima" com o bloco embaixo.** A tela põe o texto final antes dos blocos, mas o modelo escrevia como se
+fosse o contrário. A regra 11 das `INSTRUCOES` (`shared/ai-tools/index.js`) diz que o texto aparece antes, que os
+blocos se citam como "abaixo" e que não se cria bloco de texto repetindo o texto final (o "Leitura" do 30.109).
+
+**Resposta mais didática.** A regra 12 pede: primeira frase com a resposta direta e o número principal (a regra 6
+passou a permitir repetir esse número); depois, em 2 ou 3 frases, como se chega a ele em palavras do dia a dia;
+cada termo (previsto, realizado, comprometido, livre) explicado na primeira vez; sem "grupo de rubrica" ou siglas
+soltas; e o que olhar nos blocos abaixo. O texto passou de 3 para até 6 frases curtas. Datas em dd/mm/aaaa e
+valores com centavos: na primeira bancada o modelo escreveu "1º de março de 2026", e o "1" e o "28" viraram
+"sem origem".
+
+Bancada com o DeepSeek de verdade (`worker/bancada`, retrato de exemplo): 4/4 depois do ajuste das datas. A
+pergunta 4 falhou uma vez (o modelo errou a tabela três vezes e esgotou as rodadas), mas passou nas três
+repetições, a mesma variação que o ESTADO já registra. Exemplo de texto novo: "O centro 30.901 tem R$ 120.000,50
+livres para gastar. Livre é o que sobra depois de descontar o que já está prometido. […] A tabela abaixo mostra
+quanto sobra em cada grupo de despesa." Expectativa da bancada trocada de `bloco` para `abaixo`, mais
+`texto_nao_contem: acima`.
+
+**Caminho até o documento.** Em `app/src/componentes/DeOndeVem.jsx`:
+- árvore com até 15 nós abre inteira (`abrirTudoAte`), em vez de só o primeiro nível;
+- folha com documento ganha o atalho escrito **"Ver no balancete ›"** ou **"Ver no plano ›"**, além do valor
+  sublinhado. Valor digitado (bolsa) não ganha atalho, porque não há arquivo para abrir.
+O componente é o mesmo da página do projeto, que ganha as duas melhorias. Testes em `app/tests/de-onde-vem.test.jsx`
+(os antigos que testam o recolhimento passam `abrirTudoAte={0}`). Visto no modo exemplo: a árvore abre inteira.
+O exemplo não tem folha de balancete com arquivo, então o atalho do balancete fica para conferir em produção.
+
+Verificação: lint limpo; raiz 932; worker 204; app 339; builds `app` e `edge` ok.

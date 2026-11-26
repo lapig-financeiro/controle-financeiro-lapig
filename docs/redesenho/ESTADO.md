@@ -223,7 +223,11 @@ sem saída quando o modelo citava a própria linha do plano (agora o valor do to
 produção: o realizado abre o balancete na linha e o previsto abre o plano na linha. App 338, raiz 931, lint e build
 verdes. **No ar em 26/11** com o ok do Victor (master `3c0c4d0`; CI 45865681494 e deploy 45865681413 verdes; bundle `index-FZjx-red.js`). Relatório `relatorios/analise-primeiras-perguntas.md`. O Victor quer **histórico** (desistiu de apagar em
 180 dias) e uma tela com cara de **conversa contínua**, com "Nova conversa". Desenho conversado com o GPT-6.2 Sol
-medium (ver relatório); falta a decisão do Victor.
+medium (ver relatório). **Decisões do Victor (26/11)**: guardar enquanto a conta existir, nomes de bolsistas
+podem ficar, tela como sugerido; implementar depois. **Segunda rodada (26/11)**: `INSTRUCOES` 11 e 12 (texto antes dos
+blocos = "abaixo"; linguagem para leigos, datas dd/mm/aaaa) e `DeOndeVem` com árvore pequena aberta e atalho
+"Ver no balancete/plano ›". Bancada real 4/4. **Falta publicar** o site e a Edge Function (com o ok do Victor) e
+conferir em produção.
 
 **Próximo passo, nesta ordem:**
 1. As 5 perguntas reais do Victor na tela publicada (anotar aqui o que ele estranhar).

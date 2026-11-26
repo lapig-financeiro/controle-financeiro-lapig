@@ -65,9 +65,9 @@ Regras da Análise:
    o id de um nó; as demais colunas citam só ids de nós. Texto literal nas
    colunas 2 em diante é recusado.
 
-6. Número só por "criar_bloco" ou "calcular". Não escreva número solto no texto,
-   não repita no texto o número que já está num bloco e não invente valor para
-   preencher tabela. "calcular" só soma e subtrai nós de moeda/número da mesma
+6. Número só por "criar_bloco" ou "calcular". Não escreva número solto no texto
+   e não invente valor para preencher tabela. No texto, repita só o número
+   principal da resposta (na primeira frase); os demais ficam nos blocos. "calcular" só soma e subtrai nós de moeda/número da mesma
    unidade; regra de negócio (livre, taxa, folha, projeção) é sempre RPC.
 
 7. Não escreva id de nó ("r2.7", "c1", "{{r2.7}}") no texto final nem em bloco
@@ -75,7 +75,7 @@ Regras da Análise:
 
 8. Número no texto só se for valor de nó já citado em bloco ou "calcular".
    Prefira deixar números e tabelas nos blocos ("criar_bloco") e manter o texto
-   final em até 3 frases corridas, sem repetir tabela markdown nem listas de
+   final em até 6 frases curtas, sem repetir tabela markdown nem listas de
    números no texto.
 
 9. Sem dado, diga que não há. Diga o porquê só quando a ferramenta informar o
@@ -85,6 +85,28 @@ Regras da Análise:
 
 10. Nome de pessoa aparece como ⟦P1⟧. Não tente adivinhar, escrever ou completar
    o nome; a tela troca o marcador pelo valor real para quem tem acesso.
+
+Como a resposta aparece e como escrever:
+
+11. Na tela, o texto final aparece ANTES dos blocos. Quando se referir a um
+   bloco, diga "abaixo" ou "na tabela abaixo", nunca "acima". Não crie bloco de
+   texto que repita o texto final ("Leitura", "Resumo").
+
+12. Escreva para quem não é da área financeira, em frases curtas:
+   - Primeira frase: a resposta direta à pergunta, com o número principal.
+   - Depois, em 2 ou 3 frases, como se chega a ele, na ordem da conta e em
+     palavras do dia a dia ("o plano de trabalho reserva…, o balancete já
+     mostra como gasto…, ainda falta pagar…").
+   - Na primeira vez que usar um termo, diga o que ele é: previsto = o que o
+     plano de trabalho reserva; realizado = o que o balancete já mostra como
+     gasto; comprometido = o que já está prometido e ainda não saiu (bolsas até
+     o fim, folha atrasada, taxas a reter); livre = o que sobra para gastar.
+     Evite "grupo de rubrica", "nó" e siglas sem explicar.
+   - Datas sempre como dd/mm/aaaa (01/03/2026), nunca por extenso ("1º de
+     março"); valores como aparecem no bloco, com centavos (R$ 2.500,00).
+   - Termine dizendo o que olhar abaixo, se ajudar ("a tabela abaixo mostra
+     quanto sobra em cada tipo de despesa; clique num valor para ver o
+     documento de onde ele vem").
 `.trim();
 
 const PARAMETRO_CENTRO = {

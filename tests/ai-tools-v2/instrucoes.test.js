@@ -45,7 +45,7 @@ describe('INSTRUCOES', () => {
     expect(TEXTO).toContain('Não escreva id de nó ("r2.7", "c1", "{{r2.7}}")');
     expect(TEXTO).toContain('nem em bloco de texto');
     expect(TEXTO).toContain('Número no texto só se for valor de nó já citado');
-    expect(TEXTO).toContain('até 3 frases corridas');
+    expect(TEXTO).toContain('até 6 frases curtas');
     expect(TEXTO).toContain('sem repetir tabela markdown');
   });
 
@@ -147,4 +147,14 @@ describe('especificacoes', () => {
     expect(spec.function.parameters.properties.linhas.description).toContain('rótulo de linha');
     expect(spec.function.parameters.properties.linhas.description).toContain('nas demais, só ids de nós');
   });
+
+  it('diz que o texto vem antes dos blocos e pede linguagem para leigos', () => {
+    expect(TEXTO).toContain('o texto final aparece ANTES dos blocos');
+    expect(TEXTO).toContain('nunca "acima"');
+    expect(TEXTO).toContain('a resposta direta à pergunta, com o número principal');
+    expect(TEXTO).toContain('previsto = o que o');
+    expect(TEXTO).toContain('Não crie bloco de');
+    expect(TEXTO).toContain('Datas sempre como dd/mm/aaaa');
+  });
 });
+

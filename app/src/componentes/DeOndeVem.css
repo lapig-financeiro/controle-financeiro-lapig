@@ -132,3 +132,28 @@
 .de-onde-vem__aviso-no {
   margin-top: var(--esp-1);
 }
+
+/* Atalho explícito até o documento, abaixo do valor da folha. */
+.de-onde-vem__atalho {
+  display: block;
+  margin-top: var(--esp-1);
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  font-weight: var(--fw-medio);
+  color: var(--cor-acento);
+  cursor: pointer;
+}
+
+.de-onde-vem__atalho:hover {
+  text-decoration: underline;
+}
+
+.de-onde-vem__atalho--raiz {
+  margin-left: 0;
+  margin-bottom: var(--esp-2);
+}
