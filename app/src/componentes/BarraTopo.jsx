@@ -80,14 +80,17 @@ export function BarraTopo({
           <a
             href="#/projetos"
             class="barra-topo__marca"
-            aria-label="Controle Financeiro LAPIG — início"
+            aria-label="Buriti — início"
             onClick={(e) => irPara(e, '#/projetos')}
           >
-            <img
-              src={`${import.meta.env.BASE_URL}lapig-logo.svg`}
-              alt="LAPIG"
-              class="barra-topo__logo"
-            />
+            <picture>
+              <source media="(max-width: 640px)" srcset={`${import.meta.env.BASE_URL}marca/buriti-simbolo.svg`} />
+              <img
+                src={`${import.meta.env.BASE_URL}marca/buriti-horizontal.svg`}
+                alt="Buriti"
+                class="barra-topo__logo"
+              />
+            </picture>
           </a>
 
           <nav class="barra-topo__nav" aria-label="Navegação principal">

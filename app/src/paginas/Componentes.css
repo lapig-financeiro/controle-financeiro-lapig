@@ -13,6 +13,50 @@
   border-bottom: var(--borda);
 }
 
+.componentes__marca {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--esp-3);
+}
+
+.componentes__marca-amostra {
+  padding: var(--esp-3);
+  border: var(--borda);
+  border-radius: var(--raio-2);
+  background-color: var(--cor-superficie);
+  color: var(--cor-texto-2);
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+}
+
+.componentes__marca-visual {
+  display: flex;
+  align-items: center;
+  height: var(--esp-7);
+  margin-bottom: var(--esp-2);
+}
+
+.componentes__marca-logo {
+  height: var(--logo);
+}
+
+.componentes__marca-favicon {
+  height: var(--icone-1);
+}
+
+.componentes__marca-cor {
+  width: var(--logo);
+  height: var(--logo);
+  border-radius: var(--raio-1);
+  background-color: var(--cor-acento);
+}
+
+.componentes__marca-regras {
+  display: grid;
+  gap: var(--esp-1);
+  color: var(--cor-texto-2);
+}
+
 .componentes__chips {
   display: flex;
   flex-wrap: wrap;
@@ -119,6 +163,10 @@
 }
 
 @media (max-width: 640px) {
+  .componentes__marca {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .componentes__filtros,
   .componentes__grade-dupla,
   .componentes__esqueletos {

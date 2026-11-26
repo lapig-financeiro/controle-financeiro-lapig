@@ -31,8 +31,16 @@ import {
   Valor,
   Vazio,
 } from '../componentes/index.js';
+import { MENSAGEM_PADRAO } from '../servicos/manutencao.js';
 import { dinheiroCompacto } from '../util/formato.js';
 import './Componentes.css';
+
+const AMOSTRAS_MARCA = [
+  { rotulo: 'Logo horizontal', arquivo: 'marca/buriti-horizontal.svg' },
+  { rotulo: 'Símbolo', arquivo: 'marca/buriti-simbolo.svg' },
+  { rotulo: 'Símbolo monocromático', arquivo: 'marca/buriti-simbolo-mono.svg' },
+  { rotulo: 'Favicon', arquivo: 'favicon.svg', pequena: true },
+];
 
 // Dados fictícios do catálogo: nenhum valor ou nome vem de centro real.
 const CONVERSAS_CATALOGO = [
@@ -701,6 +709,35 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
 
   return (
     <div class="conteudo">
+      <section class="componentes__secao" aria-labelledby="secao-marca">
+        <h2 id="secao-marca" class="componentes__rotulo-secao">Marca</h2>
+        <ul class="componentes__marca">
+          {AMOSTRAS_MARCA.map(({ rotulo, arquivo, pequena }) => (
+            <li key={arquivo} class="componentes__marca-amostra">
+              <div class="componentes__marca-visual">
+                <img
+                  class={pequena ? 'componentes__marca-favicon' : 'componentes__marca-logo'}
+                  src={`${import.meta.env.BASE_URL}${arquivo}`}
+                  alt=""
+                />
+              </div>
+              <span>{rotulo}</span>
+            </li>
+          ))}
+          <li class="componentes__marca-amostra">
+            <div class="componentes__marca-visual">
+              <span class="componentes__marca-cor" aria-hidden="true" />
+            </div>
+            <span>Verde da marca</span>
+          </li>
+        </ul>
+        <ul class="componentes__marca-regras">
+          <li>Use o logo horizontal quando houver espaço e o símbolo a partir de 16 px.</li>
+          <li>Use fundo claro e deixe livre um quarto da altura do símbolo ao redor da marca.</li>
+          <li>Preserve proporções e cores. Evite sombras e fundos fotográficos.</li>
+        </ul>
+      </section>
+
       {/* Referência 1: Tela Projetos (§5) */}
       <section class="componentes__secao" aria-labelledby="secao-projetos">
         <h2 id="secao-projetos" class="componentes__rotulo-secao">
@@ -1107,7 +1144,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
 
       {previaManutencao && (
         <Manutencao
-          mensagem="O Controle Financeiro está em atualização. Volte em alguns minutos — não é preciso fazer nada."
+          mensagem={MENSAGEM_PADRAO}
           aoFecharPrevia={() => setPreviaManutencao(false)}
         />
       )}

@@ -6,8 +6,8 @@ import './Login.css';
 /**
  * Tela de login conforme `estetica.md` §4:
  * fundo `--cor-fundo`, cartão central `--largura-login`, preenchimento `--esp-6`,
- * logo `--logo`, título "Entrar" (`--fs-4`), campos E-mail e Senha empilhados,
- * erro num AvisoFalha acima do botão e botão primário de largura total. Nada mais.
+ * logo `--logo-login`, título "Entrar" (`--fs-4`), campos E-mail e Senha empilhados,
+ * erro num AvisoFalha acima do botão e botão primário de largura total.
  */
 export function Login({ erroInicial = '', onEntrar }) {
   const [email, setEmail] = useState('');
@@ -39,8 +39,8 @@ export function Login({ erroInicial = '', onEntrar }) {
     <main class="login-pagina">
       <div class="login-cartao">
         <img
-          src={`${import.meta.env.BASE_URL}lapig-logo.svg`}
-          alt="LAPIG"
+          src={`${import.meta.env.BASE_URL}marca/buriti-horizontal.svg`}
+          alt="Buriti"
           class="login-logo"
         />
         <h1 class="login-titulo">Entrar</h1>
@@ -77,6 +77,7 @@ export function Login({ erroInicial = '', onEntrar }) {
           </Botao>
         </form>
       </div>
+      <p class="login-instituicao">LAPIG · UFG</p>
     </main>
   );
 }

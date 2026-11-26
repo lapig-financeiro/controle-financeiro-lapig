@@ -87,6 +87,29 @@
   font-weight: var(--fw-semi);
 }
 
+@media (max-width: 1024px) {
+  .barra-topo__interior {
+    padding-inline: var(--esp-3);
+    gap: var(--esp-2);
+  }
+
+  .barra-topo__esquerda {
+    gap: var(--esp-3);
+  }
+
+  .barra-topo__nav {
+    gap: var(--esp-2);
+  }
+
+  .barra-topo__direita {
+    gap: var(--esp-1);
+  }
+
+  .barra-topo__filtro {
+    padding-inline: var(--esp-2);
+  }
+}
+
 @media (max-width: 640px) {
   .barra-topo__interior {
     padding: 0 var(--esp-2);
@@ -97,12 +120,8 @@
     gap: var(--esp-2);
   }
 
-  .barra-topo__logo {
-    height: var(--icone-1);
-  }
-
   .barra-topo__nav {
-    gap: var(--esp-2);
+    gap: var(--esp-1);
   }
 
   .barra-topo__link {
@@ -111,7 +130,11 @@
   }
 
   .barra-topo__direita {
-    gap: var(--esp-1);
+    gap: 0;
+  }
+
+  .barra-topo__direita .sino__botao {
+    padding: 0;
   }
 
   .barra-topo__filtro {

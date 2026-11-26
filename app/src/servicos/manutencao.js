@@ -1,5 +1,5 @@
-const MENSAGEM_PADRAO =
-  'O Controle Financeiro está em atualização. Volte em alguns minutos — não é preciso fazer nada.';
+export const MENSAGEM_PADRAO =
+  'O Buriti está em atualização. Volte em alguns minutos — não é preciso fazer nada.';
 
 export function caminhoManutencao(baseUrl = import.meta.env.BASE_URL || '/') {
   const origem = typeof window !== 'undefined' ? window.location.origin : 'https://localhost';

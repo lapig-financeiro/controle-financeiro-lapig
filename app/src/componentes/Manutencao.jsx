@@ -16,8 +16,8 @@ export function Manutencao({ mensagem, aoFecharPrevia = null }) {
     >
       <div class="manutencao__cartao">
         <img
-          src={`${import.meta.env.BASE_URL}lapig-logo.svg`}
-          alt="LAPIG"
+          src={`${import.meta.env.BASE_URL}marca/buriti-horizontal.svg`}
+          alt="Buriti"
           class="manutencao__logo"
         />
         <h1 id="manutencao-titulo" class="manutencao__titulo">

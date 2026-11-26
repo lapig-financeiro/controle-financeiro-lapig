@@ -28,7 +28,7 @@
 | `--cor-texto` | `#1D1F1C` | texto principal e números |
 | `--cor-texto-2` | `#545750` | rótulos, contexto, texto secundário |
 | `--cor-texto-3` | `#6F726B` | metadado (datas de atualização, "via balancete") — mínimo 12 px |
-| `--cor-acento` | `#2E7D3B` | **só interação**: botão primário, link, foco, aba ativa, ponto "em dia" (5,1:1) |
+| `--cor-acento` | `#2E7D3B` | botão primário, link, foco, aba ativa, ponto "em dia" (5,1:1) e símbolo do Buriti |
 | `--cor-acento-hover` | `#256632` | hover do primário |
 | `--cor-acento-suave` | `#E8F2EA` | fundo de seleção e de chip ativo — o texto em cima é `--cor-texto`, nunca o acento |
 | `--cor-marca` | `#429B4D` | **só** logo e marcas gráficas (barra de gráfico). Nunca em texto (3,5:1) |
@@ -81,9 +81,10 @@ Tamanhos ≥ `--fs-4` levam `letter-spacing: -0.01em`. Texto corrido com no máx
 `--altura-topo 56px`, `--altura-controle 36px`, `--altura-controle-compacto 32px`, `--altura-linha 44px`,
 `--largura-conteudo 1120px`, `--largura-painel 480px`, `--largura-documento min(1100px, 94vw)`,
 `--largura-login 360px`, `--largura-menu 320px`, `--avatar 28px`, `--ponto 6px`, `--icone-1 16px`,
-`--icone-2 20px`, `--traco-icone 1.75`, `--logo 24px`, `--sublinhado-ativo 2px`, `--medida-texto 72ch`.
+`--icone-2 20px`, `--traco-icone 1.75`, `--logo 24px`, `--logo-login 40px`, `--sublinhado-ativo 2px`,
+`--medida-texto 72ch`.
 Camadas: `--z-topo 10`, `--z-veu 40`, `--z-painel 50`, `--z-documento 60`, `--z-menu 70`, `--z-aviso 80`.
-Logo: `frontend/images/lapig-logo.svg` (copiar para `app/public/`).
+Logo do Buriti em `app/public/marca/`. Consulte as versões e as regras de uso em [Marca](marca.md).
 
 ## 3. Layout
 
@@ -155,12 +156,14 @@ abre MenuSuspenso com nome, papel e "Sair".
 **CabecalhoPagina** — link de volta opcional (`--fs-2`, `--cor-texto-2`, ícone seta 16 px); título `--fs-4`;
 linha de contexto `--fs-2 --cor-texto-2`; ações à direita. `--esp-6` abaixo.
 
-**Login** — fundo `--cor-fundo`; cartão central `--largura-login`, preenchimento `--esp-6`; logo (`--logo`)
-em cima; título "Entrar" `--fs-4`; campos E-mail e Senha empilhados com rótulo acima (`--fs-2` 500); botão
-primário de largura total; erro num AvisoFalha acima do botão. Nada mais na tela.
+**Login** — fundo `--cor-fundo`, cartão central `--largura-login` com preenchimento `--esp-6`. No cartão,
+logo horizontal em `--logo-login`, título "Entrar" em `--fs-4`, campos E-mail e Senha empilhados com
+rótulo em `--fs-2` 500 e botão primário de largura total. Erro num AvisoFalha acima do botão. Abaixo do
+cartão, "LAPIG · UFG" em `--fs-1` e `--cor-texto-3`.
 
 **Manutenção** — o app lê `/controle-financeiro-lapig/manutencao.json` (o mesmo do site antigo) na abertura
-e a cada navegação; ligado, mostra tela cheia com o texto do arquivo e não deixa gravar nada.
+e a cada navegação. Em manutenção, a tela cheia exibe o logo horizontal em `--logo` e bloqueia
+gravações. Usa o texto do arquivo quando preenchido e a mensagem padrão do Buriti nos demais casos.
 
 **Botão** — altura 36 px (32 compacto), raio 2, `--fs-2` 500. Primário: fundo `--cor-acento`, texto branco
 (**um por tela**). Secundário: fundo branco, borda. Fantasma: só texto `--cor-acento`. Ícone opcional à
@@ -244,8 +247,9 @@ a lista de centros agrupada por professor responsável, caixas de seleção, ata
 - Abas: `tablist`/`tab`/`tabpanel` completos, setas e tabindex itinerante; rolagem horizontal no celular.
 - Os quatro destaques da página do projeto ficam numa grade de cartões (1 grande + 3 menores); no celular,
   2 colunas para os menores.
-- Barra do topo abaixo de 640 px: o chip do filtro mostra só o ícone (com o número de ocultos), espaços
-  menores; nada pode sair da tela a 360 px.
+- Barra do topo até 640 px: logo só com o símbolo em `--logo`, chip do filtro com ícone e número de ocultos
+  e espaçamento reduzido entre os controles e os links. Tudo cabe na largura de 360 px.
+- De 641 a 1024 px, o espaçamento da barra diminui para acomodar o logo horizontal e o texto do filtro.
 - `@media` só com 640 px e 1024 px (tokens `--quebra-1`/`--quebra-2` documentados; a guarda confere).
 - CSP só no build (o modo dev do Vite injeta script). Catálogo `#/componentes`: livre em dev, só para admin
   logado em produção.

@@ -18,7 +18,7 @@ describe('manutencao', () => {
   it('usa mensagem padrão quando ativo=true sem texto', () => {
     const res = interpretarManutencao({ ativo: true, mensagem: '' });
     expect(res.ativo).toBe(true);
-    expect(res.mensagem).toContain('atualização');
+    expect(res.mensagem).toBe('O Buriti está em atualização. Volte em alguns minutos — não é preciso fazer nada.');
   });
 
   it('não bloqueia quando fetch falha ou arquivo não existe', async () => {

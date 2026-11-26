@@ -1,8 +1,10 @@
 .login-pagina {
   min-height: var(--altura-tela);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--esp-3);
   padding: var(--esp-5);
   background-color: var(--cor-fundo);
 }
@@ -20,9 +22,15 @@
 }
 
 .login-logo {
-  height: var(--logo);
+  height: var(--logo-login);
   width: auto;
   align-self: flex-start;
+}
+
+.login-instituicao {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
 }
 
 .login-titulo {
