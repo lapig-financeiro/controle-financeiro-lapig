@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 26/11/2026 (071 `analise_uso` aplicada em produção; a Edge Function da Análise ainda não foi publicada).
+Última atualização: 26/11/2026 (071 `analise_uso` aplicada; Edge Function da Análise publicada, com um corte de stream ainda sem causa).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -178,8 +178,13 @@ alternativa dele, o laço no navegador, ficou anotada no `analise-plano.md` §2 
 bancada contando chamadas externas. 2ª bateria real pelo núcleo novo: 9/20 de novo (as falhas variam com o modelo),
 e a pergunta 9 chegou a **43 chamadas**, parada pelo teto de 30 consultas: as perguntas "por centro" pedem consulta
 de todos os centros de uma vez (Etapa 2). Testes: Worker 168, raiz 858, lint verde. Relatório
-`relatorios/analise-edge.md`. Falta, com o ok do Victor: publicar a Edge Function e provar uma pergunta real (limite de fetch não documentado, `request.signal` e SSE pelo
-gateway). A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
+`relatorios/analise-edge.md`. **Edge Function `analise` publicada em 26/11** (`npx supabase functions deploy`, sem Docker): saúde ok, 401/`sem_login`
+sem login, CORS do site ok, `OLLAMA_API_KEY` presente. Perguntas reais com o login do Victor: uma de um centro
+(3 rodadas, 16 s) e uma "em todos os centros" (6 rodadas, 18 consultas, 36,5 s) terminaram com `fim`, eventos chegando
+aos poucos (o gateway não junta o SSE) e o ping passando; o contador da 071 deixou passar. **Mas a primeira tentativa
+da pergunta "em todos os centros" teve o stream fechado aos 5,5 s, depois de 11 consultas, sem `fim` nem `erro`**: causa
+ainda não vista (suspeita: teto de CPU de 2 s ou de memória do runtime); falta ler o log da função no painel do Supabase.
+`request.signal` na desconexão não foi provado. O Worker da Cloudflare segue publicado até a troca. A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
 
 **Próximo passo, nesta ordem:**
 0. Rodada de correção dos achados da revisão (pergunta mascarada, texto reidratado, rendimento líquido,
