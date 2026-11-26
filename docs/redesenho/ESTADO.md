@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 25/11/2026 (folha atrasada no ar: 070 aplicada; 3 centros gravados; leitores de DAO e de fim da bolsa corrigidos).
+Última atualização: 25/11/2026 (revisão da Etapa 1 da Análise por Gemini e MiniMax; bancada de testes do Worker com a 1ª bateria real das 20 perguntas).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -157,7 +157,20 @@ Para a Etapa 2 (visto nas respostas): **tabela sem coluna de rótulo** — como 
 põe um número na coluna "Grupo"/"Linha" e repete valores; o contrato precisa de rótulo de linha (texto de nó da
 árvore, ex. o nome da rubrica). O texto final às vezes vem em lista markdown, contra a regra das 3 frases.
 
+**Revisão antes da Etapa 2 e bancada (25/11, noite)**: Gemini 4 Neon medium revisou o Worker e MiniMax 3.1
+Flash max fez a revisão geral (pedido do Victor); o Claude conferiu cada achado. **Bancada** em `worker/bancada/`
+(DeepSeek max, `6d3f311`): roda o Worker no Node com o Supabase simulado pelo oráculo e o DeepSeek de verdade
+pelo Ollama local, sem login nem produção, e confere vazamento de nome, origem e números esperados. **Substitui o
+teste pelo console.** 1ª bateria real: **9/20**. Achados e causas em `relatorios/revisao-pre-etapa2.md`; os
+principais: **a pergunta vai ao modelo sem máscara** (os dois revisores; a bancada pegou o nome na pergunta 18),
+o texto final não é reidratado (a tela veria `⟦P1⟧`), a ferramenta `desembolsos` mostra o rendimento **bruto**
+com a ressalva que vale para o **líquido** (o do site), as `INSTRUCOES` citam ferramentas do MCP que a Análise
+não tem, e o "sem origem" marca dígito de nome de centro e ano sozinho. Em aberto: o plano da conta do
+Cloudflare (no gratuito, 50 subrequests por pergunta; suspeita do Gemini).
+
 **Próximo passo, nesta ordem:**
+0. Rodada de correção dos achados da revisão (pergunta mascarada, texto reidratado, rendimento líquido,
+   instruções da Análise, falso "sem origem"), medida pela bancada antes e depois.
 1. Etapa 2: tela `#/analise` (com o Worker no CSP do `app/vite.config.js`) + rótulo de linha nas tabelas + 071
    `projecao_bolsas_v2` + ferramenta de dinheiro em conta e plano com `ref`.
 
