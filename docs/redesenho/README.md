@@ -53,7 +53,7 @@ Site novo (/v2/, Vite + Preact) ──JWT do usuário──▶ Supabase (RLS) ; 
 
 ## 4. Regras que valem para todas as tarefas
 
-- Tudo de `CLAUDE.md` continua valendo: migração só pelo cofre (com o ok do Victor no chat, manutenção
+- Tudo de `AGENTS.md` continua valendo: migração só pelo cofre (com o ok do Victor no chat, manutenção
   ligada), RLS é a barreira, IA não calcula, falha de consulta nunca vira zero, nenhum CPF/nome de bolsista
   em arquivo versionado, conventional commits.
 - **Executor nunca aplica migração nem faz deploy de Edge Function/Worker.** Escreve, testa localmente e para.
@@ -143,9 +143,10 @@ correção dos achados confirmados. Só então a fase seguinte.
 
 ## 7. Como o trabalho é executado
 
-- **Desde 19/11 (Victor):** executa com até **2 DeepSeek V4.1 Flash max** (opencode, um por worktree); testa e
-  revisa com **MiniMax 3.1 Flash max** (em toda revisão) e **GLM 5.3**, além do DeepSeek max. **No máximo 2
-  processos do Ollama ao mesmo tempo.** O Neon (abaixo) só se o Victor pedir.
+- **Desde 20/11 (Victor):** o padrão é o **DeepSeek V4.1 Flash max** (opencode), para executar e para revisar,
+  com até 2 executores, um por worktree. O **MiniMax 3.1 Flash max** revisa as partes que pedirem segunda
+  opinião. **Qualquer outra IA ou modelo (agy/Neon, Argon, Hydrogen, Codex, GLM) só quando o Victor pedir.** No
+  máximo 2 processos do Ollama ao mesmo tempo. O item "Executor" abaixo descreve o arranjo de até 19/11.
 
 - **Executor**: Orchestrator (Neon) pelo `agy` (`--model gemini-pro-orchestrator-neon --mode accept-edits`;
   nunca o Argon, `gemini-pro-orchestrator-g1-pro`; até a F0 foi o Gemini 4 Hydrogen High), uma tarefa

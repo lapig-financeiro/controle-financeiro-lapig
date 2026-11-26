@@ -2,7 +2,7 @@
 
 Índice do que existe aqui e **quando** ler cada coisa. A visão geral do projeto
 está no [`README.md`](../README.md) da raiz; as instruções para agentes de IA,
-em [`CLAUDE.md`](../CLAUDE.md).
+em [`AGENTS.md`](../AGENTS.md).
 
 ## Referência do sistema
 
@@ -14,8 +14,8 @@ Leia o documento da área antes de mexer nela.
 | [`pages.md`](pages.md) | O que cada tela faz, de onde tira os dados e o que a fábrica `CrudPage` resolve |
 | [`database.md`](database.md) | Tabelas, RPCs, views e o histórico do que cada migração mudou |
 | [`globals.md`](globals.md) | Utilitários globais de `pure-fns.js`, `supabase-config.js` e `auth.js` |
-| [`migracoes.md`](migracoes.md) | Uma linha por migração 025–053 (o que cria, semântica, gotcha). Saiu do `CLAUDE.md` em 2026-10-05; migração nova ganha a linha aqui |
-| [`convencoes.md`](convencoes.md) | O porquê, o incidente e o teste de cada convenção listada no `CLAUDE.md` |
+| [`migracoes.md`](migracoes.md) | Uma linha por migração 025–069 (o que cria, semântica, gotcha). Saiu do `CLAUDE.md` em 2026-10-05; migração nova ganha a linha aqui |
+| [`convencoes.md`](convencoes.md) | O porquê, o incidente e o teste de cada convenção do site atual |
 | [`planos-fora-do-padrao.md`](planos-fora-do-padrao.md) | Planos que não seguem o modelo PROAD (FAPEG, emenda impositiva): detecção de modelo, roteamento por conteúdo, preenchimento manual |
 
 > A justificativa **completa** de cada migração (semântica, investigação,

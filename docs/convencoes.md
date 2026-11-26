@@ -1,6 +1,6 @@
 # Convenções e decisões do código (detalhe)
 
-Movido do `CLAUDE.md` em 2026-10-05, sem alteração de conteúdo. O `CLAUDE.md` mantém uma linha por item; o porquê, os incidentes que motivaram cada regra e os testes que as travam estão aqui. **Leia o item antes de mexer na área dele.**
+Movido do `CLAUDE.md` em 2026-10-05, sem alteração de conteúdo. Desde 20/11/2026 as regras que valem para qualquer IA estão no `AGENTS.md`; o porquê, os incidentes que motivaram cada regra e os testes que as travam estão aqui. **Leia o item antes de mexer na área dele.**
 
 - **No frontend build step.** All JS is browser-native ES5/ES6 loaded via `<script>` tags, except `pure-fns.js` which loads as `<script type="module">` and bridges exports to `window` for classic scripts. Dev tooling (eslint, vitest) runs via Node.js (`package.json`).
 - **Conventional commits:** `feat:`, `fix:`, `chore:`, `docs:` prefixes.

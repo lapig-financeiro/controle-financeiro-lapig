@@ -14,7 +14,7 @@
 O Victor não lê SQL nem código e não entra no GitHub. Ele só dá **"ok" no chat**. Tudo o mais é do agente:
 
 1. **Escrever** a migração em `database/NNN_x.sql` seguindo as regras de "Para passar no cofre" (abaixo e
-   no `CLAUDE.md`), com o roteiro de teste em `tests/sql/` e a linha em `docs/migracoes.md`.
+   no `AGENTS.md`), com o roteiro de teste em `tests/sql/` e a linha em `docs/migracoes.md`.
 2. **Testar localmente**, quando der, em `tools/replica-local/`.
 3. **Publicar** o commit no `master` (pedir o ok do Victor para publicar; publicar não aplica nada).
 4. **Revisão por outra IA** do SQL daquele commit (Codex, só leitura, pasta sem dados pessoais). Conferir o

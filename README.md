@@ -14,6 +14,7 @@ relacional. Toda a interface e a documentação estão em **português do Brasil
 | Camada     | Tecnologia                                        |
 |------------|---------------------------------------------------|
 | Frontend   | HTML + Vanilla JS + CSS — **sem build step**       |
+| Site novo  | `app/`: Vite + Preact, com build, em `/v2/` (redesenho desde 18/11/2026) |
 | Backend    | Supabase (PostgreSQL + Auth + RLS + Storage)       |
 | Gráficos   | Chart.js                                           |
 | Ícones     | Lucide Icons                                       |
@@ -24,7 +25,7 @@ relacional. Toda a interface e a documentação estão em **português do Brasil
 
 ## Como rodar
 
-Não há build. Sirva `frontend/` com qualquer servidor estático:
+O site atual não tem build. Sirva `frontend/` com qualquer servidor estático (o site novo: `npm --prefix app run dev`):
 
 ```bash
 cd frontend && python -m http.server 8080
@@ -44,7 +45,7 @@ As credenciais do Supabase ficam em `frontend/js/supabase-config.js`. A anon key
 
 ```bash
 npm ci          # instala as dependências de desenvolvimento
-npm run lint    # ESLint em frontend/js/ e mcp/
+npm run lint    # ESLint em frontend/js/, mcp/ e app/
 npm test        # Vitest em tests/
 ```
 
@@ -54,7 +55,7 @@ contrato das tools sem precisar de credencial.
 
 ### Banco de dados
 
-Execute os scripts de `database/` **na ordem numérica**, 001 → 041.
+Execute os scripts de `database/` **na ordem numérica**, 001 → 069 em 20/11/2026 (a lista viva está em `docs/migracoes.md`).
 
 O alvo é a **última** migração, não uma parada intermediária: a camada de
 decisão nasce nas 038/039/040 (`get_saldo_livre`, `simular_alocacao`,
@@ -78,7 +79,7 @@ divergirem.
 ├── frontend/          Aplicação (index.html + css/ + js/ + images/ + vendor/)
 │   └── js/            app, auth, router, chart-builder, simulation, pure-fns,
 │                      import-queue · pages/ · parsers/ · components/ · ai/
-├── database/          Migrações SQL 000–041, em ordem · utils/ (scripts Python)
+├── database/          Migrações SQL 000–069, em ordem · utils/ (scripts Python)
 ├── docs/              Documentação de referência (índice em docs/README.md)
 ├── tests/             Vitest (parsers, simulação, camada de IA) · sql/ (roteiros)
 ├── mcp/               Servidor MCP — pacote Node próprio (fase 2 da camada de IA)
