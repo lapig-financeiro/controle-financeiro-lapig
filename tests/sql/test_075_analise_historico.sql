@@ -635,6 +635,21 @@ begin
 end $$;
 
 -- Leitura do dono depois da conclusão: sem passos, com desfecho e feedback.
+-- Os dois feedbacks entram direto com horários distintos: numa mesma
+-- transação, `now()` é o mesmo para os dois e o "último" ficaria dependendo
+-- do id aleatório. Em produção cada RPC é uma transação própria.
+do $$
+begin
+  insert into public.analise_feedback (registro_id, user_id, criado_em, nota)
+  values (current_setting('teste.reg_a1')::uuid,
+          '00000000-0000-0000-0000-0000000000a1',
+          now(), 1::smallint);
+  insert into public.analise_feedback (registro_id, user_id, criado_em, nota, motivo)
+  values (current_setting('teste.reg_a1')::uuid,
+          '00000000-0000-0000-0000-0000000000a1',
+          now() + interval '1 second', (-1)::smallint, 'errado');
+end $$;
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a1', true);
 do $$
@@ -652,9 +667,6 @@ begin
   if v->'turnos'->0 ? 'passos' or v->'turnos'->0 ? 'codigo_erro' then
     raise exception '075 FALHOU: ler devolveu campo interno';
   end if;
-
-  perform public.analise_feedback_enviar(current_setting('teste.reg_a1')::uuid, 1::smallint, null, null);
-  perform public.analise_feedback_enviar(current_setting('teste.reg_a1')::uuid, (-1)::smallint, 'errado', null);
 
   v := public.analise_conversa_ler(current_setting('teste.conv_a')::uuid);
   if v->'turnos'->0->'feedback'->>'nota' <> '-1'
