@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ErroModelo, TETOS, executarLaco } from '../src/laco.js';
+import { ErroModelo, MENSAGEM_PROTECAO, TETOS, executarLaco } from '../src/laco.js';
+import { criarSessao } from '../../shared/ai-tools/index.js';
 
 const BASE = {
   instrucoes: 'INSTRUÇÕES DE TESTE',
@@ -16,6 +17,8 @@ function sessaoFalsa(opcoes = {}) {
     calcular: [],
     marcarTexto: [],
     reidratar: [],
+    reidratarTexto: [],
+    mascararEntrada: [],
   };
   const sessao = {
     async executar(nome, args) {
@@ -43,6 +46,14 @@ function sessaoFalsa(opcoes = {}) {
     async reidratar(bloco) {
       chamadas.reidratar.push(bloco);
       return opcoes.reidratar ? opcoes.reidratar(bloco) : bloco;
+    },
+    async reidratarTexto(marcado) {
+      chamadas.reidratarTexto.push(marcado);
+      return opcoes.reidratarTexto ? opcoes.reidratarTexto(marcado) : marcado;
+    },
+    async mascararEntrada(texto) {
+      chamadas.mascararEntrada.push(texto);
+      return opcoes.mascararEntrada ? opcoes.mascararEntrada(texto) : texto;
     },
   };
   return { sessao, chamadas };
@@ -208,8 +219,14 @@ describe('laço completo', () => {
 
     expect(r.ok).toBe(true);
     expect(chamadas.executar).toHaveLength(0);
-    expect(emitir.eventos.map((e) => e.nome)).toEqual(['passo', 'texto', 'fim']);
-    expect(emitir.eventos[0].dados.estado).toBe('erro');
+    expect(emitir.eventos.map((e) => e.nome)).toEqual([
+      'passo',
+      'passo',
+      'texto',
+      'fim',
+    ]);
+    expect(emitir.eventos[0].dados.estado).toBe('inicio');
+    expect(emitir.eventos[1].dados.estado).toBe('erro');
     expect(modelo.chamadas[1].mensagens.at(-1).content).toContain('JSON válido');
   });
 
@@ -749,5 +766,313 @@ describe('nenhum conteúdo no console', () => {
     } finally {
       for (const espiao of espioes) espiao.mockRestore();
     }
+  });
+});
+
+describe('A1 — pergunta e anteriores mascarados antes do modelo', () => {
+  it('mascara a pergunta e cada anterior pela mesma máscara', async () => {
+    const { sessao, chamadas } = sessaoFalsa({
+      mascararEntrada: (entrada) => entrada.replaceAll('Pessoa Exemplo Um', '⟦P1⟧'),
+    });
+    const modelo = modeloFalso([texto('ok')]);
+
+    const r = await executarLaco({
+      ...BASE,
+      pergunta: 'Quanto recebe Pessoa Exemplo Um?',
+      anteriores: [
+        { pergunta: 'Quem é Pessoa Exemplo Um?', resumo: 'Pessoa Exemplo Um tem bolsa.' },
+      ],
+      sessao,
+      chamarModelo: modelo,
+      emitir: emissorFalso(),
+    });
+
+    expect(r.ok).toBe(true);
+    expect(chamadas.mascararEntrada).toEqual([
+      'Quanto recebe Pessoa Exemplo Um?',
+      'Quem é Pessoa Exemplo Um?',
+      'Pessoa Exemplo Um tem bolsa.',
+    ]);
+    const entrada = JSON.stringify(modelo.chamadas[0].mensagens);
+    expect(entrada).not.toContain('Pessoa Exemplo Um');
+    expect(entrada).toContain('⟦P1⟧');
+  });
+
+  it('se a máscara falha, não chama o modelo e não vaza a pergunta', async () => {
+    const { sessao } = sessaoFalsa({
+      mascararEntrada: () => {
+        throw new Error('get_pedido_bolsas_v2 fora do ar: Nome Real');
+      },
+    });
+    const modelo = modeloFalso([texto('não deveria ser chamado')]);
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      pergunta: 'PERGUNTA-CRUCIAL',
+      sessao,
+      chamarModelo: modelo,
+      emitir,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('interno');
+    expect(modelo.chamadas).toHaveLength(0);
+    expect(emitir.eventos[0]).toEqual({
+      nome: 'erro',
+      dados: { codigo: 'interno', mensagem: MENSAGEM_PROTECAO },
+    });
+    expect(emitir.eventos.at(-1).nome).toBe('fim');
+    expect(JSON.stringify(emitir.eventos)).not.toContain('PERGUNTA-CRUCIAL');
+    expect(JSON.stringify(emitir.eventos)).not.toContain('Nome Real');
+  });
+
+  it('prazo que vence durante a máscara vira erro tempo, sem modelo', async () => {
+    let relogio = 1_000;
+    const { sessao } = sessaoFalsa({
+      mascararEntrada: (entrada) => {
+        relogio = 200_000;
+        return entrada;
+      },
+    });
+    const modelo = modeloFalso([texto('não deveria ser chamado')]);
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      inicio: 1_000,
+      prazo: 121_000,
+      agora: () => relogio,
+      sessao,
+      chamarModelo: modelo,
+      emitir,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('tempo');
+    expect(modelo.chamadas).toHaveLength(0);
+    expect(emitir.eventos[0].dados.codigo).toBe('tempo');
+  });
+});
+
+describe('A2 — texto final reidratado antes do evento', () => {
+  it('confere o texto mascarado e emite o reidratado', async () => {
+    const { sessao, chamadas } = sessaoFalsa({
+      marcarTexto: () => ({
+        texto: '⟦P1⟧ recebeu R$ 1.000.',
+        semOrigem: [{ inicio: 11, fim: 20 }],
+      }),
+      reidratarTexto: () => ({
+        texto: 'Pessoa Exemplo Um recebeu R$ 1.000.',
+        semOrigem: [{ inicio: 26, fim: 34 }],
+      }),
+    });
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      sessao,
+      chamarModelo: modeloFalso([texto('⟦P1⟧ recebeu R$ 1.000.')]),
+      emitir,
+    });
+
+    expect(r.ok).toBe(true);
+    expect(chamadas.marcarTexto).toEqual(['⟦P1⟧ recebeu R$ 1.000.']);
+    const evento = emitir.eventos.find((e) => e.nome === 'texto');
+    expect(evento.dados).toEqual({
+      texto: 'Pessoa Exemplo Um recebeu R$ 1.000.',
+      semOrigem: [{ inicio: 26, fim: 34 }],
+    });
+  });
+
+  it('reidratação com formato inválido vira erro interno, sem evento texto', async () => {
+    const { sessao } = sessaoFalsa({
+      reidratarTexto: () => ({ texto: 'ok', semOrigem: 'nada' }),
+    });
+    const emitir = emissorFalso();
+
+    const r = await executarLaco({
+      ...BASE,
+      sessao,
+      chamarModelo: modeloFalso([texto('ok')]),
+      emitir,
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('interno');
+    expect(emitir.eventos.some((e) => e.nome === 'texto')).toBe(false);
+    expect(emitir.eventos.map((e) => e.nome)).toEqual(['erro', 'fim']);
+  });
+
+  it('integração: bloco e texto final mostram o mesmo nome e semOrigem anda junto', async () => {
+    const rpc = async (nome) => {
+      if (nome === 'get_pedido_bolsas_v2') {
+        return {
+          data: { bolsistas: [{ nome: 'Pessoa Sintética Exemplo' }] },
+          error: null,
+        };
+      }
+      throw new Error(`RPC inesperada no teste: ${nome}`);
+    };
+    const sessao = criarSessao({ rpc, hoje: '2026-11-25' });
+    const emitir = emissorFalso();
+    const modelo = modeloFalso([
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            chamada(
+              'criar_bloco',
+              { tipo: 'texto', titulo: 'Bolsista', texto: '⟦P1⟧ recebeu R$ 1.000' },
+              'call_1',
+            ),
+          ],
+        },
+      },
+      texto('⟦P1⟧ recebeu R$ 1.000.'),
+    ]);
+
+    const r = await executarLaco({
+      ...BASE,
+      pergunta: 'Quanto Pessoa Sintética Exemplo recebeu?',
+      sessao,
+      chamarModelo: modelo,
+      emitir,
+    });
+
+    expect(r.ok).toBe(true);
+    // A pergunta foi mascarada antes de sair.
+    expect(modelo.chamadas[0].mensagens[1].content).toBe('Quanto ⟦P1⟧ recebeu?');
+    expect(JSON.stringify(modelo.chamadas[0].mensagens)).not.toContain('Pessoa Sintética');
+
+    const bloco = emitir.eventos.find((e) => e.nome === 'bloco').dados;
+    expect(bloco.texto.texto).toBe('Pessoa Sintética Exemplo recebeu R$ 1.000');
+    const blocoFaixa = bloco.texto.semOrigem[0];
+    expect(bloco.texto.texto.slice(blocoFaixa.inicio, blocoFaixa.fim)).toBe('R$ 1.000');
+
+    const textoFinal = emitir.eventos.find((e) => e.nome === 'texto').dados;
+    expect(textoFinal.texto).toBe('Pessoa Sintética Exemplo recebeu R$ 1.000.');
+    expect(textoFinal.texto).not.toContain('⟦P1⟧');
+    const faixa = textoFinal.semOrigem[0];
+    expect(textoFinal.texto.slice(faixa.inicio, faixa.fim)).toBe('R$ 1.000');
+  });
+});
+
+describe('G5 — tool_calls validado antes do histórico', () => {
+  it('arguments em array é recusado como não-objeto', async () => {
+    const { sessao, chamadas } = sessaoFalsa();
+    const emitir = emissorFalso();
+    const modelo = modeloFalso([
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [chamada('listar_centros', [1, 2])],
+        },
+      },
+      texto('ok'),
+    ]);
+
+    const r = await executarLaco({ ...BASE, sessao, chamarModelo: modelo, emitir });
+
+    expect(r.ok).toBe(true);
+    expect(chamadas.executar).toHaveLength(0);
+    expect(emitir.eventos.slice(0, 2).map((e) => e.dados.estado)).toEqual([
+      'inicio',
+      'erro',
+    ]);
+    expect(emitir.eventos[1].dados.erro).toContain('não são um objeto');
+    expect(modelo.chamadas[1].mensagens.at(-1).content).toContain('não são um objeto');
+  });
+
+  it('item nulo ou sem nome não entra no histórico nem vira tool message', async () => {
+    const { sessao, chamadas } = sessaoFalsa();
+    const emitir = emissorFalso();
+    const modelo = modeloFalso([
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            null,
+            { function: { arguments: {} } },
+            chamada('listar_centros', {}, 'call_ok'),
+          ],
+        },
+      },
+      texto('ok'),
+    ]);
+
+    const r = await executarLaco({ ...BASE, sessao, chamarModelo: modelo, emitir });
+
+    expect(r.ok).toBe(true);
+    const segunda = modelo.chamadas[1].mensagens;
+    const assistant = segunda.find((m) => m.role === 'assistant');
+    expect(assistant.tool_calls).toHaveLength(1);
+    expect(assistant.tool_calls[0].id).toBe('call_ok');
+    const tools = segunda.filter((m) => m.role === 'tool');
+    expect(tools).toHaveLength(1);
+    expect(tools[0].tool_call_id).toBe('call_ok');
+    expect(chamadas.executar.map((c) => c.nome)).toEqual(['listar_centros']);
+    expect(
+      emitir.eventos.filter((e) => e.nome === 'passo').map((e) => e.dados.estado),
+    ).toEqual(['inicio', 'erro', 'inicio', 'erro', 'inicio', 'fim']);
+  });
+
+  it('id repetido na mesma rodada é desambiguado e o par chamada/resposta casa', async () => {
+    const { sessao, chamadas } = sessaoFalsa();
+    const modelo = modeloFalso([
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            chamada('listar_centros', {}, 'call_1'),
+            chamada('pendencias', {}, 'call_1'),
+          ],
+        },
+      },
+      texto('ok'),
+    ]);
+
+    const r = await executarLaco({
+      ...BASE,
+      sessao,
+      chamarModelo: modelo,
+      emitir: emissorFalso(),
+    });
+
+    expect(r.ok).toBe(true);
+    expect(chamadas.executar.map((c) => c.nome)).toEqual(['listar_centros', 'pendencias']);
+    const segunda = modelo.chamadas[1].mensagens;
+    const assistant = segunda.find((m) => m.role === 'assistant');
+    expect(assistant.tool_calls.map((c) => c.id)).toEqual(['call_1', 'call_1#2']);
+    const tools = segunda.filter((m) => m.role === 'tool');
+    expect(tools.map((m) => m.tool_call_id)).toEqual(['call_1', 'call_1#2']);
+  });
+});
+
+describe('G9 — passo inicio antes de erro', () => {
+  it('chamada sem nome emite inicio e depois erro', async () => {
+    const { sessao } = sessaoFalsa();
+    const emitir = emissorFalso();
+    const modelo = modeloFalso([
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ function: { arguments: { project_id: '30.901' } } }],
+        },
+      },
+      texto('ok'),
+    ]);
+
+    await executarLaco({ ...BASE, sessao, chamarModelo: modelo, emitir });
+
+    const passos = emitir.eventos.filter((e) => e.nome === 'passo');
+    expect(passos.map((p) => p.dados.estado)).toEqual(['inicio', 'erro']);
+    expect(passos[0].dados.ferramenta).toBe('desconhecida');
+    expect(passos[1].dados.erro).toContain('sem nome');
   });
 });

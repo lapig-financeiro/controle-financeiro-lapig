@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { criarContadorRpc } from '../src/contador-rpc.js';
 
 function json(corpo, status = 200) {
@@ -76,6 +76,24 @@ describe('contador por RPC (Edge Function)', () => {
     expect(r.permitido).toBe(false);
     expect(r.codigo).toBe('interno');
     expect(r.mensagem).toContain('Não foi possível contar o uso');
+  });
+
+  it('corpo do erro HTTP que não é lido é cancelado (G7)', async () => {
+    const cancelar = vi.fn(() => Promise.resolve());
+    const contador = criarContadorRpc({
+      supabaseUrl: 'https://proj.supabase.co',
+      anonKey: 'anon',
+      teto: TETO,
+      fetchImpl: async () => ({
+        ok: false,
+        status: 500,
+        body: { cancel: cancelar },
+      }),
+    });
+
+    const r = await contador.consumir({ jwt: 'j' });
+    expect(r.codigo).toBe('interno');
+    expect(cancelar).toHaveBeenCalledTimes(1);
   });
 
   it('corpo inválido (sem usadas/dia) recusa como interno', async () => {

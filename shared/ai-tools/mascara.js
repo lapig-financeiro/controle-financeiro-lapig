@@ -7,6 +7,7 @@
 
 import { mascararCpf } from './cpf.js';
 import { criarErroPacote, ehErroPacote } from './erros.js';
+import { codigoDoErro } from './ferramentas/comum.js';
 
 const RE_MARCADOR = /⟦P(\d+)⟧/g;
 const RE_EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -279,8 +280,11 @@ export function criarMascara({ rpc } = {}) {
       const mensagem = 'Não foi possível carregar a lista de pessoas para proteger os nomes.';
       try {
         const resposta = await rpc('get_pedido_bolsas_v2');
-        if (!resposta || resposta.error) {
-          throw criarErroPacote('http_4xx', mensagem);
+        if (!resposta) {
+          throw criarErroPacote('formato', mensagem);
+        }
+        if (resposta.error) {
+          throw criarErroPacote(codigoDoErro(resposta.error), mensagem);
         }
         if (!resposta.data || !Array.isArray(resposta.data.bolsistas)) {
           throw criarErroPacote('formato', mensagem);
@@ -289,7 +293,7 @@ export function criarMascara({ rpc } = {}) {
         carregado = true;
       } catch (erro) {
         if (ehErroPacote(erro)) throw erro;
-        throw criarErroPacote('http_4xx', mensagem);
+        throw criarErroPacote(codigoDoErro(erro), mensagem);
       } finally {
         carregando = null;
       }

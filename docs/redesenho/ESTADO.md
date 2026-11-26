@@ -193,6 +193,9 @@ terminaram com `fim`. Se o teto de CPU voltar a aparecer, o Victor topa estudar 
 para o laço no navegador (alternativa do Gemini, `analise-plano.md` §2).
 `request.signal` na desconexão não foi provado. O Worker da Cloudflare segue publicado até a troca. A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
 
+**Rodada de correção da Análise (branch `redesenho/analise-correcoes`, 26/11):**
+- **Etapa A1**: pergunta e `anteriores` mascarados antes de ir ao modelo (fail-closed), texto final reidratado com `semOrigem` deslocado, 403 em `app_users` → `sem_permissao`, `codigoDoErro` reconhecendo `{ codigo, mensagem }` de `worker/src/rpc.js` e ajustes G5/G7/G9 do Worker. Revisado pelo MiniMax 3.1 Flash max e achados médios fechados.
+
 **Próximo passo, nesta ordem:**
 0. Rodada de correção dos achados da revisão (pergunta mascarada, texto reidratado, rendimento líquido,
    instruções da Análise, falso "sem origem"), medida pela bancada antes e depois.

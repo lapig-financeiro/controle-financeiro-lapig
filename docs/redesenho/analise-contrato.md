@@ -75,7 +75,15 @@ sessao.criarBloco(args);     // → { bloco } (§6) ou { erro } que volta ao mod
 sessao.calcular(args);       // → { id: 'c1', paraModelo } ou { erro }
 sessao.marcarTexto(texto);   // → { texto, semOrigem: [{ inicio, fim }] }  números do texto que não são valor de nó citado
 sessao.reidratar(bloco);     // troca ⟦Pn⟧ pelo valor real; só para o que vai à tela
+sessao.reidratarTexto(marcado); // → { texto, semOrigem } reidratado, intervalos deslocados
+await sessao.mascararEntrada(texto); // → texto mascarado; carrega o dicionário e falha fechado
 ```
+
+A pergunta e os `anteriores` passam por `mascararEntrada` **antes da primeira ida ao modelo**: o
+`⟦Pn⟧` é o mesmo dos resultados das ferramentas, e CPF/e-mail saem de todo texto. Se o dicionário
+de nomes não carregar, a sessão rejeita e o Worker encerra com `erro` `interno` sem mandar a
+pergunta crua ao modelo. O texto final é conferido por `marcarTexto` na versão mascarada e só vira
+evento `texto` depois de `reidratarTexto` (que também desloca `semOrigem`).
 
 Ferramentas da Etapa 1 (só leitura; nenhuma conta de negócio no pacote):
 
@@ -140,7 +148,7 @@ Resposta `text/event-stream`, eventos `event: <nome>\ndata: <json>`:
 |---|---|
 | `passo` | `{ ferramenta, rotulo, estado: 'inicio' \| 'fim' \| 'erro', erro? }`; `rotulo` em pt-BR ("consultando os centros") |
 | `bloco` | o bloco reidratado (§6) |
-| `texto` | `{ texto, semOrigem }`, a resposta final curta |
+| `texto` | `{ texto, semOrigem }`, a resposta final curta, já reidratada (nomes reais e `semOrigem` deslocado) |
 | `fim` | `{ rodadas, ms }` |
 | `erro` | `{ codigo: 'sem_login' \| 'sem_permissao' \| 'limite' \| 'modelo' \| 'tempo' \| 'interno' \| 'incompleta', mensagem }` |
 

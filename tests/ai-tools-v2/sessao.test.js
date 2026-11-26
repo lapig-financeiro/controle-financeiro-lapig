@@ -143,6 +143,81 @@ describe('resolução do centro', () => {
   });
 });
 
+describe('mascararEntrada (A1)', () => {
+  it('mascara nome, CPF e e-mail com a mesma máscara dos resultados', async () => {
+    const { sessao } = montar();
+    const entrada = await sessao.mascararEntrada(
+      'A Pessoa Exemplo Um (CPF 123.456.789-09, pessoa.exemplo@exemplo.test) pediu.'
+    );
+    expect(entrada).not.toContain('Pessoa Exemplo Um');
+    expect(entrada).not.toContain('123.456.789-09');
+    expect(entrada).not.toContain('pessoa.exemplo@exemplo.test');
+    expect(entrada).toContain('⟦P1⟧');
+  });
+
+  it('o ⟦Pn⟧ da entrada é o mesmo que a ferramenta usa no resultado', async () => {
+    const { sessao } = montar();
+    const entrada = await sessao.mascararEntrada('Pessoa Exemplo Um');
+    const resultado = await sessao.executar('bolsas', { project_id: '30.901' });
+    expect(entrada).toBe('⟦P1⟧');
+    expect(resultado.paraModelo).toContain('⟦P1⟧');
+  });
+
+  it('falha fechado quando o dicionário não carrega', async () => {
+    const { sessao } = montar({
+      get_pedido_bolsas_v2: { data: null, error: { message: 'fora do ar' } },
+    });
+    await expect(sessao.mascararEntrada('Pessoa Exemplo Um')).rejects.toThrow(
+      'Não foi possível carregar a lista de pessoas'
+    );
+  });
+
+  it('carrega o dicionário uma vez, mesmo chamada repetida', async () => {
+    const { sessao, chamadas } = montar();
+    await sessao.mascararEntrada('Pessoa Exemplo Um');
+    await sessao.mascararEntrada('Pessoa Exemplo Dois');
+    expect(chamadas.filter((c) => c.nome === 'get_pedido_bolsas_v2')).toHaveLength(1);
+  });
+});
+
+describe('reidratarTexto (A2)', () => {
+  it('troca ⟦Pn⟧ e desloca semOrigem para o trecho certo', async () => {
+    const { sessao } = montar();
+    await sessao.mascararEntrada('Pessoa Exemplo Um');
+    const marcado = {
+      texto: '⟦P1⟧ recebeu R$ 1.000.',
+      semOrigem: [{ inicio: 13, fim: 21 }],
+    };
+    const saida = sessao.reidratarTexto(marcado);
+
+    expect(saida.texto).toBe('Pessoa Exemplo Um recebeu R$ 1.000.');
+    expect(saida.texto.slice(saida.semOrigem[0].inicio, saida.semOrigem[0].fim)).toBe(
+      'R$ 1.000'
+    );
+    // Não muta a entrada: o marcado é o que foi conferido.
+    expect(marcado.texto).toBe('⟦P1⟧ recebeu R$ 1.000.');
+    expect(marcado.semOrigem).toEqual([{ inicio: 13, fim: 21 }]);
+  });
+
+  it('reidratar também aceita { texto, semOrigem } e usa o mesmo nome do bloco', async () => {
+    const { sessao } = montar();
+    await sessao.mascararEntrada('Pessoa Exemplo Um');
+
+    const bloco = sessao.reidratar({
+      id: 'b1',
+      tipo: 'texto',
+      titulo: '',
+      texto: { texto: 'Bolsista ⟦P1⟧', semOrigem: [] },
+    });
+    const texto = sessao.reidratar({ texto: '⟦P1⟧', semOrigem: [] });
+    const viaMetodo = sessao.reidratarTexto({ texto: '⟦P1⟧', semOrigem: [] });
+
+    expect(bloco.texto.texto).toBe('Bolsista Pessoa Exemplo Um');
+    expect(texto.texto).toBe('Pessoa Exemplo Um');
+    expect(viaMetodo.texto).toBe('Pessoa Exemplo Um');
+  });
+});
+
 describe('concorrência', () => {
   it('Promise.all não mistura resultados e nós', async () => {
     const respostas = respostasPadrao();

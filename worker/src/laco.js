@@ -46,6 +46,13 @@ export const MENSAGEM_INCOMPLETA =
   'A resposta ficou incompleta: parei em 8 rodadas. Os blocos acima estão certos; ' +
   'para o resto, faça uma pergunta mais específica.';
 
+/**
+ * Mensagem fixa quando a máscara de nomes não carrega antes da primeira ida ao
+ * modelo. Sem detalhe: o erro original pode repetir conteúdo da conversa.
+ */
+export const MENSAGEM_PROTECAO =
+  'Não foi possível proteger os dados pessoais antes de consultar o modelo.';
+
 /** Erro que o chamador do modelo usa para dizer POR QUE falhou. */
 export class ErroModelo extends Error {
   constructor(mensagem, codigo = 'modelo') {
@@ -82,7 +89,12 @@ function rotuloDaFerramenta(nome) {
 /** Aceita objeto (Ollama nativo) ou string JSON (formato OpenAI). */
 function lerArgumentos(bruto) {
   if (bruto == null || bruto === '') return {};
-  if (typeof bruto === 'object') return bruto;
+  if (typeof bruto === 'object') {
+    if (Array.isArray(bruto)) {
+      throw new Error('Os argumentos da ferramenta não são um objeto.');
+    }
+    return bruto;
+  }
   let valor;
   try {
     valor = JSON.parse(bruto);
@@ -93,6 +105,52 @@ function lerArgumentos(bruto) {
     throw new Error('Os argumentos da ferramenta não são um objeto.');
   }
   return valor;
+}
+
+/**
+ * Valida e normaliza `tool_calls` ANTES de entrarem no histórico. O modelo pode
+ * devolver item nulo, sem `function.name` ou com `id` repetido na mesma rodada;
+ * um item inválido nunca vai ao Ollama e id repetido é desambiguado, para o
+ * `tool_call_id` da resposta casar com a chamada certa.
+ */
+function prepararChamadas(chamadas) {
+  const idsUsados = new Set();
+  return chamadas.map((bruta) => {
+    const objeto =
+      bruta && typeof bruta === 'object' && !Array.isArray(bruta) ? bruta : null;
+    const fn = objeto
+      ? objeto.function &&
+        typeof objeto.function === 'object' &&
+        !Array.isArray(objeto.function)
+        ? objeto.function
+        : objeto
+      : null;
+    const nome = fn && typeof fn.name === 'string' ? fn.name.trim() : '';
+    if (!nome) return { chamada: null, nome: '', argumentos: undefined };
+
+    let id = typeof objeto.id === 'string' && objeto.id.trim() ? objeto.id.trim() : null;
+    if (id) {
+      if (idsUsados.has(id)) {
+        let sufixo = 2;
+        while (idsUsados.has(`${id}#${sufixo}`)) sufixo += 1;
+        id = `${id}#${sufixo}`;
+      }
+      idsUsados.add(id);
+    }
+
+    const chamada = {
+      ...objeto,
+      function: {
+        name: nome,
+        // `undefined` some no JSON; `null` pode quebrar quem lê a conversa.
+        arguments:
+          fn.arguments === undefined || fn.arguments === null ? {} : fn.arguments,
+      },
+    };
+    if (id) chamada.id = id;
+    else delete chamada.id;
+    return { chamada, nome, argumentos: fn.arguments };
+  });
 }
 
 function textoDoResultado(valor) {
@@ -240,15 +298,52 @@ export async function executarLaco({
   }
 
   // ── Contexto ────────────────────────────────────────────────────────────
-  const historico = Array.isArray(anteriores) ? anteriores.slice(0, 5) : [];
+  // A pergunta e os anteriores saem daqui mascarados pela MESMA máscara dos
+  // resultados das ferramentas: nome vira o ⟦Pn⟧ já usado lá, e CPF/e-mail saem.
+  // Sem dicionário ou sem `mascararEntrada`, a pergunta crua nunca vai ao
+  // modelo (falha fechado).
+  if (typeof sessao?.mascararEntrada !== 'function') {
+    return await encerrarComErro('interno', MENSAGEM_PROTECAO);
+  }
+  let perguntaProtegida = String(pergunta ?? '');
+  let historico = Array.isArray(anteriores) ? anteriores.slice(0, 5) : [];
+  try {
+    perguntaProtegida = await sessao.mascararEntrada(perguntaProtegida);
+    historico = await Promise.all(
+      historico.map(async (item) => ({
+        pergunta: await sessao.mascararEntrada(String(item?.pergunta ?? '')),
+        resumo: await sessao.mascararEntrada(String(item?.resumo ?? '')),
+      })),
+    );
+  } catch (e) {
+    if (abortado()) return interromper();
+    if (expirado() || e?.codigo === 'tempo') return await encerrarComErro('tempo', mensagemTempo());
+    return await encerrarComErro('interno', MENSAGEM_PROTECAO);
+  }
+  if (abortado()) return interromper();
+  if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
+
+  // Mascarar antes do corte: cortar um nome ao meio antes da máscara deixaria
+  // um pedaço dele sem casar com o dicionário. Se o corte cair dentro de um
+  // marcador `⟦Pn⟧`, recua até antes do `⟦` para não enviar marcador quebrado.
+  const cortarSemPartirMarcador = (texto, max) => {
+    const limpo = String(texto ?? '').trim();
+    if (limpo.length <= max) return limpo;
+    const fatia = limpo.slice(0, max);
+    const ultimoAbre = fatia.lastIndexOf('⟦');
+    if (ultimoAbre !== -1 && fatia.indexOf('⟧', ultimoAbre) === -1) {
+      return fatia.slice(0, ultimoAbre).trimEnd();
+    }
+    return fatia;
+  };
   let sistema = String(instrucoes || '').trim();
   if (hoje) {
     sistema += `${sistema ? '\n\n' : ''}Hoje é ${hoje} (fuso de Brasília).`;
   }
   if (historico.length) {
     const linhas = historico.map((item, i) => {
-      const p = String(item?.pergunta ?? '').trim().slice(0, 500);
-      const r = String(item?.resumo ?? '').trim().slice(0, 1_000);
+      const p = cortarSemPartirMarcador(item?.pergunta, 500);
+      const r = cortarSemPartirMarcador(item?.resumo, 1_000);
       return `${i + 1}. Pergunta: ${p}\n   Resumo da resposta: ${r}`;
     });
     sistema +=
@@ -258,7 +353,7 @@ export async function executarLaco({
 
   const mensagens = [];
   if (sistema) mensagens.push({ role: 'system', content: sistema });
-  mensagens.push({ role: 'user', content: String(pergunta ?? '') });
+  mensagens.push({ role: 'user', content: perguntaProtegida });
 
   try {
     while (rodadas < limites.rodadas) {
@@ -334,7 +429,33 @@ export async function executarLaco({
           );
         }
 
-        await emitir('texto', { texto: marcado.texto, semOrigem: marcado.semOrigem });
+        // A conferência acima roda sobre a versão mascarada; a tela recebe o
+        // nome real e os intervalos `semOrigem` deslocados pela troca.
+        let reidratado;
+        try {
+          reidratado =
+            typeof sessao.reidratarTexto === 'function'
+              ? await sessao.reidratarTexto(marcado)
+              : await sessao.reidratar(marcado);
+        } catch {
+          return await encerrarComErro(
+            'interno',
+            'O texto foi marcado mas não pôde ser entregue à tela.',
+          );
+        }
+        if (abortado()) return interromper();
+        if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
+        if (!textoMarcadoValido(reidratado)) {
+          return await encerrarComErro(
+            'interno',
+            'O texto reidratado voltou num formato inválido.',
+          );
+        }
+
+        await emitir('texto', {
+          texto: reidratado.texto,
+          semOrigem: reidratado.semOrigem,
+        });
         await encerrar();
         return { ok: true, rodadas, ms: decorrido() };
       }
@@ -352,14 +473,21 @@ export async function executarLaco({
         );
       }
 
-      mensagens.push({
+      // `tool_calls` malformado nunca entra no histórico: só a chamada válida
+      // (e com id desambiguado) volta ao Ollama junto com a resposta `tool`.
+      const preparadas = prepararChamadas(chamadas);
+      const paraHistorico = preparadas
+        .filter((item) => item.chamada)
+        .map((item) => item.chamada);
+      const mensagemHistorico = {
         role: 'assistant',
         content: typeof mensagem.content === 'string' ? mensagem.content : '',
-        tool_calls: chamadas,
-      });
+      };
+      if (paraHistorico.length) mensagemHistorico.tool_calls = paraHistorico;
+      mensagens.push(mensagemHistorico);
 
       // ── Ferramentas da rodada ──────────────────────────────────────────
-      for (const chamada of chamadas) {
+      for (const preparada of preparadas) {
         if (abortado()) return interromper();
         if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
         if (ferramentas >= limites.ferramentas) {
@@ -372,28 +500,31 @@ export async function executarLaco({
         ferramentas += 1;
         estado.ferramentas = ferramentas;
 
-        const fn = chamada?.function ?? chamada ?? {};
-        const nome = typeof fn.name === 'string' ? fn.name : '';
+        const { chamada, nome, argumentos } = preparada;
 
         if (!nome) {
+          // A chamada nem entrou no histórico; não há a quem responder, mas a
+          // tela vê o passo começar e falhar.
           const motivo = cortarErro('A chamada veio sem nome de ferramenta.');
+          const iniciou = await emitirPasso('desconhecida', 'inicio');
+          if (iniciou === false || abortado()) return interromper();
           await emitirPasso('desconhecida', 'erro', motivo);
-          mensagens.push(mensagemDeTool(chamada, '', { erro: motivo }));
           continue;
         }
 
+        const passoIniciou = await emitirPasso(nome, 'inicio');
+        if (passoIniciou === false || abortado()) return interromper();
+        if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
+
         let args;
         try {
-          args = lerArgumentos(fn.arguments);
+          args = lerArgumentos(argumentos);
         } catch (e) {
           const motivo = cortarErro(e?.message ?? 'Argumentos inválidos.');
           await emitirPasso(nome, 'erro', motivo);
           mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
           continue;
         }
-
-        const passoIniciou = await emitirPasso(nome, 'inicio');
-        if (passoIniciou === false || abortado()) return interromper();
 
         // ── criar_bloco ──────────────────────────────────────────────────
         if (nome === 'criar_bloco') {

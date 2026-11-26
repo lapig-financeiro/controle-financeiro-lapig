@@ -98,7 +98,15 @@ export function criarContadorRpc({
         }
 
         const resposta = chamada.valor;
-        if (!resposta.ok) return falha('interno', limite);
+        if (!resposta.ok) {
+          // O corpo do erro não é lido; cancelar libera a conexão já.
+          try {
+            void resposta.body?.cancel?.().catch?.(() => {});
+          } catch {
+            // Corpo já consumido ou sem suporte a cancelamento.
+          }
+          return falha('interno', limite);
+        }
 
         const leitura = await corrida(
           Promise.resolve().then(() => resposta.text()),

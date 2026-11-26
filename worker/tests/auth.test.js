@@ -96,8 +96,21 @@ describe('autenticação', () => {
     expect(r.codigo).toBe('sem_login');
   });
 
-  it('JWT vencido (403) é sem_login', async () => {
+  it('JWT vencido (403) no /auth/v1/user é sem_login', async () => {
     const r = await pedir(fetchFalso({ statusUsuario: 403 }));
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('sem_login');
+  });
+
+  it('403 ao ler app_users é sem_permissao, não sem_login', async () => {
+    const r = await pedir(fetchFalso({ statusPapel: 403 }));
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('sem_permissao');
+    expect(r.papel).toBeNull();
+  });
+
+  it('401 ao ler app_users continua sem_login', async () => {
+    const r = await pedir(fetchFalso({ statusPapel: 401 }));
     expect(r.ok).toBe(false);
     expect(r.codigo).toBe('sem_login');
   });
@@ -202,6 +215,34 @@ describe('corpo da resposta e desconexão', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('corpo de 401/403/5xx não lido é cancelado (G7)', async () => {
+    for (const status of [401, 403, 500]) {
+      const cancelar = vi.fn(() => Promise.resolve());
+      const fetchImpl = async () => ({
+        ok: false,
+        status,
+        body: { cancel: cancelar },
+      });
+      const r = await pedir(fetchImpl);
+      expect(r.ok, String(status)).toBe(false);
+      expect(cancelar, String(status)).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('corpo do 403 de app_users também é cancelado (G7)', async () => {
+    const cancelar = vi.fn(() => Promise.resolve());
+    const fetchImpl = async (url) => {
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'u1' });
+      if (url.includes('/rest/v1/app_users')) {
+        return { ok: false, status: 403, body: { cancel: cancelar } };
+      }
+      throw new Error(`URL inesperada: ${url}`);
+    };
+    const r = await pedir(fetchImpl);
+    expect(r.codigo).toBe('sem_permissao');
+    expect(cancelar).toHaveBeenCalledTimes(1);
   });
 
   it('desconexão aborta o fetch de login e devolve abortado', async () => {

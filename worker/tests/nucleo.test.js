@@ -54,6 +54,9 @@ function sessaoFalsa() {
     async reidratar(bloco) {
       return bloco;
     },
+    async mascararEntrada(texto) {
+      return texto;
+    },
   };
 }
 
@@ -120,6 +123,32 @@ describe('núcleo sem plataforma', () => {
     expect(recebido[0].jwt).toBe('jwt-bom');
     expect(typeof recebido[0].prazo).toBe('number');
     expect(recebido[0].sinal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('corpo da resposta HTTP de erro do modelo é cancelado (G7)', async () => {
+    const cancelar = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('fetch', async (url, init) => {
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'u1', email: 'a@b' });
+      if (url.includes('/rest/v1/app_users')) return json([{ role: 'admin' }]);
+      if (url === 'https://ollama.com/api/chat') {
+        return { ok: false, status: 500, body: { cancel: cancelar } };
+      }
+      return fetchAmbiente()(url, init);
+    });
+    const contador = {
+      async consumir() {
+        return { permitido: true, usado: 1, teto: 50, dia: '2026-11-25' };
+      },
+    };
+    const c = ctx();
+
+    const resposta = await tratar(pedido(), ENV, { contador, waitUntil: (p) => c.waitUntil(p) });
+    const texto = await resposta.text();
+    await Promise.all(c.promessas);
+
+    const ev = eventos(texto);
+    expect(ev[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'modelo' } });
+    expect(cancelar).toHaveBeenCalledTimes(1);
   });
 
   it('sem contador emite erro interno e não chama o modelo', async () => {

@@ -242,6 +242,11 @@ function criarChamador(env, { fetchImpl = fetch, agora = Date.now } = {}) {
       if (!resposta.ok) {
         // Não lê o corpo do erro: ele pode repetir trecho do pedido, e este
         // caminho não tem para onde mandar isso. O status basta para a tela.
+        try {
+          void resposta.body?.cancel?.().catch?.(() => {});
+        } catch {
+          // Corpo já consumido ou sem suporte a cancelamento.
+        }
         throw new ErroModelo(`O modelo respondeu HTTP ${resposta.status}.`, 'modelo');
       }
 

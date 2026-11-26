@@ -126,6 +126,9 @@ function sessaoFalsa(opcoes = {}) {
       chamadas.reidratar.push(bloco);
       return opcoes.reidratar ? opcoes.reidratar(bloco) : bloco;
     },
+    async mascararEntrada(texto) {
+      return opcoes.mascararEntrada ? opcoes.mascararEntrada(texto) : texto;
+    },
   };
   return { sessao, chamadas };
 }

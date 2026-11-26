@@ -71,11 +71,21 @@ export function mensagemRpc(nome) {
   return MENSAGENS_RPC[nome] ?? 'Não foi possível concluir a consulta.';
 }
 
-/** Código curto e estável; o texto bruto da RPC nunca sai do pacote. */
+/**
+ * Código curto e estável; o texto bruto da RPC nunca sai do pacote.
+ *
+ * `worker/src/rpc.js` entrega `{ codigo, mensagem, status? }` — não `name` nem
+ * `message`. Sem ler esses campos, timeout e rede chegavam ao modelo (e à tela)
+ * como `http_4xx`. Os códigos de saída são os do contrato §6: `http_4xx`,
+ * `tempo`, `formato` e `rede`.
+ */
 export function codigoDoErro(erro) {
   const nome = String(erro?.name ?? '').toLowerCase();
-  const mensagem = String(erro?.message ?? erro ?? '').toLowerCase();
+  const codigo = String(erro?.codigo ?? '').toLowerCase();
+  const mensagem = String(erro?.message ?? erro?.mensagem ?? erro ?? '').toLowerCase();
   if (
+    codigo === 'tempo' ||
+    codigo === 'abortado' ||
     nome.includes('abort') ||
     nome.includes('timeout') ||
     mensagem.includes('timeout') ||
@@ -85,8 +95,13 @@ export function codigoDoErro(erro) {
   ) {
     return 'tempo';
   }
+  if (codigo === 'resposta_invalida') return 'formato';
+  // 504/524/408 são tempo também quando chegam só como código `http_5xx`.
+  if (codigo === 'http_408' || codigo === 'http_504' || codigo === 'http_524') return 'tempo';
+  if (codigo === 'rede' || /^http_5\d\d$/.test(codigo)) return 'rede';
   const status = Number(erro?.status ?? erro?.statusCode ?? 0);
   if (status === 408 || status === 504 || status === 524) return 'tempo';
+  if (status >= 500) return 'rede';
   return 'http_4xx';
 }
 

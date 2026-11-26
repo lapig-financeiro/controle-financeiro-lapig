@@ -13,6 +13,8 @@ import { ehErroPacote } from './erros.js';
 import { chamarRpc, mensagemRpc } from './ferramentas/comum.js';
 import { FERRAMENTAS } from './ferramentas/index.js';
 
+const CODIGOS_PROPRIOS = new Set(['http_4xx', 'tempo', 'formato', 'rede']);
+
 export const INSTRUCOES = `
 Controle financeiro do LAPIG/UFG. A Análise responde com blocos (número, tabela e
 texto) sobre centros de custo, saldo livre, vigência, contrato, desembolsos,
@@ -275,10 +277,9 @@ export function criarSessao({ rpc, hoje } = {}) {
       registro.publicar(escopo);
       return { id: escopo.id, paraModelo: JSON.stringify(resultado.paraModelo) };
     } catch (erro) {
-      const codigosProprios = new Set(['http_4xx', 'tempo', 'formato']);
       if (
         ehErroPacote(erro) &&
-        codigosProprios.has(erro.codigo) &&
+        CODIGOS_PROPRIOS.has(erro.codigo) &&
         typeof erro.mensagemFixa === 'string'
       ) {
         return { id: escopo.id, erro: `${erro.mensagemFixa} (${erro.codigo})` };
@@ -291,7 +292,44 @@ export function criarSessao({ rpc, hoje } = {}) {
     return marcarTextoBase(texto, { mascara, citados });
   }
 
+  /**
+   * Mascara um texto que vai AO modelo (pergunta e anteriores). Usa o mesmo
+   * dicionário e a mesma numeração da máscara dos resultados das ferramentas,
+   * então o ⟦Pn⟧ da pergunta casa com o ⟦Pn⟧ do resultado. Falha fechado: se o
+   * dicionário não carrega, a promessa rejeita e quem chamou decide encerrar.
+   */
+  async function mascararEntrada(texto) {
+    await mascara.garantirDicionario();
+    return mascara.texto(String(texto ?? ''));
+  }
+
+  /**
+   * Reidrata `{ texto, semOrigem }` e desloca os intervalos pelo tamanho de cada
+   * nome que entrou. O texto final do modelo é conferido mascarado e só vira
+   * evento depois desta troca.
+   */
+  function reidratarTexto(marcado) {
+    if (!marcado || typeof marcado !== 'object' || Array.isArray(marcado)) return marcado;
+    if (typeof marcado.texto !== 'string') return marcado;
+    const { texto, semOrigem } = mascara.reidratarTextoComIntervalos(
+      marcado.texto,
+      Array.isArray(marcado.semOrigem) ? marcado.semOrigem : []
+    );
+    return { ...marcado, texto, semOrigem };
+  }
+
   function reidratar(bloco) {
+    // `{ texto, semOrigem }` é o texto final já marcado; os intervalos precisam
+    // andar junto com a troca dos marcadores.
+    if (
+      bloco &&
+      typeof bloco === 'object' &&
+      !Array.isArray(bloco) &&
+      typeof bloco.texto === 'string' &&
+      Array.isArray(bloco.semOrigem)
+    ) {
+      return reidratarTexto(bloco);
+    }
     const copia = mascara.reidratar(bloco);
     if (
       copia &&
@@ -317,5 +355,7 @@ export function criarSessao({ rpc, hoje } = {}) {
     calcular: (args) => calculadora.calcular(args),
     marcarTexto,
     reidratar,
+    reidratarTexto,
+    mascararEntrada,
   };
 }

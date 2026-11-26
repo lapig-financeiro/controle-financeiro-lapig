@@ -59,6 +59,15 @@ function interno(mensagem) {
   return { ok: false, codigo: 'interno', mensagem };
 }
 
+/** Corpo que não vai ser lido é cancelado; não segura a conexão até o fim. */
+function cancelarCorpo(resposta) {
+  try {
+    void resposta.body?.cancel?.().catch?.(() => {});
+  } catch {
+    // Corpo já consumido ou sem suporte a cancelamento: nada a liberar.
+  }
+}
+
 function falhaDoPedido(erro) {
   if (erro === 'abortado') {
     return { ok: false, codigo: 'abortado', mensagem: 'A requisição foi cancelada.' };
@@ -77,7 +86,7 @@ function falhaDoPedido(erro) {
  * Um GET que devolve JSON, com o prazo e a desconexão valendo do começo ao fim
  * da leitura do corpo.
  *
- * @returns {Promise<{dados?: unknown, semLogin?: true,
+ * @returns {Promise<{dados?: unknown, semLogin?: true, semPermissao?: true,
  *                    erro?: 'abortado'|'tempo'|'interno'}>}
  */
 async function pedirJson({ url, cabecalhos, fetchImpl, prazo, sinal, timeoutMs, agora }) {
@@ -102,8 +111,20 @@ async function pedirJson({ url, cabecalhos, fetchImpl, prazo, sinal, timeoutMs, 
     }
 
     const resposta = chamada.valor;
-    if (resposta.status === 401 || resposta.status === 403) return { semLogin: true };
-    if (!resposta.ok) return { erro: 'interno' };
+    // 401 é "não está logado"; 403 é "está, mas não pode". Quem chama decide se
+    // o 403 vira `sem_login` (validação do JWT) ou `sem_permissao` (app_users).
+    if (resposta.status === 401) {
+      cancelarCorpo(resposta);
+      return { semLogin: true };
+    }
+    if (resposta.status === 403) {
+      cancelarCorpo(resposta);
+      return { semPermissao: true };
+    }
+    if (!resposta.ok) {
+      cancelarCorpo(resposta);
+      return { erro: 'interno' };
+    }
 
     const leitura = await corrida(
       Promise.resolve().then(() => resposta.text()),
@@ -173,7 +194,8 @@ export async function autenticar({
     agora,
   });
 
-  if (usuario.semLogin) return semLogin();
+  // Em `/auth/v1/user`, 401 e 403 querem dizer a mesma coisa: esse login não vale.
+  if (usuario.semLogin || usuario.semPermissao) return semLogin();
   if (usuario.erro) return falhaDoPedido(usuario.erro);
   if (!usuario.dados || typeof usuario.dados.id !== 'string' || !usuario.dados.id) {
     return interno('A validação do login devolveu uma resposta inválida.');
@@ -190,6 +212,8 @@ export async function autenticar({
   });
 
   if (respostaPapel.semLogin) return semLogin();
+  // 403 ao ler o próprio papel é RLS/guard: o login vale, a permissão não.
+  if (respostaPapel.semPermissao) return semPermissao(null);
   if (respostaPapel.erro) {
     if (respostaPapel.erro === 'abortado') return falhaDoPedido('abortado');
     if (respostaPapel.erro === 'tempo') {

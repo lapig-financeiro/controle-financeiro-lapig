@@ -170,13 +170,19 @@ pergunta ganha um aviso no console e no relatório; o aviso não reprova.
 - Não tem `service_role`, não escreve no banco, não faz cálculo financeiro e
   não decide número: todo valor vem de RPC, e o bloco só sai depois de
   `sessao.criarBloco` + `sessao.reidratar`.
-- O texto do modelo sempre passa por `sessao.marcarTexto`; o texto não é
-  reidratado (só o bloco é). `content` ausente, vazio, só com espaços ou que não
-  seja string (objeto, número, array) vira `erro` `modelo` ("o modelo não
-  respondeu"), não `texto: ""`; formato inválido de `marcarTexto` vira `erro`
-  `interno`. Em resposta **com** `tool_calls`, `content` nulo/ausente é normal;
-  qualquer outro tipo (objeto, número, array) também vira `erro` `modelo` antes
-  de executar a ferramenta.
+- A pergunta e os `anteriores` são mascarados por `sessao.mascararEntrada` antes
+  da primeira ida ao modelo: o `⟦Pn⟧` é o mesmo dos resultados das ferramentas e
+  CPF/e-mail saem. Se o dicionário de nomes não carrega, o Worker encerra com
+  `erro` `interno` e **não** manda a pergunta crua ao modelo.
+- O texto do modelo passa por `sessao.marcarTexto` (conferência sobre a versão
+  mascarada) e depois por `sessao.reidratarTexto` antes do evento `texto`: a tela
+  recebe o nome real e `semOrigem` deslocado pelo tamanho de cada substituição.
+  `content` ausente, vazio, só com espaços ou que não seja string (objeto,
+  número, array) vira `erro` `modelo` ("o modelo não respondeu"), não
+  `texto: ""`; formato inválido de `marcarTexto` ou de `reidratarTexto` vira
+  `erro` `interno`. Em resposta **com** `tool_calls`, `content` nulo/ausente é
+  normal; qualquer outro tipo (objeto, número, array) também vira `erro`
+  `modelo` antes de executar a ferramenta.
 - RPC com 200 e JSON literal `null` é `resposta_invalida`: nenhuma das 7 RPCs do
   contrato §4 devolve `null` com sucesso.
 - Erro de ferramenta (inclusive exceção) é cortado em **500 caracteres** tanto
