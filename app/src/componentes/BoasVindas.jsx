@@ -1,15 +1,14 @@
+import { useEffect, useId, useRef, useState } from 'preact/hooks';
+import { urlProjeto } from '../roteador.js';
 import { Botao } from './Botao.jsx';
-import { PainelLateral } from './PainelLateral.jsx';
 import './BoasVindas.css';
 
 function chave(usuarioId) {
   return `cf_boas_vindas_${usuarioId || 'local'}`;
 }
 
-/** Já viu o guia neste navegador? Sem `localStorage`, conta como visto: o guia nunca insiste. */
 export function boasVindasVista(usuarioId) {
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return true;
     return window.localStorage.getItem(chave(usuarioId)) === 'visto';
   } catch {
     return true;
@@ -18,70 +17,108 @@ export function boasVindasVista(usuarioId) {
 
 export function marcarBoasVindasVista(usuarioId) {
   try {
-    window.localStorage?.setItem(chave(usuarioId), 'visto');
+    window.localStorage.setItem(chave(usuarioId), 'visto');
   } catch {
-    /* sem localStorage o guia volta no próximo acesso; não é erro */
+    // O guia continua disponível pelo menu.
   }
 }
 
-/**
- * Guia rápido de primeiro acesso, num painel lateral. Abre sozinho uma vez
- * por login (por navegador) e volta pelo menu do usuário, em "Como usar o site".
- */
-export function BoasVindas({ aberto = false, aoFechar, isAdmin = false }) {
+export function BoasVindas({ aoFechar, isAdmin, podeBolsistas, rota, centros, onNavegar }) {
+  const [indice, setIndice] = useState(-1);
+  const tituloId = useId();
+  const tituloRef = useRef(null);
+  const centro = centros.find((item) => item.id === rota.id) || centros[0];
   const passos = [
     {
-      titulo: 'Projetos',
-      texto:
-        'Cada linha é um centro de custo. O número principal é quanto está livre para gastar: o previsto no plano menos o que já saiu e o que já está comprometido (bolsas e taxas). Passe o mouse no selo de situação para ver o motivo.',
+      titulo: 'Encontre um centro de custo',
+      texto: 'Em Projetos, cada linha abre um centro de custo. Passe o mouse ou toque no selo de situação para ver o motivo.',
+      pagina: 'projetos',
+      caminho: '#/projetos',
+      acao: 'Ir para Projetos',
     },
     {
-      titulo: 'Todo número tem origem',
-      texto:
-        'Número sublinhado abre de onde ele vem. Na página do projeto, clique numa rubrica e use “Ver no balancete ›” ou “Ver no plano ›” para abrir o documento na linha de onde saiu o valor.',
+      titulo: 'Confira de onde vem o saldo livre',
+      texto: centro
+        ? 'Na aba Dinheiro, clique no valor sublinhado ou abra uma rubrica para conferir o que já foi gasto e o que está comprometido.'
+        : 'Quando houver um centro visível, abra a aba Dinheiro e clique no valor sublinhado para conferir como o saldo foi calculado.',
+      pagina: 'projeto',
+      caminho: centro ? urlProjeto(centro.id, 'dinheiro') : null,
+      acao: 'Abrir o centro',
+      aba: 'dinheiro',
     },
     {
-      titulo: 'Bolsistas',
-      texto: 'As bolsas dos seus centros, com o fim de cada uma. Ali também se monta o pedido de bolsas, em caixas.',
+      titulo: 'Acompanhe as pendências',
+      texto: 'Abra o sino no topo. Se houver uma pendência de um centro, clique nela para abrir a aba Pendências.',
     },
     {
-      titulo: 'Análise',
-      texto:
-        'Pergunte em português, como para uma pessoa: “quanto o meu centro tem livre e de onde vem?”. A resposta traz números que abrem a origem e tabelas com “Copiar tabela”, para colar numa planilha. São até 50 perguntas por dia, e as conversas ficam no seu histórico.',
-    },
-    {
-      titulo: 'Sino',
-      texto: 'O sino no alto mostra as pendências abertas dos seus centros. Clique numa para ir até ela.',
+      titulo: 'Faça uma pergunta ao Assistente',
+      texto: 'Abra Nova conversa (no celular, fica em Conversas). Clique numa sugestão para preencher o campo e edite a pergunta antes de enviar.',
+      pagina: 'analise',
+      caminho: '#/analise',
+      acao: 'Ir para Análise',
     },
   ];
+  if (podeBolsistas) {
+    passos.push({
+      titulo: 'Monte um pedido de bolsas',
+      texto: 'Em Bolsistas, filtre por centro ou equipe e use as caixas para reunir as pessoas do pedido.',
+      pagina: 'bolsistas',
+      caminho: '#/bolsistas',
+      acao: 'Ir para Bolsistas',
+    });
+  }
   if (isAdmin) {
     passos.push({
-      titulo: 'Admin',
-      texto:
-        'Quem vê qual centro. O botão de centros no alto (“Todos os centros”, ou “X de Y centros” quando há algum escondido) esconde centros só da sua tela; não muda o que os outros veem.',
+      titulo: 'Confira os acessos em Admin',
+      texto: 'Abra um login para ver a quais centros ele tem acesso. O filtro de centros no topo muda apenas a sua própria tela.',
+      pagina: 'admin',
+      caminho: '#/admin',
+      acao: 'Ir para Admin',
     });
   }
 
+  useEffect(() => {
+    tituloRef.current?.focus();
+  }, [indice]);
+
+  const passo = passos[indice];
+  const naTela = passo?.pagina === rota.pagina &&
+    (!passo.aba || passo.aba === (rota.aba || 'dinheiro'));
+  const ultimo = indice === passos.length - 1;
+
+  const irParaPasso = (proximo) => {
+    setIndice(proximo);
+    const caminho = passos[proximo].caminho;
+    if (caminho) onNavegar(caminho);
+  };
+
   return (
-    <PainelLateral aberto={aberto} aoFechar={aoFechar} titulo="Como usar o site" subtitulo="Um guia de um minuto">
-      <div class="boas-vindas">
-        <ol class="boas-vindas__lista">
-          {passos.map((passo) => (
-            <li key={passo.titulo} class="boas-vindas__passo">
-              <h3 class="boas-vindas__titulo">{passo.titulo}</h3>
-              <p class="boas-vindas__texto texto-corrido">{passo.texto}</p>
-            </li>
-          ))}
-        </ol>
-        <p class="boas-vindas__nota">
-          Este guia fica no menu com as suas iniciais, no canto de cima, em “Como usar o site”.
-        </p>
-        <div class="boas-vindas__acoes">
-          <Botao variante="primario" onClick={aoFechar}>
-            Entendi
+    <div class="conteudo boas-vindas">
+      <section class="boas-vindas__cartao" aria-labelledby={tituloId}>
+        <div class="boas-vindas__cabecalho">
+          <p class="boas-vindas__contexto">
+            {passo ? `Como usar o site · Passo ${indice + 1} de ${passos.length}` : 'Guia do Buriti'}
+          </p>
+          <Botao variante="fantasma" tamanho="compacto" onClick={aoFechar}>
+            {passo ? 'Sair do guia' : 'Agora não'}
           </Botao>
         </div>
-      </div>
-    </PainelLateral>
+        <h2 id={tituloId} class="boas-vindas__titulo" ref={tituloRef} tabIndex={-1}>
+          {passo?.titulo || 'Como usar o site'}
+        </h2>
+        <p class="texto-corrido">
+          {passo?.texto || 'Passe pelas telas do Buriti e veja como consultar seus centros de custo. Você pode voltar ao guia pelo menu com as suas iniciais.'}
+        </p>
+        <div class="boas-vindas__acoes">
+          {indice > 0 && <Botao variante="fantasma" onClick={() => irParaPasso(indice - 1)}>Voltar</Botao>}
+          {passo?.caminho && !naTela && (
+            <Botao onClick={() => onNavegar(passo.caminho)}>{passo.acao}</Botao>
+          )}
+          <Botao variante={passo ? 'secundario' : 'primario'} onClick={ultimo ? aoFechar : () => irParaPasso(indice + 1)}>
+            {ultimo ? 'Concluir' : passo ? 'Próximo' : 'Iniciar tour'}
+          </Botao>
+        </div>
+      </section>
+    </div>
   );
 }

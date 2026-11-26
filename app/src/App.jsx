@@ -47,13 +47,15 @@ export function App() {
           erro: null,
           role: 'admin',
           nome: 'Admin de exemplo',
+          podeBolsistas: true,
           email: 'exemplo@lapig.ufg.br',
         }
       : { erro: null, role: null, nome: '', email: '' }
   );
   const [erroLogin, setErroLogin] = useState('');
-  const [manutencao, setManutencao] = useState({ ativo: false, mensagem: '' });
+  const [manutencao, setManutencao] = useState(null);
   const manutencaoAtivaRef = useRef(false);
+  const genManutencaoRef = useRef(0);
   const [filtroDemoAtivo, setFiltroDemoAtivo] = useState(false);
 
   const [resumoSt, setResumoSt] = useState({ carregando: true, dados: null, erro: null });
@@ -69,6 +71,7 @@ export function App() {
   // do navegador volta a ficar visível; reaplicar o mesmo usuário recarregava o
   // perfil e desmontava a página aberta (a Análise perdia pergunta e respostas).
   const usuarioIdRef = useRef(null);
+  const genPerfilRef = useRef(0);
   // A Análise fica montada (escondida) depois da primeira visita, para a
   // conversa sobreviver à troca de aba do site.
   const [analiseMontada, setAnaliseMontada] = useState(false);
@@ -81,7 +84,9 @@ export function App() {
   }, []);
 
   const verificarManutencao = useCallback(async () => {
+    const gen = ++genManutencaoRef.current;
     const estado = await consultarManutencao();
+    if (!montadoRef.current || gen !== genManutencaoRef.current) return;
     if (!estado.ativo && manutencaoAtivaRef.current) {
       window.location.reload();
       return;
@@ -91,22 +96,24 @@ export function App() {
   }, []);
 
   const aplicarUsuario = useCallback(async (user) => {
-    usuarioIdRef.current = user?.id ?? null;
-    if (!user) {
+    const id = user?.id ?? null;
+    const gen = ++genPerfilRef.current;
+    if (id !== usuarioIdRef.current) {
       setAnaliseMontada(false);
       genResumoRef.current += 1;
       genSinoRef.current += 1;
-      setUsuario(null);
-      setPerfil({ erro: null, role: null, nome: '', email: '' });
-      setCarregandoPerfil(false);
       setResumoSt({ carregando: true, dados: null, erro: null });
       setSinoSt({ estado: 'consultando', dados: [], erro: null });
+    }
+    usuarioIdRef.current = id;
+    setUsuario(user);
+    setCarregandoPerfil(Boolean(user));
+    if (!user) {
+      setPerfil({ erro: null, role: null, nome: '', email: '' });
       return;
     }
-    setUsuario(user);
-    setCarregandoPerfil(true);
     const dadosPerfil = await carregarPerfil(user);
-    if (!montadoRef.current) return;
+    if (!montadoRef.current || gen !== genPerfilRef.current) return;
     setPerfil(dadosPerfil);
     setCarregandoPerfil(false);
   }, []);
@@ -130,21 +137,23 @@ export function App() {
 
     let ativo = true;
 
+    const genInicial = genPerfilRef.current;
     async function verificarSessao() {
       try {
         const { data, error } = await supabase.auth.getSession();
-        if (!ativo) return;
+        if (!ativo || genInicial !== genPerfilRef.current) return;
 
         if (error) {
           setErroLogin('Não foi possível conferir a sessão.');
-          await aplicarUsuario(null);
+          void aplicarUsuario(null);
           return;
         }
 
-        if (data?.session?.user) {
-          await aplicarUsuario(data.session.user);
-        } else {
-          await aplicarUsuario(null);
+        void aplicarUsuario(data?.session?.user ?? null);
+      } catch {
+        if (ativo && genInicial === genPerfilRef.current) {
+          setErroLogin('Não foi possível conferir a sessão.');
+          void aplicarUsuario(null);
         }
       } finally {
         if (ativo) setCarregandoSessao(false);
@@ -163,7 +172,7 @@ export function App() {
       } else if (evento === 'SIGNED_IN' && sessao?.user) {
         if (sessao.user.id === usuarioIdRef.current) return;
         setTimeout(() => {
-          if (ativo) aplicarUsuario(sessao.user);
+          if (ativo && sessao.user.id !== usuarioIdRef.current) aplicarUsuario(sessao.user);
         }, 0);
       }
     });
@@ -177,10 +186,8 @@ export function App() {
   const papelConhecido = !carregandoSessao && !carregandoPerfil && perfil.erro === null && perfil.role !== null;
   const isAdmin = papelConhecido && perfil.role === 'admin';
   const naAnalise = rota.pagina === 'analise';
-  // Bolsistas e Análise são para toda conta de gente (admin e professor). O
-  // agente e a automação não têm tela; o banco já filtra os centros de cada um.
   const contaDeGente = papelConhecido && (isAdmin || perfil.role === 'professor');
-  const podeBolsistas = contaDeGente;
+  const podeBolsistas = contaDeGente && perfil.podeBolsistas === true;
   const podeAnalise = contaDeGente;
 
   useEffect(() => {
@@ -288,13 +295,13 @@ export function App() {
     [resumoSt.dados, salvarFiltro]
   );
 
-  if (manutencao.ativo) {
+  if (manutencao?.ativo) {
     return <Manutencao mensagem={manutencao.mensagem} />;
   }
 
   // Catálogo `#/componentes`: livre em dev; em produção só para admin logado.
   const podeVerComponentes = rota.pagina === 'componentes' && (import.meta.env.DEV || (usuario && isAdmin));
-  if (podeVerComponentes) {
+  if (manutencao && podeVerComponentes) {
     const usuarioCatalogo = usuario
       ? { nome: perfil.nome, email: perfil.email }
       : { nome: 'Victor Amaral', email: 'catalogo@lapig.ufg.br', iniciais: 'VA' };
@@ -305,7 +312,7 @@ export function App() {
         <BarraTopo
           rotaAtiva="projetos"
           isAdmin={adminCatalogo}
-          podeBolsistas={adminCatalogo}
+          podeBolsistas={podeBolsistas}
           usuario={usuarioCatalogo}
           centrosVisiveis={filtroDemoAtivo ? { visiveis: 15, total: 17 } : { visiveis: 17, total: 17 }}
           pendencias={PENDENCIAS_CATALOGO}
@@ -324,7 +331,7 @@ export function App() {
     );
   }
 
-  if (carregandoSessao) {
+  if (!manutencao || carregandoSessao || carregandoPerfil) {
     return (
       <div class="casca">
         <div class="conteudo">
@@ -340,7 +347,7 @@ export function App() {
         erroInicial={erroLogin}
         onEntrar={async (user) => {
           setErroLogin('');
-          await aplicarUsuario(user);
+          if (user.id !== usuarioIdRef.current) await aplicarUsuario(user);
           if (!window.location.hash || !window.location.hash.startsWith('#/')) {
             navegarPara('#/projetos');
           }
@@ -352,6 +359,9 @@ export function App() {
   const mapaCentros = new Map();
   for (const c of resumoSt.dados?.todos || []) mapaCentros.set(c.id, c);
   for (const c of resumoSt.dados?.centros || []) mapaCentros.set(c.id, c);
+  const centrosVisiveis = resumoSt.carregando || resumoSt.erro || filtroSalvando
+    ? []
+    : resumoSt.dados?.centros || [];
 
   const pendenciasSino = sinoSt.dados.map((item) => {
     if (!item.project_id) {
@@ -397,6 +407,7 @@ export function App() {
       const centroOculto = Boolean(!resumoCentro && centroNoFiltro && centroNoFiltro.oculto);
       return (
         <Projeto
+          key={rota.id}
           projectId={rota.id}
           abaInicial={rota.aba}
           resumoCentro={resumoCentro}
@@ -458,12 +469,22 @@ export function App() {
         onAjuda={contaDeGente ? () => setBoasVindasAberta(true) : null}
         onNavegar={navegarPara}
       />
-      <BoasVindas aberto={contaDeGente && boasVindasAberta} aoFechar={fecharBoasVindas} isAdmin={isAdmin} />
       <main>
+        {contaDeGente && boasVindasAberta && (
+          <BoasVindas
+            key={usuarioIdAtual}
+            aoFechar={fecharBoasVindas}
+            isAdmin={isAdmin}
+            podeBolsistas={podeBolsistas}
+            rota={rota}
+            centros={centrosVisiveis}
+            onNavegar={navegarPara}
+          />
+        )}
         {renderizarPagina()}
         {analiseMontada && podeAnalise && !perfil.erro && (
-          <div hidden={!naAnalise}>
-            <Analise ativa={naAnalise} />
+          <div class="casca__analise" hidden={!naAnalise}>
+            <Analise key={usuarioIdAtual} ativa={naAnalise} centros={centrosVisiveis} />
           </div>
         )}
       </main>

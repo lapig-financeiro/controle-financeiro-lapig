@@ -174,7 +174,7 @@ describe('Documento', () => {
       />,
       document.body
     );
-    await tick();
+    await vi.waitFor(() => expect(document.querySelector('.documento__faixa')).not.toBeNull());
 
     expect(getDocumentMock).toHaveBeenCalledTimes(1);
     expect(getDocumentMock.mock.calls[0][0].isEvalSupported).toBe(false);
@@ -189,7 +189,6 @@ describe('Documento', () => {
     );
 
     const faixa = document.querySelector('.documento__faixa');
-    expect(faixa).not.toBeNull();
     const xAntes = faixa.style.getPropertyValue('--faixa-x');
     expect(xAntes).toMatch(/px$/);
 
@@ -197,10 +196,11 @@ describe('Documento', () => {
     const seletorZoom = document.querySelector('select[aria-label="Zoom do documento"]');
     seletorZoom.value = '1.5';
     seletorZoom.dispatchEvent(new Event('change', { bubbles: true }));
-    await tick();
-
-    const faixaDepoisZoom = document.querySelector('.documento__faixa');
-    expect(faixaDepoisZoom.style.getPropertyValue('--faixa-x')).not.toBe(xAntes);
+    await vi.waitFor(() => {
+      const faixaDepoisZoom = document.querySelector('.documento__faixa');
+      expect(faixaDepoisZoom).not.toBeNull();
+      expect(faixaDepoisZoom.style.getPropertyValue('--faixa-x')).not.toBe(xAntes);
+    });
 
     // Navega para página 1 e verifica botões desabilitados nos limites.
     const btnAnt = document.querySelector('button[aria-label="Página anterior"]');

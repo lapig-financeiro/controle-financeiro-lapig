@@ -30,7 +30,7 @@ export async function consultarManutencao(fetchImpl = globalThis.fetch, baseUrl 
   }
   try {
     const url = `${caminhoManutencao(baseUrl)}?t=${Date.now()}`;
-    const resposta = await fetchImpl(url, { cache: 'no-store' });
+    const resposta = await fetchImpl(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
     if (!resposta.ok) return { ativo: false, mensagem: '' };
     const json = await resposta.json();
     return interpretarManutencao(json);

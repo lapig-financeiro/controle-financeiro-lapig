@@ -18,11 +18,11 @@ export async function carregarPerfil(usuario) {
   const nomeMeta = usuario.user_metadata?.display_name || '';
 
   try {
-    const { data, error } = await supabase
-      .from('app_users')
-      .select('role, display_name, email')
-      .eq('user_id', usuario.id)
-      .maybeSingle();
+    const consultar = (colunas) => supabase.from('app_users').select(colunas).eq('user_id', usuario.id).maybeSingle();
+    const colunas = 'role, display_name, email';
+    let { data, error } = await consultar(`${colunas}, pode_bolsistas`);
+    // Antes de a migração entrar no ar, os outros acessos continuam disponíveis.
+    if (error?.code === '42703') ({ data, error } = await consultar(colunas));
 
     if (error) {
       return {
@@ -47,6 +47,7 @@ export async function carregarPerfil(usuario) {
       role: data.role || 'professor',
       nome: data.display_name || nomeMeta || data.email || emailPadrao,
       email: data.email || emailPadrao,
+      podeBolsistas: data.pode_bolsistas === true,
     };
   } catch {
     return {

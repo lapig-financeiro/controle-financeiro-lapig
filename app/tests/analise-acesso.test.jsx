@@ -9,6 +9,7 @@ const {
   resumoProjetosMock,
   pendenciasMock,
   salvarFiltroVisaoMock,
+  pedidoBolsasMock,
   consultarManutencaoMock,
   explicarLivreMock,
   origemMock,
@@ -22,6 +23,7 @@ const {
   resumoProjetosMock: vi.fn(),
   pendenciasMock: vi.fn(),
   salvarFiltroVisaoMock: vi.fn(),
+  pedidoBolsasMock: vi.fn(),
   consultarManutencaoMock: vi.fn(),
   explicarLivreMock: vi.fn(),
   origemMock: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock('../src/servicos/dados.js', () => ({
   resumoProjetos: resumoProjetosMock,
   pendencias: pendenciasMock,
   salvarFiltroVisao: salvarFiltroVisaoMock,
+  pedidoBolsas: pedidoBolsasMock,
   explicarLivre: explicarLivreMock,
   origem: origemMock,
   termosContrato: termosContratoMock,
@@ -63,6 +66,7 @@ vi.mock('../src/servicos/manutencao.js', () => ({
 import { App } from '../src/App.jsx';
 
 const tick = () => new Promise((resolver) => setTimeout(resolver, 25));
+const botao = (texto) => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === texto);
 
 async function esperarPor(condicao, tentativas = 120) {
   for (let i = 0; i < tentativas; i += 1) {
@@ -100,6 +104,7 @@ beforeEach(() => {
   resumoProjetosMock.mockReset();
   pendenciasMock.mockReset();
   salvarFiltroVisaoMock.mockReset();
+  pedidoBolsasMock.mockReset();
   consultarManutencaoMock.mockReset();
   explicarLivreMock.mockReset();
   origemMock.mockReset();
@@ -115,6 +120,55 @@ afterEach(() => {
 });
 
 describe('acesso à Análise', () => {
+  it('usa apenas um centro visível no exemplo e na sugestão', async () => {
+    carregarPerfilMock.mockResolvedValue({ erro: null, role: 'professor' });
+    const visivel = { id: 'visivel', code: '30.901' };
+    resumoProjetosMock.mockResolvedValue({
+      dados: { centros: [visivel], todos: [visivel, { id: 'oculto', code: '30.109' }] },
+      erro: null,
+    });
+    window.location.hash = '#/analise';
+    render(<App />, document.body);
+    const campo = await esperarPor(() => {
+      const elemento = document.querySelector('.analise__campo');
+      return elemento?.placeholder.includes('30.901') && elemento;
+    });
+    expect(campo.placeholder).toContain('30.901');
+    expect(document.querySelector('.analise__sugestoes').textContent).not.toContain('30.109');
+    botao('Quanto o centro 30.901 tem livre hoje, e de onde vem?').click();
+    await esperarPor(() => campo.value.includes('30.901'));
+    expect(campo.value).toContain('30.901');
+  });
+
+  it('ignora o perfil de uma sessão anterior que terminou de carregar após a troca de conta', async () => {
+    let resolverPerfilAntigo;
+    carregarPerfilMock.mockReturnValueOnce(new Promise((resolver) => { resolverPerfilAntigo = resolver; }));
+    carregarPerfilMock.mockResolvedValue({ erro: null, role: 'professor', nome: 'Conta nova' });
+    window.location.hash = '#/analise';
+    render(<App />, document.body);
+    await esperarPor(() => carregarPerfilMock.mock.calls.length === 1);
+    ouvinteAuth.atual('SIGNED_IN', { user: { id: 'u-2' } });
+    const avatarNovo = await esperarPor(() => document.querySelector('[aria-label="Menu do usuário Conta nova"]'));
+    expect(avatarNovo).not.toBeNull();
+    resolverPerfilAntigo({ erro: null, role: 'admin', nome: 'Conta antiga', podeBolsistas: true });
+    await tick();
+    expect(document.querySelector('a[href="#/admin"]')).toBeNull();
+    expect(document.querySelector('a[href="#/bolsistas"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Menu do usuário Conta nova"]')).not.toBeNull();
+  });
+
+  it('espera a primeira consulta de manutenção antes de mostrar a aplicação', async () => {
+    let resolverManutencao;
+    consultarManutencaoMock.mockReturnValue(new Promise((resolver) => { resolverManutencao = resolver; }));
+    carregarPerfilMock.mockResolvedValue({ erro: null, role: 'professor' });
+    window.location.hash = '#/projetos';
+    render(<App />, document.body);
+    await esperarPor(() => carregarPerfilMock.mock.calls.length === 1 && resolverManutencao);
+    expect(document.querySelector('.barra-topo')).toBeNull();
+    resolverManutencao({ ativo: true, mensagem: 'Atualização em andamento' });
+    expect(await esperarPor(() => document.body.textContent.includes('Atualização em andamento'))).toBe(true);
+    expect(document.querySelector('.barra-topo')).toBeNull();
+  });
   it('professor vê o item no menu e a rota #/analise renderiza a página', async () => {
     carregarPerfilMock.mockResolvedValue({
       erro: null,
@@ -232,12 +286,37 @@ describe('acesso à Análise', () => {
   });
 });
 
+describe('acesso à aba Bolsistas', () => {
+  it.each(['admin', 'professor'])('oculta o menu e bloqueia o link direto para %s sem permissão', async (role) => {
+    carregarPerfilMock.mockResolvedValue({ erro: null, role, podeBolsistas: false });
+    window.location.hash = '#/bolsistas';
+    render(<App />, document.body);
+    expect(await esperarPor(() => window.location.hash === '#/projetos')).toBe(true);
+    expect(document.querySelector('a[href="#/bolsistas"]')).toBeNull();
+    expect(document.querySelector('.bolsistas')).toBeNull();
+    expect(pedidoBolsasMock).not.toHaveBeenCalled();
+  });
+
+  it('abre a aba para a conta autorizada e inclui o passo no guia', async () => {
+    carregarPerfilMock.mockResolvedValue({ erro: null, role: 'professor', podeBolsistas: true });
+    pedidoBolsasMock.mockResolvedValue({ dados: { centros: [], bolsistas: [], caixas: [] }, erro: null });
+    window.localStorage.clear();
+    window.location.hash = '#/bolsistas';
+    render(<App />, document.body);
+    expect(await esperarPor(() => pedidoBolsasMock.mock.calls.length === 1)).toBe(true);
+    expect(window.location.hash).toBe('#/bolsistas');
+    expect(document.querySelector('a[href="#/bolsistas"]')).not.toBeNull();
+    (await esperarPor(() => botao('Iniciar tour'))).click();
+    expect(await esperarPor(() => document.body.textContent.includes('Passo 1 de 5'))).toBe(true);
+  });
+});
+
 describe('guia de primeiro acesso', () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
 
-  it('abre sozinho uma vez, não volta depois de "Entendi" e reabre pelo menu', async () => {
+  it('percorre as telas, pode ser concluído e reabre pelo menu', async () => {
     carregarPerfilMock.mockResolvedValue({
       erro: null,
       role: 'professor',
@@ -249,12 +328,19 @@ describe('guia de primeiro acesso', () => {
     render(<App />, document.body);
     const guia = await esperarPor(() => document.querySelector('.boas-vindas'));
     expect(guia).not.toBeNull();
-    // Professor não vê o passo do Admin.
-    expect(guia.textContent).toContain('Análise');
-    expect(guia.textContent).not.toContain('Quem vê qual centro');
-
-    const entendi = Array.from(guia.querySelectorAll('button')).find((b) => b.textContent.includes('Entendi'));
-    entendi.click();
+    botao('Iniciar tour').click();
+    await esperarPor(() => document.body.textContent.includes('Passo 1 de 4'));
+    expect(window.location.hash).toBe('#/projetos');
+    for (const titulo of ['Confira de onde vem o saldo livre', 'Acompanhe as pendências', 'Faça uma pergunta ao Assistente']) {
+      botao('Próximo').click();
+      expect(await esperarPor(() => document.querySelector('.boas-vindas h2')?.textContent === titulo)).toBe(true);
+    }
+    expect(window.location.hash).toBe('#/analise');
+    botao('Voltar').click();
+    await esperarPor(() => document.body.textContent.includes('Passo 3 de 4'));
+    botao('Próximo').click();
+    const concluir = await esperarPor(() => botao('Concluir'));
+    concluir.click();
     await esperarPor(() => !document.querySelector('.boas-vindas'));
     expect(document.querySelector('.boas-vindas')).toBeNull();
     expect(window.localStorage.getItem('cf_boas_vindas_u-1')).toBe('visto');
@@ -275,7 +361,7 @@ describe('guia de primeiro acesso', () => {
     expect(await esperarPor(() => document.querySelector('.boas-vindas'))).not.toBeNull();
   });
 
-  it('admin vê também o passo do Admin', async () => {
+  it('admin vê o passo extra de Admin', async () => {
     carregarPerfilMock.mockResolvedValue({
       erro: null,
       role: 'admin',
@@ -284,8 +370,8 @@ describe('guia de primeiro acesso', () => {
     });
     window.location.hash = '#/projetos';
     render(<App />, document.body);
-    const guia = await esperarPor(() => document.querySelector('.boas-vindas'));
-    expect(guia.textContent).toContain('Quem vê qual centro');
+    (await esperarPor(() => botao('Iniciar tour'))).click();
+    expect(await esperarPor(() => document.body.textContent.includes('Passo 1 de 5'))).toBe(true);
   });
 
   it('agente não recebe o guia', async () => {

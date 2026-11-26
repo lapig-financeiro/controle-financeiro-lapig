@@ -46,7 +46,7 @@ export function BarraTopo({
 
   const itensVisiveis = ITENS_MENU.filter((item) => {
     if (item.apenasAdmin) return isAdmin;
-    if (item.id === 'bolsistas') return isAdmin || Boolean(podeBolsistas);
+    if (item.id === 'bolsistas') return Boolean(podeBolsistas);
     if (item.id === 'analise') return isAdmin || Boolean(podeAnalise);
     return true;
   });

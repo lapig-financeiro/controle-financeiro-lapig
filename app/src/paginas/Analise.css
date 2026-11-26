@@ -49,6 +49,16 @@
   padding: var(--esp-3) var(--esp-4);
 }
 
+@media (max-width: 640px) {
+  .boas-vindas ~ .casca__analise .analise__conversa {
+    min-height: 0;
+  }
+
+  .boas-vindas ~ .casca__analise .analise__compositor {
+    position: static;
+  }
+}
+
 .analise__cabecalho-conversa {
   display: flex;
   flex-direction: column;

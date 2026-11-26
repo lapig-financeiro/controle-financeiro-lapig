@@ -299,8 +299,13 @@ export function Analise({
   renomearConversa = renomearConversaPadrao,
   excluirConversa = excluirConversaPadrao,
   ativa = true,
+  centros = [],
   agora = () => new Date(),
 } = {}) {
+  const centroExemplo = centros.find(({ code }) => typeof code === 'string' && code.trim())?.code.trim();
+  const perguntaExemplo = centroExemplo
+    ? `Quanto o centro ${centroExemplo} tem livre hoje, e de onde vem?`
+    : SUGESTOES[0];
   const campoId = useId();
   const [rascunhos, setRascunhos] = useState({});
   const [turnosPorConversa, setTurnosPorConversa] = useState({ [CHAVE_NOVA]: [] });
@@ -1781,7 +1786,7 @@ export function Analise({
                       class="analise__campo"
                       rows={2}
                       value={pergunta}
-                      placeholder="Ex.: Quanto o 30.109 tem livre hoje, e de onde vem?"
+                      placeholder={`Ex.: ${perguntaExemplo}`}
                       disabled={!podeDigitar}
                       onInput={(evento) =>
                         setRascunhos((prev) => ({
@@ -1835,7 +1840,7 @@ export function Analise({
 
                 {turnosAtivos.length === 0 && (
                   <div class="analise__sugestoes" aria-label="Sugestões de pergunta">
-                    {SUGESTOES.map((sugestao) => (
+                    {[perguntaExemplo, ...SUGESTOES.slice(1)].map((sugestao) => (
                       <Chip
                         key={sugestao}
                         onClick={() => {
