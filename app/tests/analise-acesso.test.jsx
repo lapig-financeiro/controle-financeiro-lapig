@@ -169,6 +169,26 @@ describe('acesso à Análise', () => {
     expect(await esperarPor(() => document.body.textContent.includes('Atualização em andamento'))).toBe(true);
     expect(document.querySelector('.barra-topo')).toBeNull();
   });
+
+  it('não recarrega durante manutenção quando uma nova consulta falha', async () => {
+    carregarPerfilMock.mockResolvedValue({ erro: null, role: 'professor' });
+    consultarManutencaoMock.mockResolvedValue({ ativo: true, mensagem: 'Manutenção confirmada' });
+    window.location.hash = '#/projetos';
+    render(<App />, document.body);
+    expect(await esperarPor(() => document.body.textContent.includes('Manutenção confirmada'))).toBe(true);
+
+    const recarregar = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+    try {
+      const consultasAntes = consultarManutencaoMock.mock.calls.length;
+      consultarManutencaoMock.mockResolvedValue({ ativo: false, mensagem: '', falhou: true });
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      expect(await esperarPor(() => consultarManutencaoMock.mock.calls.length > consultasAntes)).toBe(true);
+      expect(recarregar).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain('Manutenção confirmada');
+    } finally {
+      recarregar.mockRestore();
+    }
+  });
   it('professor vê o item no menu e a rota #/analise renderiza a página', async () => {
     carregarPerfilMock.mockResolvedValue({
       erro: null,
@@ -359,6 +379,9 @@ describe('guia de primeiro acesso', () => {
     );
     item.click();
     expect(await esperarPor(() => document.querySelector('.boas-vindas'))).not.toBeNull();
+    botao('Agora não').click();
+    expect(await esperarPor(() => !document.querySelector('.boas-vindas'))).toBe(true);
+    expect(document.activeElement).toBe(document.querySelector('.menu-usuario__avatar'));
   });
 
   it('admin vê o passo extra de Admin', async () => {

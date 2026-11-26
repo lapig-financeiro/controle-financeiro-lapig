@@ -22,7 +22,9 @@ export async function carregarPerfil(usuario) {
     const colunas = 'role, display_name, email';
     let { data, error } = await consultar(`${colunas}, pode_bolsistas`);
     // Antes de a migração entrar no ar, os outros acessos continuam disponíveis.
-    if (error?.code === '42703') ({ data, error } = await consultar(colunas));
+    if (error?.code === '42703' || error?.code === 'PGRST204') {
+      ({ data, error } = await consultar(colunas));
+    }
 
     if (error) {
       return {

@@ -23,4 +23,14 @@ A 076 foi testada em PostgreSQL descartável com contas sintéticas. Os roteiros
 
 Os testes da aplicação cobrem o centro sugerido, as rotas, o guia, a troca de conta e a manutenção. A navegação foi conferida no Edge em 360, 390 e 1280 px com dados de exemplo e sessões simuladas. O teste da faixa de origem em PDF, que falhou de forma intermitente sob carga, agora espera a renderização antes de comparar as coordenadas.
 
-A 076 segue o fluxo descrito em [Aplicar uma migração](../../aplicar-migracao.md). Depois de aplicar, conceder por ID apenas à conta indicada pelo Victor com a RPC administrativa `definir_acesso_bolsistas_v2`, seguindo o protocolo de escrita em produção. Conferir que há uma única concessão e validar a rota com uma conta autorizada e outra sem a permissão.
+A 076 segue o fluxo descrito em [Aplicar uma migração](../../aplicar-migracao.md). A migração é publicada primeiro para o ensaio. A v2 com a restrição entra na janela de manutenção em que a conta indicada for autorizada.
+
+Para conceder, conferir primeiro o ID da conta indicada e seu campo `pode_bolsistas` em `app_users`, sem copiar dados pessoais para o repositório. Em uma sessão autenticada de admin do Buriti, chamar `supabase.rpc('definir_acesso_bolsistas_v2', { p_user_id: idConferido, p_permitir: true })`. A RPC precisa do JWT da sessão, pois identifica quem autorizou a mudança. Para revogar a concessão, use `p_permitir: false`. Os dados do pedido ficam indisponíveis imediatamente pela API. O menu acompanha a permissão quando a conta recarrega o site. Conferir que há uma única concessão e validar a rota com uma conta autorizada e outra sem a permissão.
+
+## Revisão independente
+
+O DeepSeek V4.1 Flash Max revisou os 16 arquivos de `fd516ac` pelo OpenCode, em leitura de uma cópia do código versionado. A revisão conferiu os guardas, o escopo de centros, as permissões e os consumidores da Análise. O parecer apontou que o teste de perfil da aplicação não exercitava a consulta ao banco. O serviço passa a tolerar os dois códigos de coluna indisponível e o teste cobre ambos, além de acesso concedido e falha real de permissão.
+
+O guia devolve o foco ao avatar quando aberto pelo menu. A verificação de manutenção usa `AbortController` com limite de cinco segundos e preserva um aviso já confirmado durante uma falha de rede. A permissão de Bolsistas é da conta. Papéis técnicos são barrados enquanto estiverem ativos. Para encerrar o uso temporário da conta, revogue a permissão explicitamente.
+
+O DeepSeek fez uma segunda leitura dos ajustes e não apontou impedimento. A volta da manutenção exige o arquivo com `"ativo": false`, conforme o procedimento do cofre. A interface corrigida passou no lint, nos 390 testes da v2 e no build. O tour voltou a passar no Edge em computador e celular.

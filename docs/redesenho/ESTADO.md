@@ -37,7 +37,7 @@
 ## Onde está
 | Item | Situação |
 |---|---|
-| Revisão da v2 | **Corrigida localmente.** A Análise usa um centro visível nas sugestões. O guia acompanha a navegação pelas telas. Bolsistas passa a exigir permissão por conta, com a migração 076 preparada para o cofre. A publicação, o ensaio do cofre e a concessão à conta indicada aguardam os respectivos avais. [Relatório](relatorios/revisao-v2.md) |
+| Revisão da v2 | **Revisada pelo DeepSeek Max e testada localmente.** A Análise usa um centro visível nas sugestões, o guia acompanha a navegação e Bolsistas exige permissão por conta. A migração 076 foi publicada em `986e02a` para o ensaio `45911591317`. A interface nova entra na janela de aplicação e concessão à conta indicada. [Relatório](relatorios/revisao-v2.md) |
 | Plano, estética, tarefas F0-A/F0-B | escritos e revisados por dois DeepSeek (correções em README §7b) |
 | Identidade do Buriti | Pronta no worktree `redesenho/identidade-buriti`: símbolo em leque, logotipo Inter 600 em curvas, favicon e ícones de instalação, marca no topo, login, manutenção e catálogo do `/v2/`. Faltam a revisão do Claude e o ok do Victor para publicar. [Relatório](relatorios/identidade-buriti.md) |
 | F0-A — migração 062 (arquivos por centro) | **aplicada em produção em 18/11** (run 44406913645, "tudo bate"); manutenção desligada; admin segue vendo os 3 buckets. Falta só um teste real com login de professor quando houver um à mão. |

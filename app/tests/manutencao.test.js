@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { caminhoManutencao, consultarManutencao, interpretarManutencao } from '../src/servicos/manutencao.js';
 
 describe('manutencao', () => {
@@ -21,13 +21,33 @@ describe('manutencao', () => {
     expect(res.mensagem).toBe('O Buriti está em atualização. Volte em alguns minutos — não é preciso fazer nada.');
   });
 
-  it('não bloqueia quando fetch falha ou arquivo não existe', async () => {
+  it('distingue falha de rede, arquivo ausente e resposta inválida da liberação confirmada', async () => {
+    const falha = { ativo: false, mensagem: '', falhou: true };
     const falhaRede = await consultarManutencao(async () => {
       throw new Error('offline');
     });
-    expect(falhaRede).toEqual({ ativo: false, mensagem: '' });
+    expect(falhaRede).toEqual(falha);
 
     const naoEncontrado = await consultarManutencao(async () => ({ ok: false }));
-    expect(naoEncontrado).toEqual({ ativo: false, mensagem: '' });
+    expect(naoEncontrado).toEqual(falha);
+
+    const respostaInvalida = await consultarManutencao(async () => ({ ok: true, json: async () => ({}) }));
+    expect(respostaInvalida).toEqual(falha);
+
+    const respostaLiberada = await consultarManutencao(async () => ({ ok: true, json: async () => ({ ativo: false }) }));
+    expect(respostaLiberada).toEqual({ ativo: false, mensagem: '' });
+  });
+
+  it('encerra uma consulta sem resposta após cinco segundos', async () => {
+    vi.useFakeTimers();
+    try {
+      const pendente = consultarManutencao((_, { signal }) => new Promise((_resolver, rejeitar) => {
+        signal.addEventListener('abort', () => rejeitar(signal.reason), { once: true });
+      }));
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await pendente).toMatchObject({ falhou: true });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

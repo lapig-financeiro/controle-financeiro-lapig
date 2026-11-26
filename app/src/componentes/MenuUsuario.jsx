@@ -51,7 +51,7 @@ export function MenuUsuario({ usuario = null, isAdmin = false, onSair = null, on
               icone={CircleHelp}
               onClick={() => {
                 setAberto(false);
-                onAjuda();
+                onAjuda(gatilhoRef.current);
               }}
             >
               Como usar o site

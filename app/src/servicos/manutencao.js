@@ -22,19 +22,24 @@ export function interpretarManutencao(json) {
 
 /**
  * Lê `../manutencao.json` relativo a `import.meta.env.BASE_URL` sem cache.
- * Falha de rede ou arquivo ausente nunca bloqueia o site.
+ * Distingue uma liberação confirmada de uma consulta que falhou.
  */
 export async function consultarManutencao(fetchImpl = globalThis.fetch, baseUrl = import.meta.env.BASE_URL) {
-  if (typeof fetchImpl !== 'function') {
-    return { ativo: false, mensagem: '' };
-  }
+  const falha = { ativo: false, mensagem: '', falhou: true };
+  if (typeof fetchImpl !== 'function') return falha;
+
+  const controle = new AbortController();
+  const prazo = setTimeout(() => controle.abort(), 5000);
   try {
     const url = `${caminhoManutencao(baseUrl)}?t=${Date.now()}`;
-    const resposta = await fetchImpl(url, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
-    if (!resposta.ok) return { ativo: false, mensagem: '' };
+    const resposta = await fetchImpl(url, { cache: 'no-store', signal: controle.signal });
+    if (!resposta.ok) return falha;
     const json = await resposta.json();
+    if (typeof json?.ativo !== 'boolean') return falha;
     return interpretarManutencao(json);
   } catch {
-    return { ativo: false, mensagem: '' };
+    return falha;
+  } finally {
+    clearTimeout(prazo);
   }
 }

@@ -88,7 +88,7 @@ export function App() {
     const estado = await consultarManutencao();
     if (!montadoRef.current || gen !== genManutencaoRef.current) return;
     if (!estado.ativo && manutencaoAtivaRef.current) {
-      window.location.reload();
+      if (!estado.falhou) window.location.reload();
       return;
     }
     manutencaoAtivaRef.current = estado.ativo;
@@ -196,14 +196,18 @@ export function App() {
 
   // Guia de primeiro acesso: abre sozinho uma vez por login (neste navegador).
   const [boasVindasAberta, setBoasVindasAberta] = useState(false);
+  const gatilhoBoasVindasRef = useRef(null);
   const usuarioIdAtual = usuario?.id || null;
   useEffect(() => {
     // Troca de login (ou saída) fecha o guia do anterior; o novo decide por si.
+    gatilhoBoasVindasRef.current = null;
     setBoasVindasAberta(Boolean(contaDeGente && usuarioIdAtual && !boasVindasVista(usuarioIdAtual)));
   }, [contaDeGente, usuarioIdAtual]);
   const fecharBoasVindas = useCallback(() => {
     if (usuarioIdAtual) marcarBoasVindasVista(usuarioIdAtual);
     setBoasVindasAberta(false);
+    gatilhoBoasVindasRef.current?.focus();
+    gatilhoBoasVindasRef.current = null;
   }, [usuarioIdAtual]);
 
   const carregarResumo = useCallback(async () => {
@@ -466,7 +470,10 @@ export function App() {
             ? () => navegarPara('#/projetos')
             : sair
         }
-        onAjuda={contaDeGente ? () => setBoasVindasAberta(true) : null}
+        onAjuda={contaDeGente ? (gatilho) => {
+          gatilhoBoasVindasRef.current = gatilho;
+          setBoasVindasAberta(true);
+        } : null}
         onNavegar={navegarPara}
       />
       <main>
