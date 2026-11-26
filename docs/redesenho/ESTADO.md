@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 26/11/2026 (071 `analise_uso` aplicada; Edge Function da Análise publicada, com um corte de stream ainda sem causa).
+Última atualização: 26/11/2026 (071 `analise_uso` aplicada; Edge Function da Análise publicada, cortada uma vez por CPU).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -182,8 +182,10 @@ de todos os centros de uma vez (Etapa 2). Testes: Worker 168, raiz 858, lint ver
 sem login, CORS do site ok, `OLLAMA_API_KEY` presente. Perguntas reais com o login do Victor: uma de um centro
 (3 rodadas, 16 s) e uma "em todos os centros" (6 rodadas, 18 consultas, 36,5 s) terminaram com `fim`, eventos chegando
 aos poucos (o gateway não junta o SSE) e o ping passando; o contador da 071 deixou passar. **Mas a primeira tentativa
-da pergunta "em todos os centros" teve o stream fechado aos 5,5 s, depois de 11 consultas, sem `fim` nem `erro`**: causa
-ainda não vista (suspeita: teto de CPU de 2 s ou de memória do runtime); falta ler o log da função no painel do Supabase.
+da pergunta "em todos os centros" teve o stream fechado aos 5,5 s, depois de 11 consultas, sem `fim` nem `erro`**: o log da
+função diz **`CPU Time exceeded`** (teto de 2 s de CPU). Essa requisição rodou na mesma instância da pergunta anterior
+(um só `booted` para as duas); a repetição, que passou, caiu numa instância nova. Falta medir na bancada quanto CPU o
+núcleo gasta por pergunta e onde (JSON das RPCs, máscara, validação dos blocos) antes de decidir a correção.
 `request.signal` na desconexão não foi provado. O Worker da Cloudflare segue publicado até a troca. A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
 
 **Próximo passo, nesta ordem:**
