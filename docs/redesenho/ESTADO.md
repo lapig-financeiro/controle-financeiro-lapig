@@ -243,10 +243,13 @@ servidor só na Edge; tela com lista de conversas, conversa contínua, "Nova con
 "parada de um dia para o outro abre nova com Continuar", "Respondida em …" e nota de origem em turno de outro dia.
 A 073 ficou absorvida pela 075; a 072 segue reservada para a projeção. Conferido pelo Claude: gates (raiz 933, worker
 211, app 365, builds `app` e `edge`, PGlite 075 com 8 mutantes e 074 verdes), RPCs da 075 linha a linha e a tela no
-modo exemplo em 1280×800 e 375×812. Relatório `relatorios/analise-historico.md`. **Não aplicado nem publicado.** Site,
-Edge e 075 precisam entrar **juntos**, numa janela com `manutencao.json` ligado (a Edge em produção chama a
-`concluir` antiga, que a 075 derruba): push no master com a manutenção ligada → cofre ensaia → ok do Victor → aplicar
-→ publicar a Edge → uma pergunta real com `terminada_em` e `desfecho = 'ok'` → desligar a manutenção.
+modo exemplo em 1280×800 e 375×812. Relatório `relatorios/analise-historico.md`. **No ar em 26/11** com o ok do Victor: o Claude corrigiu antes o
+backfill (id da conversa por `md5`, regra do cofre), o MiniMax aprovou o SQL final, e a 075 foi aplicada pelo cofre
+(aplicar 45883799963, "Tudo bate") com a manutenção ligada. A Edge foi republicada na mesma janela. Conferência: sem
+login tudo dá 401, e uma pergunta real de continuação ("E quanto disso está em Pessoal?") entendeu o 30.109 da pergunta
+anterior e voltou do banco depois de recarregar, como 2º turno. Isso prova a conclusão pela `service_role`.
+**Pendente antes de abrir a Análise para professores**: esconder conversas de centros a que a pessoa perdeu acesso.
+Limite registrado: conversas de conta removida ficam no banco (não há FK para `auth.users`).
 
 **Próximo passo, nesta ordem:**
 1. As 5 perguntas reais do Victor na tela publicada (anotar aqui o que ele estranhar).
