@@ -16,7 +16,7 @@ import './Admin.css';
 const ROTULOS_PAPEL = {
   admin: 'Admin',
   professor: 'Professor',
-  agente: 'Buriti (IA)',
+  agente: 'Assistente (IA)',
   automacao: 'Automação',
 };
 

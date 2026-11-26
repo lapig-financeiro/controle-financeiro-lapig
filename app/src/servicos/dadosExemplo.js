@@ -3299,7 +3299,7 @@ let usuariosAcessosExemplo = [
   },
   {
     user_id: 'exemplo-agente',
-    nome: 'Buriti',
+    nome: 'Assistente',
     email: 'buriti.exemplo@example.org',
     role: 'agente',
     criado_em: '2026-04-01T08:00:00Z',

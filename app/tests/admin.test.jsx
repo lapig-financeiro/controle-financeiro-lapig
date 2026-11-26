@@ -73,7 +73,7 @@ const USUARIOS_TESTE = [
   },
   {
     user_id: 'u-agente',
-    nome: 'Buriti',
+    nome: 'Assistente',
     email: 'buriti@example.org',
     role: 'agente',
     criado_em: '2026-02-10T10:00:00Z',
@@ -159,7 +159,7 @@ describe('página Admin — lista, ordem e rótulos', () => {
       'Bruno Professor',
       'Carla Professora',
       'Ana Admin',
-      'Buriti',
+      'Assistente',
       'Robô Ingestão',
     ]);
 
@@ -178,11 +178,11 @@ describe('página Admin — lista, ordem e rótulos', () => {
     expect(linhaAna.textContent).toContain('Admin');
     expect(linhaAna.textContent).toContain('todos os centros');
 
-    const linhaBuriti = linhaPorNome('Buriti');
-    expect(linhaBuriti.textContent).toContain('Buriti (IA)');
-    expect(linhaBuriti.textContent).toContain('2 centros · 30.901, 30.902');
-    expect(linhaBuriti.querySelector('button')).toBeNull();
-    expect(linhaBuriti.textContent).toContain('Muda só pelo banco, de propósito');
+    const linhaAssistente = linhaPorNome('Assistente');
+    expect(linhaAssistente.textContent).toContain('Assistente (IA)');
+    expect(linhaAssistente.textContent).toContain('2 centros · 30.901, 30.902');
+    expect(linhaAssistente.querySelector('button')).toBeNull();
+    expect(linhaAssistente.textContent).toContain('Muda só pelo banco, de propósito');
 
     const linhaRobo = linhaPorNome('Robô Ingestão');
     expect(linhaRobo.textContent).toContain('Automação');
@@ -832,7 +832,7 @@ describe('serviço de acessos e modo exemplo', () => {
     render(<Admin usuarioId="u-admin-1" />, document.body);
     await esperarPor(() => linhasTabela().length > 0);
 
-    expect(linhaPorNome('Buriti').querySelector('.tabela__gatilho')).toBeNull();
+    expect(linhaPorNome('Assistente').querySelector('.tabela__gatilho')).toBeNull();
     expect(linhaPorNome('Robô Ingestão').querySelector('.tabela__gatilho')).toBeNull();
 
     const gatilho = linhaPorNome('Carla Professora').querySelector('.tabela__gatilho');

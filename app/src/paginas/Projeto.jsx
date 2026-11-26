@@ -48,7 +48,7 @@ import './Projeto.css';
 
 const ROTULOS_ORIGEM = {
   sistema: 'Sistema',
-  buriti: 'Buriti',
+  buriti: 'Assistente',
   claude: 'Claude',
   pessoa: 'Pessoa',
 };

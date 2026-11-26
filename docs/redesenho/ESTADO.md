@@ -288,10 +288,11 @@ Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeç
 ## Pendências com o Victor
 - Ordem dos próximos passos (acima). A projeção por rubrica foi decidida e publicada em 23/11 (esboços em
   `NãoColocarNoGit/esbocos/`); vocabulário da tela: **desembolso**, não "parcela" nem "repasse".
-- Nome da IA depois que o sistema virar "Buriti" (23/11). Hoje "Buriti" é o papel `agente`, o rótulo "Buriti (IA)"
-  da tela Admin e as "pendências do Buriti"; na prática quem lê os e-mails e cadastra é o Claude, e as notas da
-  atualização de documentos já saem como "Claude". Opção na mesa: a IA passa a se chamar pelo nome do modelo
-  ("Claude") ou "assistente", e o papel `agente` fica como está no banco.
+- ~~Nome da IA~~ **Decidido em 26/11: "Assistente".** "Buriti" é só o sistema. No `/v2/` já trocados o rótulo
+  "Assistente (IA)" do Admin e a origem "Assistente" das pendências. Ficam para o corte (saem com o site antigo
+  ou viram outra coisa): a página "Buriti" do site antigo e os títulos/textos das tools do MCP ("Propor balancete
+  (Buriti)", "página Buriti do site"). Chaves internas não mudam: papel `agente`, executor `buriti`, arquivos
+  `mcp/src/buriti*.js`. Falta o Victor dizer se troca o **nome do login** do agente em `app_users` (dado no banco).
 - Equipe (Pastagem/Alertas/Solos) de quem ficou sem: inspeção, estatístico e VANT (4), as duas gestoras de
   R$ 5.200 e 5 pessoas fora do plano do 30.111.
 - Teto opcional para a tarifa bancária virar "atenção" (hoje vale qualquer valor, desde que o negativo caiba nela).
