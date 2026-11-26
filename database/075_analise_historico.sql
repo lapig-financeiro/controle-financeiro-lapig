@@ -118,7 +118,9 @@ with novos as (
          r.iniciada_em   as iniciada_em,
          coalesce(r.terminada_em, r.iniciada_em) as atualizada_em,
          btrim(left(btrim(regexp_replace(btrim(r.pergunta), '\s+', ' ', 'g')), 80)) as titulo,
-         gen_random_uuid() as conversa
+         -- Id determinístico (regra do cofre: ensaio e produção têm de gerar
+         -- a mesma linha; como a 059). Derivado do id do registro.
+         md5('lapig:analise_conversa:' || r.id::text)::uuid as conversa
     from public.analise_registro r
    where r.conversa_id is null
 ), criadas as (

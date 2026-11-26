@@ -357,3 +357,11 @@ resposta. Esta rodada mexeu só em CSS/marcação, sem revisor (como pedido).
 - A barra do topo a 390 px ainda corta o item "Admin"/sino/avatar com quatro
   links, filtro e usuário (é anterior a esta tarefa e vale para as outras telas;
   não mexi no componente compartilhado).
+
+## 7. Fechamento pelo Claude (26/11)
+
+Antes de ensaiar no cofre, o Claude achou que o backfill gerava o id da conversa com `gen_random_uuid()`. O cofre
+recusa isso: ensaio e produção gerariam linhas diferentes e a conferência dentro da transação desfaria a migração
+(`docs/aplicar-migracao.md`, "Para passar no cofre"). O id agora é `md5('lapig:analise_conversa:' || registro)::uuid`,
+o padrão da 059, e o `rodar-075-pglite.mjs` prova o id determinístico. A prova reprova a versão antiga, conferido
+trocando de volta.

@@ -257,7 +257,8 @@ async function main() {
              c.atualizada_em,
              r.iniciada_em,
              r.terminada_em,
-             length(c.titulo) as titulo_chars
+             length(c.titulo) as titulo_chars,
+             (r.conversa_id = md5('lapig:analise_conversa:' || r.id::text)::uuid) as id_deterministico
         from public.analise_registro r
         join public.analise_conversa c on c.id = r.conversa_id
        order by r.id
@@ -265,6 +266,9 @@ async function main() {
     exigir(backfill.length === 2, `backfill: esperava 2 registros ligados, vieram ${backfill.length}`);
     for (const linha of backfill) {
       exigir(linha.ordem === 1, `backfill: registro ${linha.id} ficou com ordem ${linha.ordem}`);
+      // Regra do cofre: o ensaio e a produção têm de gerar a mesma conversa.
+      exigir(linha.id_deterministico === true,
+        `backfill: conversa de ${linha.id} sem id determinístico (gen_random_uuid quebra o cofre)`);
       exigir(linha.titulo_chars <= 80, `backfill: título com ${linha.titulo_chars} caracteres`);
       exigir(linha.user_id === (linha.id === '00000000-0000-0000-0000-0000000000b2' ? B1 : A1),
         `backfill: conversa de ${linha.id} com dono errado`);
