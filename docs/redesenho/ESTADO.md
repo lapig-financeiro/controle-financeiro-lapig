@@ -231,6 +231,23 @@ produção pegou "Realizado" mostrando o previsto (o modelo usava a linha do pla
 célula vazia (`null` → "—") e a trava de folha repetida na linha, e o negrito `**` literal, retirado no servidor.
 Ver o relatório.
 
+**Histórico de conversas (26/11)**: branch `redesenho/analise-historico` (worktree `C:/Users/amara/dev/cf-analise-historico`),
+tarefa `tarefas/analise-historico.md`. DeepSeek V4.1 Flash max construiu (pedido do Victor) e chamou o subagente MiniMax
+3.1 Flash max no opencode para revisar (conferido no banco do opencode: `minimax-m3.1-flash:cloud`, variant `max`): sem
+achado alto, 10 achados tratados (ver relatório). 2ª rodada pedida pelo Claude: layout da conversa (a página rola, campo
+compacto fixo no rodapé). Entrega: migração **075** (`analise_conversa`, backfill de cada registro antigo numa conversa,
+fim da limpeza de 180 dias, `iniciar` com conversa e ordem, conclusão só por `service_role` via
+`analise_registro_concluir_servidor`, RPCs `analise_conversas_listar`/`_ler`/`_renomear`/`_excluir` só do dono),
+núcleo com `conversa` no corpo, `inicio` com conversa/ordem, `blocos` nos anteriores e fechamento com a credencial de
+servidor só na Edge; tela com lista de conversas, conversa contínua, "Nova conversa", rascunho por conversa, regra
+"parada de um dia para o outro abre nova com Continuar", "Respondida em …" e nota de origem em turno de outro dia.
+A 073 ficou absorvida pela 075; a 072 segue reservada para a projeção. Conferido pelo Claude: gates (raiz 933, worker
+211, app 365, builds `app` e `edge`, PGlite 075 com 8 mutantes e 074 verdes), RPCs da 075 linha a linha e a tela no
+modo exemplo em 1280×800 e 375×812. Relatório `relatorios/analise-historico.md`. **Não aplicado nem publicado.** Site,
+Edge e 075 precisam entrar **juntos**, numa janela com `manutencao.json` ligado (a Edge em produção chama a
+`concluir` antiga, que a 075 derruba): push no master com a manutenção ligada → cofre ensaia → ok do Victor → aplicar
+→ publicar a Edge → uma pergunta real com `terminada_em` e `desfecho = 'ok'` → desligar a manutenção.
+
 **Próximo passo, nesta ordem:**
 1. As 5 perguntas reais do Victor na tela publicada (anotar aqui o que ele estranhar).
 2. Resto da Etapa 2: 072 `projecao_bolsas_v2` (porta `app/src/servicos/projecao.js` para SQL) e a
