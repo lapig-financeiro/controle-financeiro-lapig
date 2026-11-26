@@ -53,6 +53,10 @@ function centroValido(centro) {
     (centro.pendencias_abertas === undefined ||
       centro.pendencias_abertas === null ||
       numeroOuNulo(centro.pendencias_abertas) !== null) &&
+    (centro.responsaveis === undefined ||
+      centro.responsaveis === null ||
+      (Array.isArray(centro.responsaveis) &&
+        centro.responsaveis.every((responsavel) => typeof responsavel === 'string'))) &&
     (centro.motivos === undefined ||
       (Array.isArray(centro.motivos) && centro.motivos.every(motivoValido)))
   );
@@ -106,6 +110,7 @@ export async function executar(ctx) {
       vigencia: null,
       data_referencia: null,
       pendencias_abertas: null,
+      responsaveis: [],
       motivos: [],
     };
 
@@ -129,6 +134,19 @@ export async function executar(ctx) {
       );
       item.falha_motivos = noFalhaMotivos.id;
       nos.push(noFalhaMotivos);
+    }
+
+    for (const responsavel of centro.responsaveis ?? []) {
+      const marcador = ctx.mascara.nome(responsavel);
+      if (!marcador) continue;
+      const noResponsavel = registrarTexto(
+        ctx,
+        marcador,
+        `Responsável — ${codigo}`,
+        semDocumento('responsável cadastrado no projeto', consulta)
+      );
+      item.responsaveis.push(noResponsavel.id);
+      nos.push(noResponsavel);
     }
 
     const livre = numeroOuNulo(centro.livre);

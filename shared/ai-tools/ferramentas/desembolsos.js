@@ -2,10 +2,16 @@
 //
 // A parcela do plano não carrega ref hoje; a origem honesta é sem_documento.
 // Se uma linha trouxer ref (formato previsto no contrato), ela vira `ref`.
+//
+// Com `project_id`, consulta um centro (comportamento original). Sem
+// `project_id`, consulta todos os centros visíveis em paralelo e devolve um
+// único `{ centros, nos }`: a falha de um centro fica registrada nele e nunca
+// vira zero nem derruba os outros.
 
 import {
   chamarRpc,
   formatoInesperado,
+  mensagemRpc,
   mini,
   numeroOuNulo,
   origemRef,
@@ -53,47 +59,79 @@ function parcelaValida(parcela) {
   );
 }
 
+/**
+ * `recursos` em si precisa ser objeto (ou ausente). Campo individual
+ * malformado (`recebido: "N/A"`, `rendimento_bruto: {}`) é ignorado na hora de
+ * registrar e fica `null`, nunca `0`, sem derrubar a ferramenta inteira (M15).
+ */
 function recursosValidos(recursos) {
-  if (recursos === undefined || recursos === null) return true;
-  if (typeof recursos !== 'object' || Array.isArray(recursos)) return false;
   return (
-    (recursos.recebido === undefined || recursos.recebido === null || numeroOuNulo(recursos.recebido) !== null) &&
-    (recursos.a_receber === undefined || recursos.a_receber === null || numeroOuNulo(recursos.a_receber) !== null) &&
-    (recursos.rendimento_bruto === undefined ||
-      recursos.rendimento_bruto === null ||
-      numeroOuNulo(recursos.rendimento_bruto) !== null) &&
-    (recursos.rendimento_liquido === undefined ||
-      recursos.rendimento_liquido === null ||
-      numeroOuNulo(recursos.rendimento_liquido) !== null)
+    recursos === undefined ||
+    recursos === null ||
+    (typeof recursos === 'object' && !Array.isArray(recursos))
   );
 }
 
-export async function executar(ctx, args) {
-  const resolvido = await ctx.resolverCentro(args && args.project_id);
-  if (resolvido.erro) return resolvido;
-  const centro = resolvido.centro;
+function dadosValidos(dados) {
+  return (
+    dados &&
+    typeof dados === 'object' &&
+    !Array.isArray(dados) &&
+    Array.isArray(dados.parcelas) &&
+    dados.parcelas.every(parcelaValida) &&
+    (dados.valor_total_plano === undefined ||
+      dados.valor_total_plano === null ||
+      numeroOuNulo(dados.valor_total_plano) !== null) &&
+    (dados.data_balancete === undefined ||
+      dados.data_balancete === null ||
+      typeof dados.data_balancete === 'string') &&
+    recursosValidos(dados.recursos)
+  );
+}
 
-  const resposta = await chamarRpc(ctx, 'get_repasses_v2', { p_project_id: centro.id });
-  if (resposta.erro) return { erro: resposta.erro };
-  const dados = resposta.dados;
-  if (
-    !dados ||
-    typeof dados !== 'object' ||
-    !Array.isArray(dados.parcelas) ||
-    !dados.parcelas.every(parcelaValida) ||
-    (dados.valor_total_plano !== undefined &&
-      dados.valor_total_plano !== null &&
-      numeroOuNulo(dados.valor_total_plano) === null) ||
-    (dados.data_balancete !== undefined &&
-      dados.data_balancete !== null &&
-      typeof dados.data_balancete !== 'string') ||
-    !recursosValidos(dados.recursos)
-  ) {
-    return formatoInesperado('get_repasses_v2');
+/**
+ * Um registrador por chamada de ferramenta: o mesmo valor com o mesmo rótulo
+ * vira um nó só, e todos os centros compartilham a numeração do resultado.
+ */
+function criarRegistradorUnico(ctx) {
+  const feitos = new Map();
+
+  function unico(unidade, valor, rotulo, origem, registrar) {
+    const motivo = origem && typeof origem === 'object' ? String(origem.motivo ?? '') : '';
+    const chave = `${unidade}\u0000${rotulo}\u0000${String(valor)}\u0000${motivo}`;
+    if (feitos.has(chave)) return feitos.get(chave);
+    const no = registrar();
+    if (no) feitos.set(chave, no);
+    return no;
   }
 
-  await ctx.mascara.garantirDicionario();
+  return {
+    texto: (valor, rotulo, origem) =>
+      unico('texto', valor, rotulo, origem, () => registrarTexto(ctx, valor, rotulo, origem)),
+    data: (valor, rotulo, origem) =>
+      unico('data', valor, rotulo, origem, () => registrarData(ctx, valor, rotulo, origem)),
+    moeda: (valor, rotulo, origem) =>
+      unico('moeda', valor, rotulo, origem, () => registrarMoeda(ctx, valor, rotulo, origem)),
+    numero: (valor, rotulo, origem) =>
+      unico('numero', valor, rotulo, origem, () => registrarNumero(ctx, valor, rotulo, origem)),
+  };
+}
 
+function centroValido(centro) {
+  return (
+    centro &&
+    typeof centro === 'object' &&
+    !Array.isArray(centro) &&
+    typeof centro.id === 'string' &&
+    centro.id !== '' &&
+    typeof centro.code === 'string' &&
+    typeof centro.name === 'string'
+  );
+}
+
+/** Monta os nós de um centro; em modo multi-centro o rótulo leva o código. */
+function montarCentro(ctx, dados, { sufixo = null, registrar }) {
+  const rotulo = (base) => (sufixo ? `${base} — ${sufixo}` : base);
   const nos = [];
   const parcelas = [];
 
@@ -107,7 +145,7 @@ export async function executar(ctx, args) {
     const saida = { parcela: null, data: null, data_texto: null, valor: null, valor_texto: null };
 
     if (typeof numeroParcela === 'number' && Number.isFinite(numeroParcela)) {
-      const no = registrarNumero(ctx, numeroParcela, `Parcela ${numeroParcela}`, origemParcela);
+      const no = registrar.numero(numeroParcela, rotulo(`Parcela ${numeroParcela}`), origemParcela);
       if (no) {
         saida.parcela = no.id;
         nos.push(no);
@@ -115,10 +153,9 @@ export async function executar(ctx, args) {
     }
 
     if (parcela.data_prevista) {
-      const no = registrarData(
-        ctx,
+      const no = registrar.data(
         parcela.data_prevista,
-        `Data prevista — parcela ${numeroParcela ?? '?'}`,
+        rotulo(`Data prevista — parcela ${numeroParcela ?? '?'}`),
         origemParcela
       );
       if (no) {
@@ -128,10 +165,9 @@ export async function executar(ctx, args) {
     }
 
     if (parcela.data_texto) {
-      const no = registrarTexto(
-        ctx,
+      const no = registrar.texto(
         parcela.data_texto,
-        `Data descrita — parcela ${numeroParcela ?? '?'}`,
+        rotulo(`Data descrita — parcela ${numeroParcela ?? '?'}`),
         origemParcela
       );
       saida.data_texto = no.id;
@@ -140,10 +176,9 @@ export async function executar(ctx, args) {
 
     const valorParcela = numeroOuNulo(parcela.valor);
     if (valorParcela !== null) {
-      const no = registrarMoeda(
-        ctx,
+      const no = registrar.moeda(
         valorParcela,
-        `Valor — parcela ${numeroParcela ?? '?'}`,
+        rotulo(`Valor — parcela ${numeroParcela ?? '?'}`),
         origemValor
       );
       if (no) {
@@ -153,10 +188,9 @@ export async function executar(ctx, args) {
     }
 
     if (parcela.valor_texto) {
-      const no = registrarTexto(
-        ctx,
+      const no = registrar.texto(
         parcela.valor_texto,
-        `Valor descrito — parcela ${numeroParcela ?? '?'}`,
+        rotulo(`Valor descrito — parcela ${numeroParcela ?? '?'}`),
         origemValor
       );
       saida.valor_texto = no.id;
@@ -166,18 +200,16 @@ export async function executar(ctx, args) {
     parcelas.push(saida);
   }
 
-  const total = registrarMoeda(
-    ctx,
+  const total = registrar.moeda(
     dados.valor_total_plano,
-    'Valor total do plano',
+    rotulo('Valor total do plano'),
     semDocumento('valor total do plano ativo', 'get_repasses_v2')
   );
   if (total) nos.push(total);
 
-  const dataBalancete = registrarData(
-    ctx,
+  const dataBalancete = registrar.data(
     dados.data_balancete,
-    'Balancete de referência',
+    rotulo('Balancete de referência'),
     semDocumento('data do balancete vigente', 'get_repasses_v2')
   );
   if (dataBalancete) nos.push(dataBalancete);
@@ -187,31 +219,24 @@ export async function executar(ctx, args) {
   let rendimentoBruto = null;
   let rendimentoLiquido = null;
   if (dados.recursos && typeof dados.recursos === 'object') {
-    const noRecebido = registrarMoeda(
-      ctx,
+    const noRecebido = registrar.moeda(
       dados.recursos.recebido,
-      'Recursos recebidos',
+      rotulo('Recursos recebidos'),
       semDocumento('recursos lidos do balancete vigente', 'get_repasses_v2')
     );
-    const noAReceber = registrarMoeda(
-      ctx,
+    const noAReceber = registrar.moeda(
       dados.recursos.a_receber,
-      'Recursos a receber',
+      rotulo('Recursos a receber'),
       semDocumento('recursos lidos do balancete vigente', 'get_repasses_v2')
     );
-    const noRendimentoBruto = registrarMoeda(
-      ctx,
+    const noRendimentoBruto = registrar.moeda(
       dados.recursos.rendimento_bruto,
-      'Rendimento bruto de aplicação',
-      semDocumento(
-        'rendimento bruto de aplicação lido do balancete vigente',
-        'get_repasses_v2'
-      )
+      rotulo('Rendimento bruto de aplicação'),
+      semDocumento('rendimento bruto de aplicação lido do balancete vigente', 'get_repasses_v2')
     );
-    const noRendimentoLiquido = registrarMoeda(
-      ctx,
+    const noRendimentoLiquido = registrar.moeda(
       dados.recursos.rendimento_liquido,
-      'Rendimento líquido de aplicação',
+      rotulo('Rendimento líquido de aplicação'),
       semDocumento(
         'rendimento líquido lido do balancete vigente; já incluído no saldo disponível, não somar',
         'get_repasses_v2'
@@ -236,7 +261,7 @@ export async function executar(ctx, args) {
   }
 
   return {
-    paraModelo: {
+    item: {
       parcelas,
       valor_total_plano: total ? total.id : null,
       data_balancete: dataBalancete ? dataBalancete.id : null,
@@ -249,7 +274,107 @@ export async function executar(ctx, args) {
               rendimento_liquido: rendimentoLiquido,
             }
           : null,
-      nos: nos.map(mini),
     },
+    nos,
   };
+}
+
+async function executarUmCentro(ctx, projectId) {
+  const resolvido = await ctx.resolverCentro(projectId);
+  if (resolvido.erro) return resolvido;
+  const centro = resolvido.centro;
+
+  const resposta = await chamarRpc(ctx, 'get_repasses_v2', { p_project_id: centro.id });
+  if (resposta.erro) return { erro: resposta.erro };
+  if (!dadosValidos(resposta.dados)) return formatoInesperado('get_repasses_v2');
+
+  await ctx.mascara.garantirDicionario();
+
+  const registrar = criarRegistradorUnico(ctx);
+  const { item, nos } = montarCentro(ctx, resposta.dados, { registrar });
+  return { paraModelo: { ...item, nos: nos.map(mini) } };
+}
+
+async function executarTodosCentros(ctx) {
+  let dadosCentros;
+  try {
+    dadosCentros = await ctx.carregarCentros();
+  } catch (erro) {
+    return {
+      erro: erro && erro.message ? erro.message : 'Não foi possível carregar os centros. (http_4xx)',
+    };
+  }
+  if (
+    !dadosCentros ||
+    !Array.isArray(dadosCentros.centros) ||
+    !dadosCentros.centros.every(centroValido)
+  ) {
+    return formatoInesperado('resumo_projetos_v2');
+  }
+
+  await ctx.mascara.garantirDicionario();
+
+  const registrar = criarRegistradorUnico(ctx);
+  const consulta = 'resumo_projetos_v2';
+  const respostas = await Promise.all(
+    dadosCentros.centros.map((centro) =>
+      chamarRpc(ctx, 'get_repasses_v2', { p_project_id: centro.id })
+    )
+  );
+
+  const nos = [];
+  const centros = [];
+  let falhas = 0;
+  let primeiroErro = null;
+
+  for (let indice = 0; indice < dadosCentros.centros.length; indice += 1) {
+    const centro = dadosCentros.centros[indice];
+    const nomeCentro = ctx.mascara.texto(centro.name);
+    const sufixo = centro.code;
+    const noCodigo = registrar.texto(
+      centro.code,
+      `Código — ${nomeCentro}`,
+      semDocumento('cadastro do projeto', consulta)
+    );
+    const noNome = registrar.texto(
+      nomeCentro,
+      `Nome do centro ${centro.code}`,
+      semDocumento('cadastro do projeto', consulta)
+    );
+    nos.push(noCodigo, noNome);
+
+    const resposta = respostas[indice];
+    let erro = resposta.erro;
+    if (!erro && !dadosValidos(resposta.dados)) {
+      erro = `${mensagemRpc('get_repasses_v2')} (formato)`;
+    }
+    if (erro) {
+      falhas += 1;
+      if (!primeiroErro) primeiroErro = erro;
+      centros.push({ codigo: noCodigo.id, nome: noNome.id, erro });
+      continue;
+    }
+
+    const { item, nos: nosDoCentro } = montarCentro(ctx, resposta.dados, {
+      sufixo,
+      registrar,
+    });
+    nos.push(...nosDoCentro);
+    centros.push({ codigo: noCodigo.id, nome: noNome.id, ...item });
+  }
+
+  if (centros.length > 0 && falhas === centros.length) {
+    return { erro: primeiroErro ?? `${mensagemRpc('get_repasses_v2')} (formato)` };
+  }
+
+  const nosUnicos = [...new Map(nos.map((no) => [no.id, no])).values()];
+  return { paraModelo: { centros, nos: nosUnicos.map(mini) } };
+}
+
+export async function executar(ctx, args) {
+  const projectId = args && args.project_id;
+  if (projectId === undefined || projectId === null || projectId === '') {
+    return executarTodosCentros(ctx);
+  }
+  return executarUmCentro(ctx, projectId);
 }

@@ -89,11 +89,11 @@ Ferramentas da Etapa 1 (só leitura; nenhuma conta de negócio no pacote):
 
 | Ferramenta | RPC | Origem dos números |
 |---|---|---|
-| `listar_centros` | `resumo_projetos_v2` | livre → `livre`; vigência → `sem_documento` ou `termo` quando houver |
+| `listar_centros` | `resumo_projetos_v2` | livre → `livre`; vigência, situação, motivos e responsáveis → `sem_documento` (responsável com o nome mascarado, ⟦Pn⟧) |
 | `explicar_livre` (`project_id`) | `explicar_livre_v2` | cada nó da árvore → `no` |
 | `situacao_centro` (`project_id`) | `situacao_centro_v2` | valores dos motivos → `no` quando casam com a árvore; senão `sem_documento` com o motivo literal |
-| `desembolsos` (`project_id`) | `get_repasses_v2` | `ref` quando a linha traz; senão `sem_documento` |
-| `termos_contrato` (`project_id`) | `get_termos_contrato_v2` | `termo` |
+| `desembolsos` (`project_id` opcional) | `get_repasses_v2` | `ref` quando a linha traz; senão `sem_documento` |
+| `termos_contrato` (`project_id` opcional) | `get_termos_contrato_v2` | `termo` |
 | `pendencias` (`project_id` opcional) | `listar_pendencias_v2` | `sem_documento` (pendência) |
 | `bolsas` (`project_id` opcional) | `get_pedido_bolsas_v2` | `sem_documento` ("bolsa digitada"); nome mascarado |
 | `criar_bloco`, `calcular` | — | §3 e §6 |
@@ -101,14 +101,22 @@ Ferramentas da Etapa 1 (só leitura; nenhuma conta de negócio no pacote):
 Argumento de centro aceita o código (`30.109`) ou o id; a resolução usa o `listar_centros` da própria
 sessão. Centro fora do escopo da pessoa volta como "não encontrado no seu acesso", nunca como zero.
 
+`desembolsos` e `termos_contrato` aceitam omitir `project_id`: nesse modo consultam todos os centros
+visíveis em paralelo e devolvem `{ centros, nos }` numa única chamada de ferramenta. A falha de um centro
+fica registrada nele como `{ codigo, nome, erro }` (nunca vira zero nem derruba os outros); se todos
+falharem, a ferramenta devolve `{ erro }`.
+
 ## 5. Dados pessoais (README §7b.11)
 
 - Campo que é nome de pessoa (por ferramenta, lista fechada no código) → `⟦P<n>⟧`, estável na sessão.
 - CPF (`_tem_cpf`: com ou sem pontuação) e e-mail saem de **todo** texto, inclusive livre.
 - Texto livre (título de pendência, motivo, trecho de termo): nomes completos e "primeiro + último nome" dos
   bolsistas visíveis à pessoa viram `⟦Pn⟧`. O dicionário vem de `get_pedido_bolsas_v2`, carregado uma vez
-  por sessão quando a primeira ferramenta com texto livre roda. Limite conhecido: primeiro nome sozinho
-  não é mascarado (registrado no plano como risco).
+  por sessão quando a primeira ferramenta com texto livre roda. Os `responsaveis` de cada centro visível
+  (`resumo_projetos_v2`) entram no **mesmo** dicionário: são nomes de pessoa tanto na pergunta quanto em
+  `listar_centros`. Antes de mascarar a pergunta, a sessão tenta carregar os centros; se essa consulta
+  falhar, a pergunta segue com o dicionário de bolsistas (o fail-closed continua sendo o dele). Limite
+  conhecido: primeiro nome sozinho não é mascarado (registrado no plano como risco).
 - O mapa `⟦Pn⟧ → nome` vive só na sessão (memória da requisição). Nada disso vai a log.
 
 ## 6. Bloco
@@ -198,6 +206,11 @@ Quatro regras valem para todas as tools, adaptadas às ferramentas reais da Aná
    líquido, que já está incluído no saldo disponível e não se soma de novo (`desembolsos`).
 4. **`listar_centros` descreve os centros**; a ordem da lista não significa prioridade e não ranqueia
    mérito.
+
+Quando usar: `listar_centros` uma vez para a visão geral por centro (livre, situação, motivos, vigência do
+cadastro, balancete, pendências abertas e responsáveis) — sem chamar `situacao_centro` ou `explicar_livre`
+centro por centro se ela já responde; `desembolsos` **sem `project_id`** uma vez para desembolsos/parcelas
+de todos os centros; `termos_contrato` **sem `project_id`** uma vez para vigência/taxas de todos os centros.
 
 Além disso:
 

@@ -22,6 +22,75 @@ import {
 
 export const nome = 'bolsas';
 
+/** Rótulo em pt-BR da situação da bolsa (M14); valor desconhecido segue cru. */
+const STATUS_PT = Object.freeze({
+  active: 'ativa',
+  ended: 'encerrada',
+  cancelled: 'cancelada',
+  pending: 'pendente',
+});
+
+/**
+ * Teto do JSON que volta ao modelo, abaixo do teto de 60.000 do Worker: acima
+ * disso a lista de bolsistas é cortada, com aviso explícito (M4).
+ */
+const TETO_PARA_MODELO_CHARS = 55_000;
+const AVISO_CORTE =
+  'Resultado cortado para caber no limite; filtre por project_id para ver todas as bolsas de um centro.';
+
+function idsCitados(valor, alvo = new Set()) {
+  if (typeof valor === 'string') {
+    if (/^(?:r\d+|c\d+)(?:\.\d+)?$/.test(valor)) alvo.add(valor);
+  } else if (Array.isArray(valor)) {
+    for (const item of valor) idsCitados(item, alvo);
+  } else if (valor && typeof valor === 'object') {
+    for (const item of Object.values(valor)) idsCitados(item, alvo);
+  }
+  return alvo;
+}
+
+/**
+ * Corta a lista de bolsistas por prefixo (determinístico) até o JSON caber no
+ * teto e mantém só os nós citados pelos itens que ficaram. Os campos `total`,
+ * `caixas` e os avisos continuam inteiros.
+ */
+function cortarParaCaber(paraModelo) {
+  if (JSON.stringify(paraModelo).length <= TETO_PARA_MODELO_CHARS) return paraModelo;
+
+  const totalBolsistas = paraModelo.bolsistas.length;
+
+  function montarCorte(manter) {
+    const candidato = {
+      ...paraModelo,
+      bolsistas: paraModelo.bolsistas.slice(0, manter),
+      parcial: true,
+      bolsistas_retornados: manter,
+      bolsistas_total: totalBolsistas,
+      aviso_corte: AVISO_CORTE,
+    };
+    const semNos = { ...candidato };
+    delete semNos.nos;
+    const usados = idsCitados(semNos);
+    candidato.nos = paraModelo.nos.filter((no) => usados.has(no.id));
+    return candidato;
+  }
+
+  let baixo = 0;
+  let alto = totalBolsistas;
+  let melhor = montarCorte(0);
+  while (baixo <= alto) {
+    const meio = Math.floor((baixo + alto) / 2);
+    const candidato = montarCorte(meio);
+    if (JSON.stringify(candidato).length <= TETO_PARA_MODELO_CHARS) {
+      melhor = candidato;
+      baixo = meio + 1;
+    } else {
+      alto = meio - 1;
+    }
+  }
+  return melhor;
+}
+
 function bolsaValida(bolsa) {
   return (
     bolsa &&
@@ -242,7 +311,11 @@ export async function executar(ctx, args) {
         nos.push(noFim);
       }
 
-      const noStatus = registrar.texto(bolsa.status, 'Situação', origemBolsa);
+      const noStatus = registrar.texto(
+        STATUS_PT[bolsa.status] ?? bolsa.status,
+        'Situação',
+        origemBolsa
+      );
       item.status = noStatus.id;
       nos.push(noStatus);
 
@@ -341,11 +414,11 @@ export async function executar(ctx, args) {
   const nosUnicos = [...new Map(nos.map((no) => [no.id, no])).values()];
 
   return {
-    paraModelo: {
+    paraModelo: cortarParaCaber({
       total: total ? total.id : null,
       bolsistas,
       caixas,
       nos: nosUnicos.map(mini),
-    },
+    }),
   };
 }

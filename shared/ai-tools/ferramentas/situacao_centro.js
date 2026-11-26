@@ -76,7 +76,9 @@ export async function executar(ctx, args) {
   }
 
   if (dados.situacao === 'sem dado' || dados.motivos.some((motivo) => motivo.codigo === 'falha')) {
-    return { erro: 'Não foi possível carregar a situação do centro. (formato)' };
+    // Falha de cálculo não é erro de formato: o modelo precisa saber que o
+    // valor não foi calculado, não que a RPC devolveu algo inesperado (M9).
+    return { erro: 'Não foi possível calcular a situação do centro.' };
   }
 
   await ctx.mascara.garantirDicionario();

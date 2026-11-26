@@ -264,6 +264,54 @@ export function criarMascara({ rpc } = {}) {
     }
   }
 
+  /**
+   * Carrega os responsáveis de `resumo_projetos_v2` (`centros[].responsaveis`,
+   * lista de strings) no mesmo dicionário dos bolsistas. Quem responde pelo
+   * centro recebe o mesmo ⟦Pn⟧ na pergunta e nos resultados, e o nome real
+   * nunca chega ao modelo.
+   */
+  function carregarResponsaveis(centros) {
+    if (!Array.isArray(centros)) return;
+    const registrados = [];
+    for (const centro of centros) {
+      if (!centro || !Array.isArray(centro.responsaveis)) continue;
+      for (const responsavel of centro.responsaveis) {
+        if (typeof responsavel !== 'string') continue;
+        const nome = normalizarNome(responsavel);
+        if (!nome) continue;
+        const marcador = registrarNome(nome);
+        if (marcador) {
+          acrescentarCurto(nome, marcador);
+          registrados.push({ nome, marcador });
+        }
+      }
+    }
+    // Primeiro nome de responsável (quando unívoco entre os responsáveis da
+    // sessão e com >= 3 caracteres): permite casar "centros da <Primeiro>" com
+    // o mesmo ⟦Pn⟧ de "<Primeiro> <Sobrenome>" sem vazar o nome ao modelo.
+    const contagemPrimeiro = new Map();
+    for (const item of registrados) {
+      const partes = item.nome.split(' ').filter(Boolean);
+      if (partes.length < 2) continue;
+      const chave = chaveDoNome(partes[0]);
+      if (chave.length < 3) continue;
+      const anterior = contagemPrimeiro.get(chave);
+      if (!anterior) contagemPrimeiro.set(chave, item.marcador);
+      else if (anterior !== item.marcador) contagemPrimeiro.set(chave, null);
+    }
+    for (const item of registrados) {
+      const partes = item.nome.split(' ').filter(Boolean);
+      if (partes.length < 2) continue;
+      const primeiro = partes[0];
+      const chave = chaveDoNome(primeiro);
+      if (contagemPrimeiro.get(chave) !== item.marcador) continue;
+      const chaveExata = chaveExataDoNome(primeiro);
+      if (porNome.has(chaveExata)) continue;
+      porNome.set(chaveExata, item.marcador);
+      nomesParaBusca.push({ nome: primeiro, marcador: item.marcador, chave, chaveExata });
+    }
+  }
+
   /** A ferramenta `bolsas` já trouxe o dicionário: não chama a RPC de novo. */
   function marcarDicionarioCarregado() {
     carregado = true;
@@ -416,6 +464,7 @@ export function criarMascara({ rpc } = {}) {
     rotuloDeBolsa,
     texto,
     carregarNomes,
+    carregarResponsaveis,
     marcarDicionarioCarregado,
     garantirDicionario,
     reidratar,

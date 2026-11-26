@@ -417,7 +417,8 @@ describe('situacao_centro', () => {
       },
     });
     const resultado = await sessao.executar('situacao_centro', { project_id: '30.901' });
-    expect(resultado.erro).toBe('Não foi possível carregar a situação do centro. (formato)');
+    expect(resultado.erro).toBe('Não foi possível calcular a situação do centro.');
+    expect(resultado.erro).not.toContain('(formato)');
     expect(resultado.paraModelo).toBeUndefined();
   });
 });
@@ -506,32 +507,54 @@ describe('desembolsos', () => {
     }
   });
 
-  it('A5: rendimento líquido malformado é erro de formato, nunca número', async () => {
+  it('A5/M15: rendimento líquido malformado vira null, nunca zero nem erro', async () => {
     const repasses = fixture('repasses');
     repasses.recursos.rendimento_liquido = 'não é número';
     const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
     const resultado = await sessao.executar('desembolsos', { project_id: '30.901' });
-    expect(resultado.erro).toBe('Não foi possível carregar os desembolsos. (formato)');
+    expect(resultado.erro).toBeUndefined();
+    const dados = json(resultado);
+    expect(dados.recursos.rendimento_liquido).toBeNull();
+    expect(dados.nos.some((no) => no.rotulo === 'Rendimento líquido de aplicação')).toBe(false);
   });
 
   it.each(['0x0', '1e3', 'Infinity', ' 12 34 '])(
-    'rendimento "%s" (texto que Number() aceitaria) é erro de formato, nunca número',
+    'M15: rendimento bruto "%s" (texto que Number() aceitaria) vira null sem derrubar a chamada',
     async (valor) => {
       const repasses = fixture('repasses');
       repasses.recursos.rendimento_bruto = valor;
       const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
       const resultado = await sessao.executar('desembolsos', { project_id: '30.901' });
-      expect(resultado.erro).toBe('Não foi possível carregar os desembolsos. (formato)');
+      expect(resultado.erro).toBeUndefined();
+      const dados = json(resultado);
+      expect(dados.recursos.rendimento_bruto).toBeNull();
+      expect(dados.nos.some((no) => no.rotulo === 'Rendimento bruto de aplicação')).toBe(false);
     }
   );
 
-  it('rendimento não numérico é erro de formato, nunca zero', async () => {
+  it('M15: campo de recursos malformado não impede os outros campos de virem', async () => {
     const repasses = fixture('repasses');
-    repasses.recursos.rendimento_bruto = 'não é número';
+    repasses.recursos.recebido = 'N/A';
+    repasses.recursos.rendimento_bruto = {};
     const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
-    const resultado = await sessao.executar('desembolsos', { project_id: '30.901' });
-    expect(resultado.erro).toBe('Não foi possível carregar os desembolsos. (formato)');
-    expect(resultado.paraModelo).toBeUndefined();
+    const dados = json(await sessao.executar('desembolsos', { project_id: '30.901' }));
+    expect(dados.recursos.recebido).toBeNull();
+    expect(dados.recursos.rendimento_bruto).toBeNull();
+    expect(dados.recursos.a_receber).toMatch(/^r1\./);
+    expect(dados.nos.find((no) => no.id === dados.recursos.a_receber).valor).toBe(350000);
+  });
+
+  it('M15: recursos que não é objeto continua erro de formato', async () => {
+    for (const invalido of ['nada', [], 42]) {
+      const repasses = fixture('repasses');
+      repasses.recursos = invalido;
+      const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
+      const resultado = await sessao.executar('desembolsos', { project_id: '30.901' });
+      expect(resultado.erro, String(invalido)).toBe(
+        'Não foi possível carregar os desembolsos. (formato)'
+      );
+      expect(resultado.paraModelo).toBeUndefined();
+    }
   });
 });
 
@@ -823,8 +846,8 @@ describe('argumento inválido em cada ferramenta', () => {
   const casos = [
     ['explicar_livre', {}],
     ['situacao_centro', {}],
-    ['desembolsos', {}],
-    ['termos_contrato', {}],
+    ['desembolsos', { project_id: 42 }],
+    ['termos_contrato', { project_id: 42 }],
     ['pendencias', { project_id: '30.999' }],
     ['bolsas', { project_id: '30.999' }],
   ];

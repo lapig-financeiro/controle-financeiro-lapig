@@ -85,8 +85,10 @@ describe('máscara de nomes', () => {
     pedido.bolsistas[0].nome = 'João Exemplo';
     const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
     await sessao.executar('pendencias', { project_id: '30.901' });
+    const exato = sessao.marcarTexto('João Exemplo').texto;
     const marcado = sessao.marcarTexto('JOAO EXEMPLO');
-    expect(marcado.texto).toBe('⟦P1⟧');
+    expect(exato).toMatch(/^⟦P\d+⟧$/);
+    expect(marcado.texto).toBe(exato);
   });
 });
 
@@ -112,9 +114,13 @@ describe('máscara — conferência final da 4ª rodada', () => {
     pedido.bolsistas[1].nome = 'Pedro Silva';
     const { sessao } = montar({ get_pedido_bolsas_v2: { data: pedido, error: null } });
     await sessao.executar('pendencias', { project_id: '30.901' });
+    const comAcento = sessao.marcarTexto('Caixa de João Pedro Silva.').texto;
     const um = sessao.marcarTexto('Caixa de Joao Pedro Silva.').texto;
-    expect(um).toBe('Caixa de ⟦P1⟧.');
-    expect(sessao.marcarTexto('Pedro Silva').texto).toBe('⟦P2⟧');
+    expect(um).toBe(comAcento);
+    expect(um).toMatch(/^Caixa de ⟦P\d+⟧\.$/);
+    const dois = sessao.marcarTexto('Pedro Silva').texto;
+    expect(dois).toMatch(/^⟦P\d+⟧$/);
+    expect(dois).not.toBe(um.match(/⟦P\d+⟧/)[0]);
   });
 
   it('nome entre chaves é mascarado (bordas por classe Unicode)', async () => {
@@ -132,7 +138,9 @@ describe('máscara — conferência final da 4ª rodada', () => {
     await sessao.executar('pendencias', { project_id: '30.901' });
     const marcado = sessao.marcarTexto('Maria Inês' + String.fromCharCode(10) + 'Ana Paula').texto;
     expect(marcado).not.toMatch(/Maria|Inês|Ines|Ana|Paula/);
-    expect(marcado).toBe('⟦P1⟧' + String.fromCharCode(10) + '⟦P2⟧');
+    const marcadores = marcado.match(/⟦P\d+⟧/g);
+    expect(marcadores).toHaveLength(2);
+    expect(marcadores[0]).not.toBe(marcadores[1]);
   });
 
   it('sobra de nome que perdeu a disputa também é mascarada', async () => {
@@ -237,7 +245,10 @@ describe('árvore de bolsas', () => {
 
     const dados = JSON.parse(resultado.paraModelo);
     const primeiro = dados.nos.find((no) => no.rotulo.includes('11 meses × R$ 4.200,00'));
-    const segundo = dados.nos.find((no) => no.rotulo === '⟦P2⟧');
+    const marcaPrimeiro = primeiro.rotulo.split(' — ')[0];
+    const segundo = dados.nos.find(
+      (no) => /^⟦P\d+⟧$/.test(no.rotulo) && no.rotulo !== marcaPrimeiro
+    );
     expect(primeiro.rotulo).toMatch(/^⟦P\d+⟧ — 11 meses × R\$ 4\.200,00$/);
     expect(segundo).toBeTruthy();
   });

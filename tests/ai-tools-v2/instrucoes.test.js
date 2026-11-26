@@ -68,6 +68,13 @@ describe('INSTRUCOES', () => {
     expect(TEXTO).toContain('sem supor onde estaria nem por quê');
     expect(TEXTO).not.toContain('diga que não há e por quê');
   });
+
+  it('A10: diz quando usar listar_centros e as consultas sem project_id', () => {
+    expect(TEXTO).toContain('chame "listar_centros" uma vez');
+    expect(TEXTO).toContain('não chame "situacao_centro" nem "explicar_livre"');
+    expect(TEXTO).toContain('"desembolsos" sem project_id uma única vez');
+    expect(TEXTO).toContain('"termos_contrato" sem project_id uma única vez');
+  });
 });
 
 describe('especificacoes', () => {
@@ -113,6 +120,16 @@ describe('especificacoes', () => {
       for (const exigido of required) {
         expect(Object.keys(properties), spec.function.name).toContain(exigido);
       }
+      // `required` precisa ser array (o formato do Ollama exige, mesmo vazio).
+      expect(Array.isArray(required), spec.function.name).toBe(true);
+    }
+  });
+
+  it('A10: desembolsos e termos_contrato não exigem project_id', () => {
+    for (const nome of ['desembolsos', 'termos_contrato']) {
+      const spec = specs.find((item) => item.function.name === nome);
+      expect(spec.function.parameters.required, nome).toEqual([]);
+      expect(spec.function.description, nome).toContain('Sem project_id');
     }
   });
 

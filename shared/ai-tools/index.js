@@ -46,6 +46,17 @@ Quatro regras valem para todas as tools:
 4. "listar_centros" descreve os centros; a ordem da lista não significa
    prioridade e não ranqueia mérito.
 
+Quando usar:
+
+- Para a visão geral por centro (livre, situação, motivos, vigência do
+  cadastro, balancete, pendências abertas e responsáveis), chame
+  "listar_centros" uma vez; não chame "situacao_centro" nem "explicar_livre"
+  centro por centro se "listar_centros" já responde.
+- Para desembolsos e parcelas de todos os centros (ex.: "algum desembolso está
+  atrasado?"), chame "desembolsos" sem project_id uma única vez.
+- Para vigência e taxas de contrato de todos os centros (ex.: "onde contrato e
+  cadastro discordam?"), chame "termos_contrato" sem project_id uma única vez.
+
 Regras da Análise:
 
 5. Toda resposta é feita de blocos. Use "criar_bloco" para número, tabela e
@@ -79,6 +90,12 @@ Regras da Análise:
 const PARAMETRO_CENTRO = {
   type: 'string',
   description: 'Código do centro (ex.: 30.901) ou id do centro.',
+};
+
+const PARAMETRO_CENTRO_OPCIONAL = {
+  ...PARAMETRO_CENTRO,
+  description:
+    'Código do centro (ex.: 30.901) ou id do centro. Omitir para trazer todos os centros visíveis numa única chamada.',
 };
 
 function ferramenta(nome, descricao, parametros, obrigatorios = []) {
@@ -118,15 +135,13 @@ export function especificacoes() {
     ),
     ferramenta(
       'desembolsos',
-      'Parcelas do plano ativo, valor total, data do balancete e recursos recebidos/a receber e rendimento do centro. Rendimento líquido (quando retornado): já incluído no saldo disponível; não somar de novo. Rendimento bruto tem rótulo próprio.',
-      { project_id: PARAMETRO_CENTRO },
-      ['project_id']
+      'Parcelas do plano ativo, valor total, data do balancete e recursos recebidos/a receber e rendimento do centro. Sem project_id, traz os desembolsos de todos os centros visíveis numa única chamada. Rendimento líquido (quando retornado): já incluído no saldo disponível; não somar de novo. Rendimento bruto tem rótulo próprio.',
+      { project_id: PARAMETRO_CENTRO_OPCIONAL }
     ),
     ferramenta(
       'termos_contrato',
-      'Termos do contrato (vigência, taxas e outros) e a comparação da vigência com o cadastro.',
-      { project_id: PARAMETRO_CENTRO },
-      ['project_id']
+      'Termos do contrato (vigência, taxas e outros) e a comparação da vigência com o cadastro. Sem project_id, traz os termos de todos os centros visíveis numa única chamada.',
+      { project_id: PARAMETRO_CENTRO_OPCIONAL }
     ),
     ferramenta(
       'pendencias',
@@ -213,6 +228,10 @@ export function criarSessao({ rpc, hoje } = {}) {
 
   let centrosCache = null;
   let centrosPromessa = null;
+  // Uma tentativa por sessão de trazer os responsáveis para a máscara. Guardar a
+  // promessa evita repetir a RPC quando ela falha (a pergunta segue com o
+  // dicionário de bolsistas) e evita corrida entre pergunta e anteriores.
+  let centrosNaMascara = null;
 
   ctx.carregarCentros = async function carregarCentros() {
     if (centrosCache) return centrosCache;
@@ -224,6 +243,10 @@ export function criarSessao({ rpc, hoje } = {}) {
         throw new Error(`${mensagemRpc('resumo_projetos_v2')} (formato)`);
       }
       centrosCache = resposta.dados;
+      // Responsável também é nome de pessoa: entra no mesmo dicionário da
+      // máscara (⟦Pn⟧ estável na sessão) antes de qualquer pergunta ou
+      // resultado consultar `mascara.texto`.
+      mascara.carregarResponsaveis(centrosCache.centros);
       // Nome de centro não é nome de pessoa: entra na conferência de "sem
       // origem" para que o dígito de "GPW fase 2" não seja marcado.
       nomesCentros = centrosCache.centros
@@ -311,11 +334,18 @@ export function criarSessao({ rpc, hoje } = {}) {
   /**
    * Mascara um texto que vai AO modelo (pergunta e anteriores). Usa o mesmo
    * dicionário e a mesma numeração da máscara dos resultados das ferramentas,
-   * então o ⟦Pn⟧ da pergunta casa com o ⟦Pn⟧ do resultado. Falha fechado: se o
-   * dicionário não carrega, a promessa rejeita e quem chamou decide encerrar.
+   * então o ⟦Pn⟧ da pergunta casa com o ⟦Pn⟧ do resultado. Falha fechado no
+   * dicionário de bolsistas: se ele não carrega, a promessa rejeita e quem
+   * chamou decide encerrar. Os responsáveis de `resumo_projetos_v2` entram no
+   * mesmo dicionário; se essa consulta falhar, a pergunta segue só com os
+   * bolsistas (não derruba a análise).
    */
   async function mascararEntrada(texto) {
     await mascara.garantirDicionario();
+    if (!centrosNaMascara) {
+      centrosNaMascara = ctx.carregarCentros().catch(() => null);
+    }
+    await centrosNaMascara;
     return mascara.texto(String(texto ?? ''));
   }
 
