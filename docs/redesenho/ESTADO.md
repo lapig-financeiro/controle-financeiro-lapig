@@ -221,7 +221,7 @@ envia (Shift+Enter quebra a linha); a conversa sumia ao trocar de aba, porque o 
 desmontava a tela e a troca de aba do site também (agora a Análise fica montada e escondida); e o painel abria num beco
 sem saída quando o modelo citava a própria linha do plano (agora o valor do topo abre o documento). Conferido em
 produção: o realizado abre o balancete na linha e o previsto abre o plano na linha. App 338, raiz 931, lint e build
-verdes. Relatório `relatorios/analise-primeiras-perguntas.md`. O Victor quer **histórico** (desistiu de apagar em
+verdes. **No ar em 26/11** com o ok do Victor (master `3c0c4d0`; CI 45865681494 e deploy 45865681413 verdes; bundle `index-FZjx-red.js`). Relatório `relatorios/analise-primeiras-perguntas.md`. O Victor quer **histórico** (desistiu de apagar em
 180 dias) e uma tela com cara de **conversa contínua**, com "Nova conversa". Desenho conversado com o GPT-6.2 Sol
 medium (ver relatório); falta a decisão do Victor.
 
