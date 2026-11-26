@@ -1,0 +1,26 @@
+.bloco-analise {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+}
+
+.bloco-analise__titulo {
+  font-size: var(--fs-3);
+  line-height: var(--lh-3);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}
+
+.bloco-analise__texto {
+  font-size: var(--fs-3);
+  line-height: var(--lh-3);
+  color: var(--cor-texto);
+  white-space: pre-wrap;
+}
+
+.bloco-analise__sem-origem {
+  background: transparent;
+  color: inherit;
+  border-bottom: 1px dotted var(--cor-atencao);
+  padding-bottom: 0;
+}

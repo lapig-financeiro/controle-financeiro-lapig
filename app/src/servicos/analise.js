@@ -219,6 +219,7 @@ export async function executarAnalise({
   apikey = SUPABASE_KEY,
   fetchImpl = fetch,
   signal,
+  atraso,
   onInicio,
   onPasso,
   onBloco,
@@ -226,6 +227,36 @@ export async function executarAnalise({
   onFim,
   onErro,
 } = {}) {
+  // Modo exemplo (`npm run dev:exemplo`): o mesmo stream, simulado pelo
+  // módulo sintético carregado sob demanda. Em produção o `import()` é
+  // eliminado pelo Vite, então nada do exemplo entra no bundle.
+  if (import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo') {
+    let modulo = null;
+    try {
+      modulo = await import('./analiseExemplo.js');
+    } catch {
+      const erro = {
+        codigo: 'interno',
+        mensagem: 'Não foi possível carregar a Análise de exemplo.',
+      };
+      onErro?.(erro);
+      return { ok: false, erro, registro: null, blocos: [], texto: null };
+    }
+    return modulo.executarAnaliseExemplo({
+      pergunta,
+      anteriores,
+      signal,
+      atraso,
+      onInicio,
+      onPasso,
+      onBloco,
+      onTexto,
+      onFim,
+      onErro,
+      mensagemInterrompida: MENSAGEM_INTERROMPIDA,
+    });
+  }
+
   const jwt = await resolverToken(token);
   if (!jwt) {
     const erro = { codigo: 'sem_login', mensagem: MENSAGEM_SEM_LOGIN };
@@ -373,7 +404,13 @@ export async function enviarFeedback(
     return { id: null, erro: 'Registro da análise não informado.' };
   }
 
-  const chamar = typeof rpc === 'function' ? rpc : supabase.rpc;
+  // No modo exemplo o feedback é aceito localmente e não toca o banco.
+  if (import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo') {
+    return { id: registro.trim(), erro: null };
+  }
+
+  const chamar =
+    typeof rpc === 'function' ? rpc : (nome, args) => supabase.rpc(nome, args);
   try {
     const { data, error } = await chamar('analise_feedback_enviar', {
       p_registro_id: registro.trim(),

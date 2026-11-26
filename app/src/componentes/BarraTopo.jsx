@@ -10,7 +10,7 @@ import './BarraTopo.css';
 const ITENS_MENU = [
   { id: 'projetos', rotulo: 'Projetos', hash: '#/projetos', apenasAdmin: false },
   { id: 'bolsistas', rotulo: 'Bolsistas', hash: '#/bolsistas', apenasAdmin: false },
-  { id: 'analise', rotulo: 'Análise', hash: '#/analise', apenasAdmin: false },
+  { id: 'analise', rotulo: 'Análise', hash: '#/analise', apenasAdmin: true },
   { id: 'admin', rotulo: 'Admin', hash: '#/admin', apenasAdmin: true },
 ];
 

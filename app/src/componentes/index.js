@@ -23,3 +23,4 @@ export { Vazio } from './Vazio.jsx';
 export { Esqueleto } from './Esqueleto.jsx';
 export { BarraTopo } from './BarraTopo.jsx';
 export { GraficoProjecao } from './GraficoProjecao.jsx';
+export { BlocoAnalise, TextoComSemOrigem, ValorAnalise } from './BlocoAnalise.jsx';

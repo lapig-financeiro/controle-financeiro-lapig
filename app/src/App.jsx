@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import { AvisoFalha, BarraTopo, Esqueleto, Manutencao } from './componentes/index.js';
 import { Admin } from './paginas/Admin.jsx';
+import { Analise } from './paginas/Analise.jsx';
 import { Bolsistas } from './paginas/Bolsistas.jsx';
 import { Componentes } from './paginas/Componentes.jsx';
-import { EmConstrucao } from './paginas/EmConstrucao.jsx';
 import { Login } from './paginas/Login.jsx';
 import { Projeto } from './paginas/Projeto.jsx';
 import { Projetos } from './paginas/Projetos.jsx';
@@ -203,6 +203,9 @@ export function App() {
     if (rota.pagina === 'bolsistas' && !podeBolsistas) {
       navegarPara('#/projetos');
     }
+    if (rota.pagina === 'analise' && !isAdmin) {
+      navegarPara('#/projetos');
+    }
     if (rota.pagina === 'componentes' && !import.meta.env.DEV && !isAdmin) {
       navegarPara('#/projetos');
     }
@@ -372,7 +375,8 @@ export function App() {
     }
 
     if (rota.pagina === 'analise') {
-      return <EmConstrucao titulo="Análise" contexto="Área de trabalho com blocos e origem" />;
+      if (!papelConhecido || !isAdmin) return null;
+      return <Analise />;
     }
 
     return (

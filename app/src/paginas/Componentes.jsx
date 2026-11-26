@@ -3,6 +3,7 @@ import { ChevronDown, ExternalLink, FileText, RefreshCw } from 'lucide-preact';
 import {
   Abas,
   AvisoFalha,
+  BlocoAnalise,
   Botao,
   CabecalhoPagina,
   Campo,
@@ -254,6 +255,62 @@ const ARVORE_DIGITADO_CATALOGO = {
   partes: [],
 };
 
+// Blocos da Análise com dados fictícios, um de cada tipo do contrato §6.
+const BLOCO_NUMERO_CATALOGO = {
+  id: 'cat-bloco-numero',
+  tipo: 'numero',
+  titulo: 'Livre do centro de exemplo',
+  numero: {
+    valor: 84300,
+    unidade: 'moeda',
+    rotulo: 'Livre — Pessoal (exemplo)',
+    origem: { tipo: 'no', no: ARVORE_CATALOGO },
+    contexto: { valor: '2026-09-30', unidade: 'data', origem: null },
+  },
+};
+
+const BLOCO_TABELA_CATALOGO = {
+  id: 'cat-bloco-tabela',
+  tipo: 'tabela',
+  titulo: 'Rubricas do exemplo',
+  tabela: {
+    colunas: [
+      { rotulo: 'Rubrica', unidade: 'texto' },
+      { rotulo: 'Previsto (R$)', unidade: 'moeda' },
+      { rotulo: 'Percentual', unidade: 'percentual' },
+    ],
+    linhas: [
+      [
+        { valor: 'Pessoal', unidade: 'texto', origem: null },
+        { valor: 864000, unidade: 'moeda', origem: { tipo: 'no', no: ARVORE_CATALOGO } },
+        { valor: 12.5, unidade: 'percentual', origem: { tipo: 'sem_documento', motivo: 'percentual do catálogo, sem documento' } },
+      ],
+      [
+        { valor: 'Custeio', unidade: 'texto', origem: null },
+        { valor: null, unidade: 'moeda', origem: { tipo: 'sem_documento', motivo: 'sem balancete no exemplo' } },
+        { valor: 7, unidade: 'percentual', origem: { tipo: 'no', no: ARVORE_CATALOGO } },
+      ],
+    ],
+  },
+};
+
+const TEXTO_BLOCO_CATALOGO =
+  'A reserva cobre 3 meses de folha; o restante está comprometido no exemplo.';
+const INICIO_SEM_ORIGEM_CATALOGO = TEXTO_BLOCO_CATALOGO.indexOf('3 meses');
+
+const BLOCO_TEXTO_CATALOGO = {
+  id: 'cat-bloco-texto',
+  tipo: 'texto',
+  titulo: 'Texto com número sem origem',
+  texto: {
+    texto: TEXTO_BLOCO_CATALOGO,
+    semOrigem: [
+      { inicio: INICIO_SEM_ORIGEM_CATALOGO, fim: INICIO_SEM_ORIGEM_CATALOGO + '3 meses'.length },
+    ],
+  },
+};
+
+
 async function buscarOrigemCatalogo(ref) {
   if (ref.alvo_id === 'cat-b-1') {
     return {
@@ -441,6 +498,15 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
       titulo,
       subtitulo: tipoOrigem === 'digitado' ? 'Valor digitado, sem documento' : 'De onde vem este valor',
       arvore: tipoOrigem === 'digitado' ? ARVORE_DIGITADO_CATALOGO : ARVORE_CATALOGO,
+    });
+  };
+
+  const abrirOrigemDoBloco = () => {
+    setPainel({
+      tipo: 'origem',
+      titulo: 'De onde vem',
+      subtitulo: 'Amostra de bloco do catálogo',
+      arvore: ARVORE_CATALOGO,
     });
   };
 
@@ -907,6 +973,15 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
             />
           </Cartao>
         </div>
+
+        <Cartao
+          titulo="Blocos da Análise"
+          subtitulo="Um exemplo de cada tipo do contrato: número, tabela e texto. Dados fictícios; os números clicáveis abrem a árvore de exemplo."
+        >
+          <BlocoAnalise bloco={BLOCO_NUMERO_CATALOGO} onOrigem={abrirOrigemDoBloco} />
+          <BlocoAnalise bloco={BLOCO_TABELA_CATALOGO} onOrigem={abrirOrigemDoBloco} />
+          <BlocoAnalise bloco={BLOCO_TEXTO_CATALOGO} onOrigem={abrirOrigemDoBloco} />
+        </Cartao>
 
         <Cartao
           titulo="Projeção das bolsas"
