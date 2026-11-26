@@ -109,7 +109,7 @@ bloco) é escrito pelo Claude **antes**, na tarefa, para que ninguém espere o o
   RPCs `security definer` com `search_path`, gatilho `trg_bloqueia_agente`, roteiro em `tests/sql/`.
 - Reabrir uma análise mostra o retrato ("valores de 25/11") com o botão "refazer com os dados de hoje".
 - Exportar em XLSX (SheetJS sob demanda, como o pdf.js) e PNG do gráfico.
-- Executor A faz a tela e a exportação; executor B faz a 072 e as RPCs.
+- Executor A faz a tela e a exportação; executor B faz a 073 e as RPCs.
 
 ### Fora da F5 (vai para o corte)
 - O MCP passa a usar `shared/ai-tools/` e as RPCs `*_v2`; a aba Assistente e a Edge Function `assistente`
@@ -160,7 +160,7 @@ Rodadas: até 3 por etapa. Se a 3ª ainda tiver achado alto, o Claude para e tra
   resultados das ferramentas ou testa-se o esforço `low` nas perguntas de um número só.
 - **Vazamento de nome ao Ollama**: teste com mutante na máscara; a bateria tem a pergunta 18.
 - **Número inventado**: a IA não tem como pôr número em bloco sem ref; no texto, a marca "sem origem".
-- **Divergência com a tela do projeto**: as mesmas RPCs; a 071 só substitui o JS depois de bater.
+- **Divergência com a tela do projeto**: as mesmas RPCs; a 072 só substitui o JS depois de bater.
 
 ## 7. Decisões do Victor (25/11/2026)
 
