@@ -140,6 +140,13 @@ function renderizar(executarAnalise, props = {}) {
       carregarExplicacao={explicarLivreMock}
       consultarOrigem={origemMock}
       carregarTermos={termosContratoMock}
+      listarConversas={vi.fn().mockResolvedValue({ dados: [], erro: null })}
+      lerConversa={vi.fn().mockResolvedValue({
+        dados: null,
+        erro: 'Conversa não usada neste teste.',
+      })}
+      renomearConversa={vi.fn().mockResolvedValue({ dados: null, erro: null })}
+      excluirConversa={vi.fn().mockResolvedValue({ dados: null, erro: null })}
       {...props}
     />,
     document.body
@@ -209,7 +216,7 @@ describe('pergunta e envio', () => {
 
     const aviso = document.querySelector('.analise__aviso');
     expect(aviso.textContent).toContain(
-      'As perguntas ficam guardadas para melhorar a Análise.'
+      'As conversas ficam no seu histórico e ajudam a melhorar a Análise.'
     );
     expect(aviso.textContent).toContain('Limite de 50 perguntas por dia.');
 
@@ -1420,7 +1427,7 @@ describe('várias perguntas e anteriores', () => {
     });
   }
 
-  it('depois de 6 análises ok, a 7ª envia só as 5 últimas, da mais antiga para a mais nova', async () => {
+  it('depois de 6 análises ok, a 7ª envia só as 2 últimas, da mais antiga para a mais nova', async () => {
     const executarAnalise = executarComTexto();
     renderizar(executarAnalise);
 
@@ -1433,11 +1440,8 @@ describe('várias perguntas e anteriores', () => {
     await esperarPor(() => executarAnalise.mock.calls.length === 7);
 
     const anteriores = executarAnalise.mock.calls[6][0].anteriores;
-    expect(anteriores).toHaveLength(5);
+    expect(anteriores).toHaveLength(2);
     expect(anteriores.map((item) => item.pergunta)).toEqual([
-      'Pergunta 2',
-      'Pergunta 3',
-      'Pergunta 4',
       'Pergunta 5',
       'Pergunta 6',
     ]);
@@ -1482,7 +1486,7 @@ describe('várias perguntas e anteriores', () => {
     expect(anteriores[0].resumo).toHaveLength(1000);
   });
 
-  it('Nova análise limpa a página e o contexto', async () => {
+  it('Nova conversa limpa a página e o contexto', async () => {
     const executarAnalise = executarComTexto();
     renderizar(executarAnalise);
 
@@ -1490,7 +1494,7 @@ describe('várias perguntas e anteriores', () => {
     await esperarAnalises(1);
     expect(document.querySelectorAll('.analise__cartao')).toHaveLength(1);
 
-    encontrarBotao('Nova análise').click();
+    encontrarBotao('Nova conversa').click();
     await tick();
     expect(document.querySelectorAll('.analise__cartao')).toHaveLength(0);
     expect(document.querySelector('.analise__campo').value).toBe('');
@@ -1604,5 +1608,8 @@ describe('feedback', () => {
 
     expect(document.body.textContent).not.toContain('Esta resposta ajudou?');
     expect(document.querySelector('.analise__feedback')).toBeNull();
+    expect(document.querySelector('.analise__nao-salvo').textContent).toBe(
+      'Não foi possível salvar no histórico.'
+    );
   });
 });

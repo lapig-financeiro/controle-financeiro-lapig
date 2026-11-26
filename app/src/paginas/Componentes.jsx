@@ -17,6 +17,7 @@ import {
   GradeDestaques,
   LinhaDeLista,
   Lista,
+  ListaConversas,
   Manutencao,
   MenuSuspenso,
   MenuSuspensoItem,
@@ -34,8 +35,24 @@ import { dinheiroCompacto } from '../util/formato.js';
 import './Componentes.css';
 
 // Dados fictícios do catálogo: nenhum valor ou nome vem de centro real.
-const MESES_PROJECAO_CATALOGO = [
-  { mes: '2026-08', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 88000, em_conta_fim: 88000, orcamento_resta: 168000 },
+const CONVERSAS_CATALOGO = [
+  {
+    id: '00000000-0000-4000-8000-000000000c01',
+    titulo: 'Saldo livre do 30.910',
+    criada_em: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    atualizada_em: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    turnos: 2,
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000c02',
+    titulo: 'Bolsas do 30.901',
+    criada_em: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+    atualizada_em: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+    turnos: 1,
+  },
+];
+
+const MESES_PROJECAO_CATALOGO = [  { mes: '2026-08', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 88000, em_conta_fim: 88000, orcamento_resta: 168000 },
   { mes: '2026-09', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 76000, em_conta_fim: 76000, orcamento_resta: 156000 },
   { mes: '2026-10', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 64000, em_conta_fim: 64000, orcamento_resta: 144000 },
   { mes: '2026-11', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 52000, em_conta_fim: 52000, orcamento_resta: 132000 },
@@ -481,6 +498,7 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
   const [menuDemoAberto, setMenuDemoAberto] = useState(false);
   const [previaManutencao, setPreviaManutencao] = useState(false);
   const [tentativas, setTentativas] = useState(0);
+  const [conversaCatalogo, setConversaCatalogo] = useState(CONVERSAS_CATALOGO[0].id);
   const ancoraMenuRef = useRef(null);
   const gatilhoMenuRef = useRef(null);
 
@@ -988,6 +1006,17 @@ export function Componentes({ centrosOcultos = 0, isAdmin = true }) {
           subtitulo="Duas barras por mês: dinheiro em conta depois da folha e orçamento de Bolsas que resta. Dados fictícios."
         >
           <GraficoProjecao meses={MESES_PROJECAO_CATALOGO} mesFalta="2027-01" />
+        </Cartao>
+
+        <Cartao titulo="Conversas da Análise">
+          <ListaConversas
+            conversas={CONVERSAS_CATALOGO}
+            ativaId={conversaCatalogo}
+            onSelecionar={setConversaCatalogo}
+            onNova={() => setConversaCatalogo(null)}
+            agora={new Date()}
+            className="componentes__lista-conversas"
+          />
         </Cartao>
 
         <Cartao titulo="Avisos, estado vazio e tabela vazia">

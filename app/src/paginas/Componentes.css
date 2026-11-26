@@ -125,3 +125,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.componentes__lista-conversas {
+  max-width: var(--largura-conversas);
+}

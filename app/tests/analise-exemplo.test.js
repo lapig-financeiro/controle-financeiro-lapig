@@ -220,6 +220,8 @@ describe('cenários do modo exemplo', () => {
       ok: false,
       abortada: true,
       registro: null,
+      conversa: null,
+      ordem: null,
       blocos: [],
       texto: null,
     });

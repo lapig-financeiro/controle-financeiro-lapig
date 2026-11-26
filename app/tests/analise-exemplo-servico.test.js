@@ -42,7 +42,9 @@ describe('serviço no modo exemplo', () => {
 
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(resultado.ok).toBe(true);
-    expect(resultado.registro).toBe('00000000-0000-4000-8000-000000000901');
+    expect(resultado.registro).toEqual(expect.any(String));
+    expect(resultado.conversa).toEqual(expect.any(String));
+    expect(resultado.ordem).toBe(1);
     expect(resultado.blocos).toHaveLength(4);
     expect(onBloco).toHaveBeenCalledTimes(4);
     expect(onFim).toHaveBeenCalledWith({ rodadas: 4, ms: 12000 });

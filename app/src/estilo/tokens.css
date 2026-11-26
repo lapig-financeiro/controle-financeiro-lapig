@@ -80,6 +80,7 @@
   --altura-controle-compacto: 32px;
   --altura-linha: 44px;
   --largura-conteudo: 1120px;
+  --largura-conversas: 280px;
   --largura-painel: 480px;
   --largura-documento: min(1100px, 94vw);
   --altura-documento: 90vh;

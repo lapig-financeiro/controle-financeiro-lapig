@@ -153,6 +153,8 @@ function despacharEvento(nome, conteudo, estado, callbacks) {
   switch (nome) {
     case 'inicio':
       estado.registro = dados?.registro ?? null;
+      estado.conversa = dados?.conversa ?? null;
+      estado.ordem = Number.isInteger(dados?.ordem) ? dados.ordem : null;
       callbacks.onInicio?.(dados);
       break;
     case 'passo':
@@ -186,7 +188,8 @@ function despacharEvento(nome, conteudo, estado, callbacks) {
  *
  * @param {object} opcoes
  * @param {string} opcoes.pergunta
- * @param {Array<{pergunta: string, resumo: string}>} [opcoes.anteriores]
+ * @param {Array<{pergunta: string, resumo: string, blocos?: string}>} [opcoes.anteriores]
+ * @param {string|null} [opcoes.conversa] conversa aberta; nulo cria uma nova (075)
  * @param {string} [opcoes.token] JWT; ausente, vem da sessão do Supabase.
  * @param {string} [opcoes.url]
  * @param {string} [opcoes.apikey]
@@ -205,15 +208,19 @@ function despacharEvento(nome, conteudo, estado, callbacks) {
  *   interrompida?: boolean,
  *   abortada?: boolean,
  *   registro: string | null,
+ *   conversa?: string | null,
+ *   ordem?: number | null,
  *   blocos: object[],
  *   texto: object | null,
  *   fim?: object | null,
- * }>} `registro`, `blocos` e `texto` mantêm o que chegou mesmo no corte e no
- *   aborto; `texto` é o último evento `texto` (`{ texto, semOrigem }`).
+ * }>} `registro`, `conversa`, `ordem`, `blocos` e `texto` mantêm o que chegou
+ *   mesmo no corte e no aborto; `texto` é o último evento `texto`
+ *   (`{ texto, semOrigem }`).
  */
 export async function executarAnalise({
   pergunta,
   anteriores = [],
+  conversa = null,
   token,
   url = URL_EDGE_ANALISE,
   apikey = SUPABASE_KEY,
@@ -245,6 +252,7 @@ export async function executarAnalise({
     return modulo.executarAnaliseExemplo({
       pergunta,
       anteriores,
+      conversa,
       signal,
       atraso,
       onInicio,
@@ -266,6 +274,8 @@ export async function executarAnalise({
 
   const estado = {
     registro: null,
+    conversa: null,
+    ordem: null,
     blocos: [],
     texto: null,
     erro: null,
@@ -280,6 +290,8 @@ export async function executarAnalise({
 
   const parcial = () => ({
     registro: estado.registro,
+    conversa: estado.conversa,
+    ordem: estado.ordem,
     blocos: estado.blocos,
     texto: estado.texto,
   });
@@ -294,7 +306,7 @@ export async function executarAnalise({
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       },
-      body: JSON.stringify({ pergunta, anteriores }),
+      body: JSON.stringify({ pergunta, anteriores, conversa: conversa ?? null }),
       signal,
     });
   } catch {

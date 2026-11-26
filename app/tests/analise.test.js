@@ -149,6 +149,7 @@ describe('executarAnalise — stream SSE', () => {
     expect(JSON.parse(init.body)).toEqual({
       pergunta: 'Quanto o 30.109 tem livre?',
       anteriores: [],
+      conversa: null,
     });
     expect(init.signal).toBeUndefined();
 
@@ -164,10 +165,35 @@ describe('executarAnalise — stream SSE', () => {
       ok: true,
       erro: null,
       registro: 'reg-1',
+      conversa: null,
+      ordem: null,
       blocos: [BLOCO],
       texto: TEXTO,
       fim: { rodadas: 2, ms: 1234 },
     });
+  });
+
+  it('manda a conversa no corpo e devolve conversa/ordem do inicio', async () => {
+    const fluxo =
+      evento('inicio', { registro: 'reg-c1', conversa: 'conv-1', ordem: 2 }) +
+      evento('fim', { rodadas: 1, ms: 100 });
+    const fetchImpl = vi.fn(async () => respostaSse([fluxo]));
+
+    const resultado = await executarAnalise({
+      pergunta: 'E o comprometido?',
+      conversa: 'conv-1',
+      token: 'jwt-1',
+      fetchImpl,
+    });
+
+    const [, init] = fetchImpl.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      pergunta: 'E o comprometido?',
+      anteriores: [],
+      conversa: 'conv-1',
+    });
+    expect(resultado.conversa).toBe('conv-1');
+    expect(resultado.ordem).toBe(2);
   });
 
   it('stream que fecha sem `fim` emite interrompida e preserva registro, blocos e texto', async () => {
@@ -206,6 +232,8 @@ describe('executarAnalise — stream SSE', () => {
       interrompida: true,
       erro: { codigo: 'interrompida', mensagem: MENSAGEM_INTERROMPIDA },
       registro: 'reg-2',
+      conversa: null,
+      ordem: null,
       blocos: [BLOCO],
       texto: TEXTO,
     });
@@ -264,6 +292,8 @@ describe('executarAnalise — stream SSE', () => {
       ok: false,
       erro: erroServidor,
       registro: 'reg-4',
+      conversa: null,
+      ordem: null,
       blocos: [],
       texto: null,
     });
@@ -352,6 +382,8 @@ describe('executarAnalise — stream SSE', () => {
       ok: false,
       abortada: true,
       registro: 'reg-7',
+      conversa: null,
+      ordem: null,
       blocos: [],
       texto: null,
     });

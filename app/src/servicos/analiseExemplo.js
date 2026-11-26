@@ -186,6 +186,236 @@ function blocoMalformado() {
   };
 }
 
+/* ------------------------------------------------------------
+   Histórico de conversas do modo exemplo (075)
+   ------------------------------------------------------------ */
+
+const CONVERSA_HOJE = '00000000-0000-4000-8000-000000000a01';
+const CONVERSA_ONTE = '00000000-0000-4000-8000-000000000a02';
+const REGISTRO_HOJE_1 = '00000000-0000-4000-8000-000000000b01';
+const REGISTRO_HOJE_2 = '00000000-0000-4000-8000-000000000b02';
+const REGISTRO_ONTE = '00000000-0000-4000-8000-000000000b03';
+
+let proximaConversaExemplo = 0;
+let proximoRegistroExemplo = 0;
+
+function dataExemplo(diasAtras, hora, minuto) {
+  const base = new Date();
+  base.setDate(base.getDate() - diasAtras);
+  const ano = base.getFullYear();
+  const mes = String(base.getMonth() + 1).padStart(2, '0');
+  const dia = String(base.getDate()).padStart(2, '0');
+  const hh = String(hora).padStart(2, '0');
+  const mm = String(minuto).padStart(2, '0');
+  return `${ano}-${mes}-${dia}T${hh}:${mm}:00-03:00`;
+}
+
+function novoRegistroExemplo() {
+  proximoRegistroExemplo += 1;
+  return `00000000-0000-4000-8000-${String(700 + proximoRegistroExemplo).padStart(12, '0')}`;
+}
+
+function criarConversasExemplo() {
+  const hoje = dataExemplo(0, 14, 32);
+  const ontem = dataExemplo(1, 9, 15);
+  return [
+    {
+      id: CONVERSA_HOJE,
+      titulo: 'Saldo livre do 30.910',
+      criada_em: hoje,
+      atualizada_em: hoje,
+      turnos: [
+        {
+          registro: REGISTRO_HOJE_1,
+          ordem: 1,
+          pergunta: 'Quanto o 30.910 tem livre hoje, e de onde vem?',
+          resposta: {
+            texto: {
+              texto:
+                'O 30.910 tem R$ 52.000,00 livres para gastar. Livre é o que sobra depois do previsto, do realizado e do comprometido.',
+              semOrigem: [],
+            },
+            blocos: [blocoNumero()],
+          },
+          desfecho: 'ok',
+          desfecho_calculado: 'ok',
+          iniciada_em: hoje,
+          terminada_em: hoje,
+          rodadas: 4,
+          ms: 12000,
+          feedback: null,
+        },
+        {
+          registro: REGISTRO_HOJE_2,
+          ordem: 2,
+          pergunta: 'E o comprometido, o que inclui?',
+          resposta: {
+            texto: {
+              texto:
+                'O comprometido do 30.910 é R$ 30.000,00: são as bolsas e os desembolsos já prometidos até o fim do plano.',
+              semOrigem: [],
+            },
+            blocos: [blocoCalculo()],
+          },
+          desfecho: 'ok',
+          desfecho_calculado: 'ok',
+          iniciada_em: hoje,
+          terminada_em: hoje,
+          rodadas: 2,
+          ms: 6000,
+          feedback: null,
+        },
+      ],
+    },
+    {
+      id: CONVERSA_ONTE,
+      titulo: 'Bolsas do 30.901',
+      criada_em: ontem,
+      atualizada_em: ontem,
+      turnos: [
+        {
+          registro: REGISTRO_ONTE,
+          ordem: 1,
+          pergunta: 'Quais bolsas do 30.901 terminam nos próximos 60 dias?',
+          resposta: {
+            texto: {
+              texto:
+                'Duas bolsas do 30.901 terminam nos próximos 60 dias, segundo a planilha de bolsas do centro.',
+              semOrigem: [],
+            },
+            blocos: [blocoTabela()],
+          },
+          desfecho: 'ok',
+          desfecho_calculado: 'ok',
+          iniciada_em: ontem,
+          terminada_em: ontem,
+          rodadas: 2,
+          ms: 8000,
+          feedback: null,
+        },
+      ],
+    },
+  ];
+}
+
+let conversasExemplo = criarConversasExemplo();
+
+function copiarConversa(conversa) {
+  return clonar(conversa);
+}
+
+function resumoConversa(conversa) {
+  return {
+    id: conversa.id,
+    titulo: conversa.titulo,
+    criada_em: conversa.criada_em,
+    atualizada_em: conversa.atualizada_em,
+    turnos: Array.isArray(conversa.turnos) ? conversa.turnos.length : 0,
+  };
+}
+
+/** Equivalente de `analise_conversas_listar` no modo exemplo. */
+export function listarConversasExemplo({ limite = 30, antes = null } = {}) {
+  const teto = !Number.isInteger(limite) || limite < 1 ? 30 : Math.min(limite, 100);
+  const limiteEm = antes ? new Date(antes).getTime() : null;
+  const lista = conversasExemplo
+    .filter((conversa) => {
+      if (limiteEm === null || Number.isNaN(limiteEm)) return true;
+      return new Date(conversa.atualizada_em).getTime() < limiteEm;
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.atualizada_em).getTime() - new Date(a.atualizada_em).getTime(),
+    )
+    .slice(0, teto)
+    .map(resumoConversa);
+  return { dados: lista, erro: null };
+}
+
+/** Equivalente de `analise_conversa_ler` no modo exemplo. */
+export function lerConversaExemplo(id) {
+  const conversa = conversasExemplo.find((item) => item.id === id);
+  if (!conversa) {
+    return { dados: null, erro: 'Esta conversa não está mais disponível.' };
+  }
+  return {
+    dados: {
+      ...copiarConversa(conversa),
+      turnos: conversa.turnos
+        .slice()
+        .sort((a, b) => a.ordem - b.ordem)
+        .map((turno) => copiarConversa(turno)),
+    },
+    erro: null,
+  };
+}
+
+/** Equivalente de `analise_conversa_renomear` no modo exemplo. */
+export function renomearConversaExemplo(id, titulo) {
+  const conversa = conversasExemplo.find((item) => item.id === id);
+  if (!conversa) {
+    return { dados: null, erro: 'Esta conversa não está mais disponível.' };
+  }
+  conversa.titulo = titulo;
+  return { dados: null, erro: null };
+}
+
+/** Equivalente de `analise_conversa_excluir` no modo exemplo. */
+export function excluirConversaExemplo(id) {
+  const antes = conversasExemplo.length;
+  conversasExemplo = conversasExemplo.filter((item) => item.id !== id);
+  if (conversasExemplo.length === antes) {
+    return { dados: null, erro: 'Esta conversa não está mais disponível.' };
+  }
+  return { dados: null, erro: null };
+}
+
+function garantirConversaExemplo(conversa, pergunta) {
+  if (typeof conversa === 'string' && conversa) {
+    const existente = conversasExemplo.find((item) => item.id === conversa);
+    if (existente) return existente;
+  }
+
+  proximaConversaExemplo += 1;
+  const titulo = String(pergunta || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 80);
+  const agora = new Date().toISOString();
+  const nova = {
+    id: `00000000-0000-4000-8000-${String(900 + proximaConversaExemplo).padStart(12, '0')}`,
+    titulo: titulo || 'Nova conversa',
+    criada_em: agora,
+    atualizada_em: agora,
+    turnos: [],
+  };
+  conversasExemplo = [nova, ...conversasExemplo];
+  return nova;
+}
+
+function fecharTurnoExemplo(conversa, dados) {
+  if (!conversa || !dados.registro) return;
+  const desfecho = dados.desfecho || null;
+  const terminadaEm = dados.terminou ? new Date().toISOString() : null;
+  const texto = dados.texto && typeof dados.texto === 'object' ? dados.texto : null;
+  const blocos = Array.isArray(dados.blocos) ? dados.blocos : [];
+  conversa.turnos.push({
+    registro: dados.registro,
+    ordem: dados.ordem || conversa.turnos.length + 1,
+    pergunta: dados.pergunta,
+    resposta: texto || blocos.length ? { texto, blocos } : null,
+    desfecho,
+    desfecho_calculado: terminadaEm ? desfecho : 'cortada',
+    iniciada_em: dados.iniciadaEm,
+    terminada_em: terminadaEm,
+    rodadas: dados.rodadas,
+    ms: dados.ms,
+    feedback: null,
+  });
+  conversa.atualizada_em = terminadaEm || dados.iniciadaEm;
+}
+
+
 function eventoPasso(ferramenta, rotulo, estado, erro = undefined) {
   const dados = { ferramenta, rotulo, estado };
   if (erro) dados.erro = erro;
@@ -372,6 +602,7 @@ function esperar(ms, signal) {
  */
 export async function executarAnaliseExemplo({
   pergunta,
+  conversa = null,
   signal,
   atraso = 300,
   onInicio,
@@ -384,6 +615,8 @@ export async function executarAnaliseExemplo({
 } = {}) {
   const estado = {
     registro: null,
+    conversa: null,
+    ordem: null,
     blocos: [],
     texto: null,
     erro: null,
@@ -393,23 +626,62 @@ export async function executarAnaliseExemplo({
   const callbacks = { onInicio, onPasso, onBloco, onTexto, onFim, onErro };
   const parcial = () => ({
     registro: estado.registro,
+    conversa: estado.conversa,
+    ordem: estado.ordem,
     blocos: estado.blocos,
     texto: estado.texto,
   });
 
   const { cenario, eventos } = criarEventosAnaliseExemplo(pergunta);
+  const inicioEm = new Date().toISOString();
+  const registroNovo = novoRegistroExemplo();
+  const conversaExemplo =
+    cenario === 'limite' || cenario === 'sem-registro'
+      ? null
+      : garantirConversaExemplo(conversa, pergunta);
+  const ordemExemplo = conversaExemplo ? conversaExemplo.turnos.length + 1 : null;
+
+  let turnoFechado = false;
+  function fecharTurno(desfecho, terminou) {
+    if (turnoFechado || !conversaExemplo || !estado.registro) return;
+    turnoFechado = true;
+    fecharTurnoExemplo(conversaExemplo, {
+      pergunta,
+      registro: estado.registro,
+      ordem: estado.ordem,
+      texto: estado.texto,
+      blocos: estado.blocos,
+      desfecho,
+      terminou,
+      iniciadaEm: inicioEm,
+      rodadas: estado.fim?.rodadas ?? 0,
+      ms: estado.fim?.ms ?? Math.max(0, Date.now() - new Date(inicioEm).getTime()),
+    });
+  }
 
   for (const evento of eventos) {
     const seguir = await esperar(atraso, signal);
     if (!seguir || signal?.aborted) {
+      fecharTurno('desconectado', false);
       return { ok: false, abortada: true, ...parcial() };
     }
 
     switch (evento.nome) {
-      case 'inicio':
-        estado.registro = evento.dados?.registro ?? null;
-        callbacks.onInicio?.(evento.dados);
+      case 'inicio': {
+        const dados = evento.dados?.registro
+          ? {
+              ...evento.dados,
+              registro: registroNovo,
+              conversa: conversaExemplo?.id ?? null,
+              ordem: ordemExemplo,
+            }
+          : { registro: null, conversa: null, ordem: null };
+        estado.registro = dados.registro ?? null;
+        estado.conversa = dados.conversa ?? null;
+        estado.ordem = dados.ordem ?? null;
+        callbacks.onInicio?.(dados);
         break;
+      }
       case 'passo':
         callbacks.onPasso?.(evento.dados);
         break;
@@ -436,19 +708,23 @@ export async function executarAnaliseExemplo({
   }
 
   if (signal?.aborted) {
+    fecharTurno('desconectado', false);
     return { ok: false, abortada: true, ...parcial() };
   }
 
   if (cenario === 'corte') {
     const erro = { codigo: 'interrompida', mensagem: mensagemInterrompida };
+    fecharTurno('desconectado', false);
     callbacks.onErro?.(erro);
     return { ok: false, interrompida: true, erro, ...parcial() };
   }
 
   if (estado.recebeuFim) {
     if (estado.erro) {
+      fecharTurno(estado.erro.codigo === 'incompleta' ? 'incompleta' : 'erro', true);
       return { ok: false, erro: estado.erro, ...parcial() };
     }
+    fecharTurno('ok', true);
     return { ok: true, erro: null, ...parcial(), fim: estado.fim };
   }
 
@@ -457,6 +733,7 @@ export async function executarAnaliseExemplo({
   }
 
   const erro = { codigo: 'interrompida', mensagem: mensagemInterrompida };
+  fecharTurno('desconectado', false);
   callbacks.onErro?.(erro);
   return { ok: false, interrompida: true, erro, ...parcial() };
 }

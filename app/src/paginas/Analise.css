@@ -2,6 +2,181 @@
   gap: var(--esp-3);
 }
 
+/* Layout de conversa contínua: lista à esquerda a partir de 1024 px e o
+   campo fixo no fim da área de rolagem. A página não rola; quem rola é a
+   conversa, para o campo ficar sempre visível. */
+.analise {
+  height: calc(var(--altura-tela) - var(--altura-topo));
+  min-height: 0;
+  overflow: hidden;
+}
+
+.analise__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--esp-5);
+  flex: 1;
+  min-height: 0;
+}
+
+.analise__coluna-conversas {
+  display: none;
+  min-height: 0;
+}
+
+.analise__conversa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-3);
+  min-height: 0;
+  min-width: 0;
+}
+
+.analise__barra-conversas {
+  display: flex;
+  flex: none;
+}
+
+.analise__rolagem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--esp-1);
+}
+
+.analise__fim {
+  height: 0;
+  scroll-margin-bottom: var(--esp-7);
+}
+
+.analise__pergunta-fixa {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-base);
+  margin-top: auto;
+  flex: none;
+  background-color: var(--cor-superficie);
+}
+
+.analise__cabecalho-conversa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+  flex: none;
+}
+
+.analise__titulo-linha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--esp-3);
+}
+
+.analise__titulo-conversa {
+  font-size: var(--fs-4);
+  line-height: var(--lh-4);
+  font-weight: var(--fw-semi);
+  letter-spacing: -0.01em;
+  color: var(--cor-texto);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.analise__titulo-acoes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--esp-1);
+}
+
+.analise__renomear {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+  max-width: var(--largura-menu);
+}
+
+.analise__titulo-campo {
+  width: 100%;
+  height: var(--altura-controle);
+  padding: 0 var(--esp-3);
+  background-color: var(--cor-superficie);
+  border: var(--borda-controle);
+  border-radius: var(--raio-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto);
+}
+
+.analise__titulo-campo:focus {
+  outline: none;
+  border-color: var(--cor-acento);
+  box-shadow: var(--anel-foco);
+}
+
+.analise__renomear-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.analise__confirmar-exclusao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-2);
+  padding: var(--esp-3);
+  background-color: var(--cor-atencao-suave);
+  border: var(--borda);
+  border-radius: var(--raio-1);
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto);
+}
+
+.analise__anterior {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--esp-3);
+  padding: var(--esp-3);
+  border: var(--borda);
+  border-radius: var(--raio-1);
+  background-color: var(--cor-superficie);
+}
+
+.analise__nao-salvo {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.analise__nota--erro {
+  color: var(--cor-problema);
+}
+
+@media (min-width: 1024px) {
+  .analise__layout {
+    grid-template-columns: var(--largura-conversas) minmax(0, 1fr);
+    gap: var(--esp-6);
+  }
+
+  .analise__coluna-conversas {
+    display: block;
+    overflow-y: auto;
+    padding-right: var(--esp-2);
+  }
+
+  .analise__barra-conversas {
+    display: none;
+  }
+}
+
 .analise__form {
   display: flex;
   flex-direction: column;
@@ -341,5 +516,9 @@
   .analise__rodape {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .analise__titulo-linha {
+    align-items: flex-start;
   }
 }
