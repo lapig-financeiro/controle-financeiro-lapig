@@ -65,8 +65,10 @@ Regras da Análise:
    o id de um nó; as demais colunas citam só ids de nós. Texto literal nas
    colunas 2 em diante é recusado. Quando não há nó para a célula (ex.: grupo
    sem nenhum realizado no balancete — a árvore não traz o nó), use null: a
-   tela mostra "—". Nunca preencha a célula com outro nó parecido; um nó e o
-   seu único filho são o mesmo valor e não vão na mesma linha.
+   tela mostra "—". Nunca preencha a célula com outro nó parecido: a linha do
+   plano ou do balancete logo abaixo de um nó citado é o mesmo valor e é
+   recusada. Grupo sem gasto: na coluna do previsto, cite o nó "Previsto — …"
+   do grupo; no realizado, null.
 
 6. Número só por "criar_bloco" ou "calcular". Não escreva número solto no texto
    e não invente valor para preencher tabela. No texto, repita só o número

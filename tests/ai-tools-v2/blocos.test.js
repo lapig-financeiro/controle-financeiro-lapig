@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 import { criarSessao } from '../../shared/ai-tools/index.js';
+import { abaixoPorFilhoUnico } from '../../shared/ai-tools/blocos.js';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
@@ -505,3 +506,20 @@ describe('criarBloco tabela — célula vazia e valor repetido (retorno do 30.10
     expect(primeiraNula.erro).toBeTruthy();
   });
 });
+
+describe('abaixoPorFilhoUnico', () => {
+  const folha = { rotulo: 'Passagens', valor: 141000, ref: { alvo_tabela: 'plano_rubricas', alvo_id: 'l', campo: 'v' }, partes: [] };
+  const previsto = { rotulo: 'Previsto — Passagens', valor: 141000, partes: [folha] };
+  const grupo = { rotulo: 'Passagens', valor: 141000, partes: [previsto] };
+  const no = (arvore) => ({ origem: { tipo: 'no', no: arvore } });
+
+  it('grupo (livre) e o seu único Previsto na mesma linha são legítimos', () => {
+    expect(abaixoPorFilhoUnico(no(grupo), no(previsto))).toBe(false);
+  });
+
+  it('Previsto e a sua única linha do plano são o mesmo valor repetido', () => {
+    expect(abaixoPorFilhoUnico(no(previsto), no(folha))).toBe(true);
+    expect(abaixoPorFilhoUnico(no(grupo), no(folha))).toBe(true);
+  });
+});
+

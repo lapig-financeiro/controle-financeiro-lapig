@@ -226,8 +226,10 @@ verdes. **No ar em 26/11** com o ok do Victor (master `3c0c4d0`; CI 45865681494 
 medium (ver relatório). **Decisões do Victor (26/11)**: guardar enquanto a conta existir, nomes de bolsistas
 podem ficar, tela como sugerido; implementar depois. **Segunda rodada (26/11)**: `INSTRUCOES` 11 e 12 (texto antes dos
 blocos = "abaixo"; linguagem para leigos, datas dd/mm/aaaa) e `DeOndeVem` com árvore pequena aberta e atalho
-"Ver no balancete/plano ›". Bancada real 4/4. **Falta publicar** o site e a Edge Function (com o ok do Victor) e
-conferir em produção.
+"Ver no balancete/plano ›". Bancada real 4/4. **No ar em 26/11** com o ok do Victor (site e Edge Function `analise`). A conferência em
+produção pegou "Realizado" mostrando o previsto (o modelo usava a linha do plano por falta de nó), corrigido com
+célula vazia (`null` → "—") e a trava de folha repetida na linha, e o negrito `**` literal, retirado no servidor.
+Ver o relatório.
 
 **Próximo passo, nesta ordem:**
 1. As 5 perguntas reais do Victor na tela publicada (anotar aqui o que ele estranhar).

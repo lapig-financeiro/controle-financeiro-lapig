@@ -240,6 +240,7 @@ Além disso:
   explicado na primeira vez, e o que olhar nos blocos abaixo.
 - Em tabelas (`criar_bloco`), a **primeira coluna** pode ser texto literal (rótulo de linha) e as
   demais colunas citam ids de nós ou **`null`** (célula vazia, a tela mostra "—"; 26/11). A linha que cita
-  um nó e o seu filho único (o mesmo valor um nível abaixo, como "Previsto" e a única linha do plano) é
-  recusada: foi assim que "Realizado" mostrou o previsto no 30.109.
+  um nó e a **folha** ao fim da sua cadeia de filhos únicos (o mesmo valor repetido pela linha do documento,
+  como "Previsto" e a única linha do plano) é recusada: foi assim que "Realizado" mostrou o previsto no 30.109.
+  Grupo e o seu único "Previsto" na mesma linha continuam aceitos (grupo sem gasto: previsto = livre).
 - O texto final perde negrito e título de markdown antes da marcação (`semMarkdownDeEnfase`).

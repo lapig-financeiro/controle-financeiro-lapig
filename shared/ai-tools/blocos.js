@@ -43,14 +43,17 @@ function mesmoNo(a, b) {
 }
 
 /**
- * `filho` está abaixo de `pai` por uma cadeia de filhos únicos: é o mesmo
- * número um nível abaixo (o "Previsto" e a única linha do plano). Citar os
- * dois na mesma linha da tabela põe um valor na coluna errada.
+ * `filho` é a FOLHA ao fim de uma cadeia de filhos únicos de `pai`: o mesmo
+ * número repetido pela linha do documento (o "Previsto" e a única linha do
+ * plano, posta na coluna "Realizado" no 30.109). Nó intermediário não conta:
+ * o grupo (livre) e o seu único "Previsto" na mesma linha é leitura legítima
+ * (grupo sem gasto: previsto = livre).
  */
-function abaixoPorFilhoUnico(pai, filho) {
+export function abaixoPorFilhoUnico(pai, filho) {
   if (pai?.origem?.tipo !== 'no' || filho?.origem?.tipo !== 'no') return false;
-  let atual = pai.origem.no;
   const alvo = filho.origem.no;
+  if (!alvo || (Array.isArray(alvo.partes) && alvo.partes.length > 0)) return false;
+  let atual = pai.origem.no;
   while (atual && Array.isArray(atual.partes) && atual.partes.length === 1) {
     atual = atual.partes[0];
     if (mesmoNo(atual, alvo)) return true;

@@ -126,3 +126,9 @@ Correções:
 - Testes: `tests/ai-tools-v2/blocos.test.js` (a recusa e a célula vazia), `texto.test.js` e
   `app/tests/bloco-analise-celula-vazia.test.jsx`. Bancada real 4/4 nas repetições (a pergunta 3 teve um texto fraco
   uma vez e passou nas 3 seguintes).
+
+Conferência em produção da correção (`5325847`): Realizado virou "—" nos grupos sem gasto, mas o **Previsto**
+também. Nesses grupos o próprio grupo (o livre) tem um único filho, o "Previsto", e a trava recusava grupo +
+Previsto na mesma linha, que é uma leitura legítima (previsto = livre quando nada foi gasto). A trava agora pega só
+a **folha** ao fim da cadeia (a linha do documento repetindo o valor), e a instrução 5 diz para citar o
+"Previsto — …" do grupo na coluna do previsto. Teste unitário de `abaixoPorFilhoUnico` com os dois casos.
