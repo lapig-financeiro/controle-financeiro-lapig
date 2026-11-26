@@ -170,10 +170,11 @@ Supabase simulado a partir de um retrato das RPCs e o modelo em três modos:
 deste PC, em `localhost:11434`) e **chave** (`--chave <arquivo>`, chama
 `ollama.com` de verdade). O contador e o registro entram pela RPC: o roteador
 responde `analise_consumir` com um contador em memória e
-`analise_registro_iniciar`/`analise_registro_concluir` com um registro em memória
-(`roteador.registros`, UUID sintético determinístico, abertura/fechamento únicos
-e dono conferido). O retrato real fica fora do git; o exemplo versionado usa
-três centros fictícios (`30.9xx`).
+`analise_registro_iniciar`/`analise_registro_concluir_servidor` com um registro
+em memória (`roteador.registros`, UUID sintético determinístico, abertura/fechamento
+únicos e dono conferido; a conclusão usa um token de servidor simulado, como a
+Edge Function). O retrato real fica fora do git; o exemplo versionado usa três
+centros fictícios (`30.9xx`).
 
 ```bash
 node worker/bancada/rodar.mjs \

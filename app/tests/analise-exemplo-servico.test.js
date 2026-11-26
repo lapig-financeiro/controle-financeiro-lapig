@@ -72,4 +72,17 @@ describe('serviço no modo exemplo', () => {
     expect(trecho).toContain("import('./analiseExemplo.js')");
     expect(fonte).not.toMatch(/^\s*import\s+[^;]*analiseExemplo/m);
   });
+
+  it('o serviço de histórico também mantém o exemplo atrás de DEV + VITE_DADOS', () => {
+    const fonte = fs.readFileSync(
+      path.resolve(__dirname, '../src/servicos/analiseHistorico.js'),
+      'utf8'
+    );
+
+    expect(fonte).not.toMatch(/^\s*import\s+[^;]*analiseExemplo/m);
+    expect(fonte).toContain(
+      "import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo'"
+    );
+    expect(fonte).toContain("import('./analiseExemplo.js')");
+  });
 });

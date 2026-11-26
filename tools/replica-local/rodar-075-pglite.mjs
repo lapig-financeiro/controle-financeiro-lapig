@@ -147,7 +147,10 @@ async function main() {
       grant usage on schema public, auth to "service_role";
       create or replace function auth.role() returns text
       language sql stable as $$
-        select nullif(current_setting('request.jwt.claim.role', true), '')
+        select coalesce(
+          nullif(current_setting('request.jwt.claim.role', true), ''),
+          nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'
+        )
       $$;
     `);
 

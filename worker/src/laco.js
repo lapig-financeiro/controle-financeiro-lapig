@@ -20,11 +20,11 @@
    é erro interno; erro de ferramenta (inclusive exceção) é
    cortado em 500 caracteres na tela e no que volta ao modelo.
 
-   Registro da 074: quando `registro` é injetado, o laço acumula o
+   Registro da 074/075: quando `registro` é injetado, o laço acumula o
    que a pessoa viu (blocos, texto final e passos)
-   para o `analise_registro_concluir`. Os argumentos e as mensagens
-   de erro dos passos passam pela máscara da sessão; nome real
-   nunca é gravado ali. Nada disso vai para console.
+   para o `analise_registro_concluir_servidor`. Os argumentos e as
+   mensagens de erro dos passos passam pela máscara da sessão; nome
+   real nunca é gravado ali. Nada disso vai para console.
    ============================================================ */
 
 import { PRAZO_PADRAO_MS, timeoutEfetivo } from './prazo.js';

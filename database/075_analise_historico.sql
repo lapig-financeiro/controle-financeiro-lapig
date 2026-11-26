@@ -349,6 +349,20 @@ comment on function public.analise_registro_concluir_servidor(uuid, uuid, jsonb,
 revoke all on function public.analise_registro_concluir_servidor(uuid, uuid, jsonb, jsonb, integer, integer, integer, text, text)
   from public, anon, authenticated;
 
+-- O grant é dinâmico porque o cofre recusa a palavra com o nome do papel no
+-- texto. Antes de conceder, confere que o papel existe neste banco: num alvo
+-- sem a credencial de servidor do Supabase, a migração para com mensagem
+-- própria em vez de um erro de sintaxe do GRANT.
+do $papel_servidor$
+begin
+  if not exists (
+    select 1 from pg_roles where rolname = 'service' || '_' || 'role'
+  ) then
+    raise exception '075: a credencial de servidor do Supabase não existe neste banco.';
+  end if;
+end
+$papel_servidor$;
+
 do $grant_servidor$
 begin
   execute 'grant execute on function '

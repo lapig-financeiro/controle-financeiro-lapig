@@ -276,8 +276,9 @@ function turnoAoVivo({ id, pergunta, anteriores }) {
   };
 }
 
-function notaDeOrigemDoTurno(turno) {
+function notaDeOrigemDoTurno(turno, hoje = new Date()) {
   if (!turno?.carregado || !turno.terminadaEm) return null;
+  if (mesmoDiaBrasilia(turno.terminadaEm, hoje)) return null;
   return `Este valor é de ${dataBrasilia(turno.terminadaEm)}; a origem abaixo é a de hoje.`;
 }
 
@@ -1474,7 +1475,7 @@ export function Analise({
     if (!carregado && turno.fim && Number.isFinite(Number(turno.fim.ms))) {
       metadados.push(textoSegundos(turno.fim.ms));
     }
-    const notaOrigem = notaDeOrigemDoTurno(turno);
+    const notaOrigem = notaDeOrigemDoTurno(turno, agora());
     const semRespostaSalva =
       carregado && !textoFinal && turno.blocos.length === 0 && !turno.terminadaEm;
     const naoSalvo = !carregado && turno.recebeuInicio && !turno.registro && turno.status !== 'correndo';

@@ -52,7 +52,8 @@ const CONVERSAS_CATALOGO = [
   },
 ];
 
-const MESES_PROJECAO_CATALOGO = [  { mes: '2026-08', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 88000, em_conta_fim: 88000, orcamento_resta: 168000 },
+const MESES_PROJECAO_CATALOGO = [
+  { mes: '2026-08', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 88000, em_conta_fim: 88000, orcamento_resta: 168000 },
   { mes: '2026-09', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 76000, em_conta_fim: 76000, orcamento_resta: 156000 },
   { mes: '2026-10', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 64000, em_conta_fim: 64000, orcamento_resta: 144000 },
   { mes: '2026-11', folha: 12000, entra_antes: 0, entra_depois: 0, desembolsos: [], em_conta_apos_folha: 52000, em_conta_fim: 52000, orcamento_resta: 132000 },

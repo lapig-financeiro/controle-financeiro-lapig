@@ -662,7 +662,7 @@ describe('renomear e excluir', () => {
 describe('origem de turno antigo', () => {
   const atualizada = '2026-11-26T14:32:00-03:00';
 
-  function preparar() {
+  function preparar(terminadaEm = '2026-11-20T14:32:00-03:00') {
     const blocoLivre = {
       id: 'numero-livre',
       tipo: 'numero',
@@ -723,6 +723,7 @@ describe('origem de turno antigo', () => {
             pergunta: 'Pergunta antiga',
             texto: 'Resposta antiga.',
             blocos: [blocoLivre, blocoNo, blocoRef],
+            terminadaEm,
           }),
         ],
       }),
@@ -768,7 +769,7 @@ describe('origem de turno antigo', () => {
     botoes[0].click();
     let painel = await esperarPor(() => document.querySelector('.painel-lateral'));
     expect(painel.textContent).toContain(
-      'Este valor é de 26/11/2026; a origem abaixo é a de hoje.'
+      'Este valor é de 20/11/2026; a origem abaixo é a de hoje.'
     );
     expect(painel.textContent).toContain('Livre raiz');
     painel.querySelector('.painel-lateral__fechar').click();
@@ -784,9 +785,31 @@ describe('origem de turno antigo', () => {
     botoes[2].click();
     const documento = await esperarPor(() => document.querySelector('.documento'));
     expect(documento.textContent).toContain(
-      'Este valor é de 26/11/2026; a origem abaixo é a de hoje.'
+      'Este valor é de 20/11/2026; a origem abaixo é a de hoje.'
     );
     expect(documento.textContent).toContain('Balancete de teste');
+  });
+
+  it('não mostra a nota de data quando o turno é de hoje', async () => {
+    explicarLivreMock.mockResolvedValue({
+      dados: {
+        rotulo: 'Livre raiz',
+        valor: 100,
+        tipo: 'calculo',
+        chave: 'livre',
+        partes: [],
+      },
+      erro: null,
+    });
+    const { listar, ler } = preparar('2026-11-26T14:32:00-03:00');
+    renderizar({ listarConversas: listar, lerConversa: ler });
+    await esperarPor(() => document.body.textContent.includes('Resposta antiga.'));
+
+    const botoes = Array.from(document.querySelectorAll('.destaque button.valor--origem'));
+    botoes[0].click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.textContent).toContain('Livre raiz');
+    expect(painel.textContent).not.toContain('Este valor é de');
   });
 });
 

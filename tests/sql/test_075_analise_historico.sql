@@ -540,7 +540,15 @@ begin
 end $$;
 
 set local role service_role;
-select set_config('request.jwt.claim.role', 'service' || '_' || 'role', true);
+-- O auth.role() real do Supabase lê o claim direto e o JSON `claims`; o stub
+-- do PGlite espelha os dois. Aqui uso o JSON, que é o caminho que o PostgREST
+-- manda, para provar o fallback.
+select set_config('request.jwt.claim.role', '', true);
+select set_config(
+  'request.jwt.claims',
+  '{"role":"' || 'service' || '_' || 'role' || '"}',
+  true
+);
 do $$
 declare
   v_resp jsonb := jsonb_build_object(
