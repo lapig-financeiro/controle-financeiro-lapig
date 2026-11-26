@@ -1,4 +1,7 @@
+import { Check, Copy } from 'lucide-preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { dataCompleta, dinheiro } from '../util/formato.js';
+import { Botao } from './Botao.jsx';
 import { Destaque } from './Destaque.jsx';
 import { Tabela } from './Tabela.jsx';
 import { Valor } from './Valor.jsx';
@@ -132,6 +135,161 @@ export function intervalosValidos(texto, semOrigem) {
 
 function substituirPessoas(texto) {
   return String(texto ?? '').replace(/⟦P(\d+)⟧/g, (_, numero) => `pessoa ${numero}`);
+}
+
+const FORMATO_PLANILHA = new Intl.NumberFormat('pt-BR', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+const FORMATO_PLANILHA_MOEDA = new Intl.NumberFormat('pt-BR', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/**
+ * Uma célula como texto de planilha: número em pt-BR sem "R$" e com hífen
+ * comum no negativo (o Excel e o Planilhas leem "−" como texto), data
+ * dd/mm/aaaa, percentual com "%". Vazio vira "—", como na tela: nunca zero.
+ */
+function celulaParaPlanilha(valor, unidade) {
+  const tipo = UNIDADES.has(unidade) ? unidade : 'texto';
+  if (tipo === 'texto') {
+    const texto = valor === null || valor === undefined || valor === '' ? '' : substituirPessoas(valor);
+    const limpo = texto.replace(/[\t\r\n]+/g, ' ').trim() || '—';
+    // Texto que começa com = + - @ viraria fórmula ao colar na planilha.
+    return /^[=+\-@]/.test(limpo) ? `'${limpo}` : limpo;
+  }
+  if (tipo === 'data') return formatarValorAnalise(valor, 'data');
+  const bruto = numeroFinito(valor);
+  if (bruto === null) return '—';
+  const numero = bruto === 0 ? 0 : bruto; // sem "-0,00"
+  if (tipo === 'moeda') return FORMATO_PLANILHA_MOEDA.format(numero);
+  if (tipo === 'percentual') return `${FORMATO_PLANILHA.format(numero)}%`;
+  return FORMATO_PLANILHA.format(numero);
+}
+
+/**
+ * Tabela da Análise como texto separado por tabulação (cola em colunas no
+ * Excel e no Planilhas). Coluna em reais sem "(R$)" no rótulo ganha o sufixo,
+ * já que as células saem sem o prefixo.
+ */
+export function tabelaParaTexto(tabela) {
+  if (!tabela || !Array.isArray(tabela.colunas) || !Array.isArray(tabela.linhas)) return '';
+  const unidades = tabela.colunas.map((coluna) =>
+    UNIDADES.has(coluna?.unidade) ? coluna.unidade : 'texto'
+  );
+  const cabecalho = tabela.colunas.map((coluna, indice) => {
+    const rotulo = String(coluna?.rotulo ?? '').replace(/[\t\r\n]+/g, ' ').trim();
+    if (unidades[indice] === 'moeda' && !rotulo.includes('R$')) {
+      return rotulo ? `${rotulo} (R$)` : 'R$';
+    }
+    return rotulo;
+  });
+  const linhas = tabela.linhas
+    .filter((linha) => Array.isArray(linha))
+    .map((linha) =>
+      tabela.colunas
+        .map((_, indice) => {
+          const celula = linha[indice];
+          if (!celula || typeof celula !== 'object') return '—';
+          return celulaParaPlanilha(celula.valor, celula.unidade || unidades[indice]);
+        })
+        .join('\t')
+    );
+  return [cabecalho.join('\t'), ...linhas].join('\n');
+}
+
+// Reserva para quando a API nova é negada (página embutida, permissão do
+// navegador): o `execCommand` antigo ainda copia uma seleção num clique.
+function copiarPorSelecao(texto) {
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') return false;
+  // Guarda foco e seleção de quem clicou: a cópia não pode tirar o cursor do
+  // campo da pergunta nem desfazer uma seleção.
+  const focoAnterior = document.activeElement;
+  const selecao = typeof window.getSelection === 'function' ? window.getSelection() : null;
+  const intervalos = [];
+  if (selecao) {
+    for (let i = 0; i < selecao.rangeCount; i += 1) intervalos.push(selecao.getRangeAt(i));
+  }
+  const area = document.createElement('textarea');
+  area.value = texto;
+  area.setAttribute('readonly', '');
+  area.setAttribute('aria-hidden', 'true');
+  area.tabIndex = -1;
+  area.className = 'bloco-analise__area-copia';
+  document.body.appendChild(area);
+  let ok = false;
+  try {
+    area.focus({ preventScroll: true });
+    area.select();
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  } finally {
+    area.remove();
+    if (selecao) {
+      selecao.removeAllRanges();
+      intervalos.forEach((intervalo) => selecao.addRange(intervalo));
+    }
+    if (focoAnterior && typeof focoAnterior.focus === 'function' && focoAnterior.isConnected) {
+      focoAnterior.focus({ preventScroll: true });
+    }
+  }
+  return ok;
+}
+
+async function copiarTexto(texto) {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(texto);
+      return;
+    }
+  } catch {
+    /* cai na reserva abaixo */
+  }
+  if (!copiarPorSelecao(texto)) throw new Error('Área de transferência indisponível');
+}
+
+/** "Copiar tabela": confirma por 2 s ao lado do botão e avisa se falhar. */
+function BotaoCopiarTabela({ tabela, copiar = copiarTexto }) {
+  const [estado, setEstado] = useState('parado');
+  const relogioRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(relogioRef.current), []);
+
+  const aoCopiar = async () => {
+    clearTimeout(relogioRef.current);
+    try {
+      await copiar(tabelaParaTexto(tabela));
+      setEstado('copiada');
+    } catch {
+      setEstado('falhou');
+    }
+    relogioRef.current = setTimeout(() => setEstado('parado'), 2000);
+  };
+
+  return (
+    <span class="bloco-analise__copiar">
+      <Botao
+        variante="fantasma"
+        tamanho="compacto"
+        icone={estado === 'copiada' ? Check : Copy}
+        onClick={aoCopiar}
+      >
+        {estado === 'copiada' ? 'Copiada' : 'Copiar tabela'}
+      </Botao>
+      <span
+        class={`bloco-analise__copiar-status${estado === 'falhou' ? ' bloco-analise__copiar-status--falha' : ''}`}
+        role="status"
+      >
+        {estado === 'copiada'
+          ? 'Tabela copiada. Cole numa planilha.'
+          : estado === 'falhou'
+            ? 'Não foi possível copiar. Selecione a tabela e use Ctrl+C.'
+            : ''}
+      </span>
+    </span>
+  );
 }
 
 /**
@@ -272,7 +430,7 @@ export function ValorAnalise({
  * Um bloco da resposta da Análise: número, tabela ou texto. Devolve `null`
  * para bloco inválido — a tela mostra uma única nota discreta por análise.
  */
-export function BlocoAnalise({ bloco, onOrigem = null, className = '' }) {
+export function BlocoAnalise({ bloco, onOrigem = null, className = '', copiar = undefined }) {
   if (!blocoValido(bloco)) return null;
 
   if (bloco.tipo === 'numero') {
@@ -325,7 +483,7 @@ export function BlocoAnalise({ bloco, onOrigem = null, className = '' }) {
           const celula = linha?.[indice];
           if (!celula || typeof celula !== 'object') return null;
           if (indice === 0 && !celula.origem) {
-            return <span>{formatarValorAnalise(celula.valor, 'texto')}</span>;
+            return <span>{substituirPessoas(formatarValorAnalise(celula.valor, 'texto'))}</span>;
           }
           return (
             <ValorAnalise
@@ -344,7 +502,10 @@ export function BlocoAnalise({ bloco, onOrigem = null, className = '' }) {
 
     return (
       <div class={`bloco-analise${className ? ` ${className}` : ''}`}>
-        {bloco.titulo && <h3 class="bloco-analise__titulo">{bloco.titulo}</h3>}
+        <div class="bloco-analise__cabeca">
+          {bloco.titulo ? <h3 class="bloco-analise__titulo">{bloco.titulo}</h3> : <span />}
+          <BotaoCopiarTabela tabela={bloco.tabela} copiar={copiar} />
+        </div>
         <Tabela
           colunas={colunas}
           dados={bloco.tabela.linhas}

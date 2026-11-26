@@ -10,7 +10,7 @@ import './BarraTopo.css';
 const ITENS_MENU = [
   { id: 'projetos', rotulo: 'Projetos', hash: '#/projetos', apenasAdmin: false },
   { id: 'bolsistas', rotulo: 'Bolsistas', hash: '#/bolsistas', apenasAdmin: false },
-  { id: 'analise', rotulo: 'Análise', hash: '#/analise', apenasAdmin: true },
+  { id: 'analise', rotulo: 'Análise', hash: '#/analise', apenasAdmin: false },
   { id: 'admin', rotulo: 'Admin', hash: '#/admin', apenasAdmin: true },
 ];
 
@@ -22,6 +22,7 @@ export function BarraTopo({
   rotaAtiva = 'projetos',
   isAdmin = false,
   podeBolsistas = false,
+  podeAnalise = false,
   usuario = null,
   todosCentros = null,
   filtroSalvando = false,
@@ -35,6 +36,7 @@ export function BarraTopo({
   onAlternarFiltro = null,
   onSelecionarPendencia = null,
   onSair = null,
+  onAjuda = null,
   onNavegar = null,
 }) {
   const [filtroAberto, setFiltroAberto] = useState(false);
@@ -45,6 +47,7 @@ export function BarraTopo({
   const itensVisiveis = ITENS_MENU.filter((item) => {
     if (item.apenasAdmin) return isAdmin;
     if (item.id === 'bolsistas') return isAdmin || Boolean(podeBolsistas);
+    if (item.id === 'analise') return isAdmin || Boolean(podeAnalise);
     return true;
   });
 
@@ -173,7 +176,7 @@ export function BarraTopo({
             onSelecionar={onSelecionarPendencia}
           />
 
-          <MenuUsuario usuario={usuario} isAdmin={isAdmin} onSair={onSair} />
+          <MenuUsuario usuario={usuario} isAdmin={isAdmin} onSair={onSair} onAjuda={onAjuda} />
         </div>
       </div>
     </header>

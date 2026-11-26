@@ -59,7 +59,7 @@ não existe.
 | `SUPABASE_ANON_KEY` | ambiente da Edge Function | Chave pública (já existe) |
 | `OLLAMA_API_KEY` | **segredo** | o mesmo da `assistente` (`npx supabase secrets set OLLAMA_API_KEY=...`) |
 | `ANALISE_MODELO` | opcional | padrão `deepseek-v4.1-flash:cloud` |
-| `ANALISE_PAPEIS` | opcional | padrão `admin` |
+| `ANALISE_PAPEIS` | opcional | padrão `admin,professor` (agente e automação nunca) |
 | `ANALISE_LIMITE_DIA` | opcional | padrão `50` perguntas por login por dia |
 
 ## Contador

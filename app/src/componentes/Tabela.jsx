@@ -11,6 +11,8 @@ export function Tabela({
   dados = [],
   chaveLinha = (linha, indice) => linha?.id ?? indice,
   onClicarLinha = null,
+  // Quais linhas abrem detalhe; as outras ficam como texto (ex.: logins só leitura).
+  linhaClicavel = () => true,
   rotuloLinha = (linha) => {
     const primeira = colunas[0]?.chave;
     return primeira && linha?.[primeira] ? `Abrir detalhe de ${linha[primeira]}` : 'Abrir detalhe';
@@ -47,10 +49,11 @@ export function Tabela({
           {dados.map((linha, indice) => {
             const chave = chaveLinha(linha, indice);
             const carregando = chaveCarregando !== null && chaveCarregando === chave;
+            const estaClicavel = clicavel && linhaClicavel(linha);
             return (
               <tr
                 key={chave}
-                class={`tabela__linha${clicavel ? ' tabela__linha--clicavel' : ''}`}
+                class={`tabela__linha${estaClicavel ? ' tabela__linha--clicavel' : ''}`}
                 aria-busy={carregando ? 'true' : undefined}
               >
                 {colunas.map((col, colIdx) => {
@@ -61,7 +64,7 @@ export function Tabela({
                       data-rotulo={col.titulo}
                       class={`tabela__td${col.alinhamento === 'direita' ? ' tabela__td--direita' : ''}`}
                     >
-                      {clicavel && colIdx === 0 ? (
+                      {estaClicavel && colIdx === 0 ? (
                         <button
                           type="button"
                           class="tabela__gatilho"

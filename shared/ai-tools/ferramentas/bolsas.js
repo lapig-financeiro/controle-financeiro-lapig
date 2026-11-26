@@ -176,6 +176,13 @@ function comecaDepois(bolsa, hoje) {
   return bolsa.inicio.slice(0, 10) > hoje;
 }
 
+/** AAAA-MM-DD + n dias, em UTC (sem fuso nem horário de verão no meio). */
+function somarDias(dia, n) {
+  const data = new Date(`${dia}T00:00:00Z`);
+  data.setUTCDate(data.getUTCDate() + n);
+  return data.toISOString().slice(0, 10);
+}
+
 export async function executar(ctx, args) {
   let centro = null;
   if (args && args.project_id !== undefined && args.project_id !== null && args.project_id !== '') {
@@ -191,6 +198,28 @@ export async function executar(ctx, args) {
     }
     incluirEncerradas = args.incluir_encerradas;
   }
+
+  // "Quais terminam nos próximos N dias": o corte por data é feito aqui, não
+  // pelo modelo (na bancada de 26/11 ele leu 31/12 e escreveu "nenhuma").
+  let limiteFim = null;
+  let diasPedidos = null;
+  if (args && args.terminam_em_dias !== undefined && args.terminam_em_dias !== null) {
+    const dias = args.terminam_em_dias;
+    if (!Number.isInteger(dias) || dias < 1 || dias > 366) {
+      return { erro: 'O parâmetro terminam_em_dias deve ser um inteiro de 1 a 366.' };
+    }
+    if (typeof ctx.hoje !== 'string') {
+      return { erro: 'Sem a data de hoje não dá para filtrar por fim. (interno)' };
+    }
+    limiteFim = somarDias(ctx.hoje, dias);
+    diasPedidos = dias;
+  }
+  const terminaNoPeriodo = (bolsa) => {
+    if (!limiteFim) return true;
+    if (bolsa.status === 'cancelled' || typeof bolsa.fim !== 'string') return false;
+    const fim = bolsa.fim.slice(0, 10);
+    return fim >= ctx.hoje && fim <= limiteFim;
+  };
 
   let dadosCentros;
   try {
@@ -233,7 +262,8 @@ export async function executar(ctx, args) {
       (bolsa) =>
         visiveis.has(bolsa.project_id) &&
         (centro ? bolsa.project_id === centro.id : true) &&
-        (incluirEncerradas || bolsa.vigente_hoje === true || comecaDepois(bolsa, ctx.hoje))
+        (incluirEncerradas || bolsa.vigente_hoje === true || comecaDepois(bolsa, ctx.hoje)) &&
+        terminaNoPeriodo(bolsa)
     );
     if (bolsas.length === 0) continue;
 
@@ -411,11 +441,29 @@ export async function executar(ctx, args) {
   );
   if (total) nos.push(total);
 
+  let periodo = null;
+  if (limiteFim) {
+    const origemPeriodo = semDocumento('filtro de fim aplicado pela ferramenta', consulta);
+    const noLimite = registrar.data(limiteFim, 'Terminam até', origemPeriodo);
+    const qtd = bolsistas.reduce((soma, b) => soma + b.bolsas.length, 0);
+    const noQtd = registrar.numero(qtd, 'Bolsas que terminam no período', origemPeriodo);
+    const noDias = registrar.numero(diasPedidos, 'Dias a partir de hoje', origemPeriodo);
+    periodo = {
+      dias: noDias ? noDias.id : null,
+      termina_ate: noLimite ? noLimite.id : null,
+      bolsas: noQtd ? noQtd.id : null,
+    };
+    if (noDias) nos.push(noDias);
+    if (noLimite) nos.push(noLimite);
+    if (noQtd) nos.push(noQtd);
+  }
+
   const nosUnicos = [...new Map(nos.map((no) => [no.id, no])).values()];
 
   return {
     paraModelo: cortarParaCaber({
       total: total ? total.id : null,
+      ...(periodo ? { periodo } : {}),
       bolsistas,
       caixas,
       nos: nosUnicos.map(mini),

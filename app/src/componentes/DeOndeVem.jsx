@@ -119,6 +119,28 @@ function textoDoAtalho(no) {
   return DESTINO_DA_REF[no.ref.alvo_tabela] || '';
 }
 
+/**
+ * Caminhos ("0/1/2") dos nós que têm, abaixo, uma folha com atalho para o
+ * documento. Abrir só esses mostra o "Ver no balancete/plano ›" sem despejar
+ * as folhas sem arquivo (as bolsas do comprometido, que numa rubrica de
+ * Pessoal passam de cem).
+ */
+export function caminhosAteDocumentos(arvore) {
+  const caminhos = new Set();
+  const visitar = (no, caminho) => {
+    const partes = Array.isArray(no?.partes) ? no.partes : [];
+    if (partes.length === 0) return Boolean(textoDoAtalho(no));
+    let temDocumento = false;
+    partes.forEach((parte, idx) => {
+      if (parte && typeof parte === 'object' && visitar(parte, `${caminho}/${idx}`)) temDocumento = true;
+    });
+    if (temDocumento) caminhos.add(caminho);
+    return temDocumento;
+  };
+  if (arvore && typeof arvore === 'object') visitar(arvore, '0');
+  return caminhos;
+}
+
 function ehNoRaizOuGrupo(no, nivel) {
   if (nivel === 0) return true;
   const chave = String(no?.chave || '');
@@ -141,6 +163,7 @@ export function DeOndeVem({
   carregadorPdf = undefined,
   carregadorMammoth = undefined,
   abrirTudoAte = ABRE_TUDO_ATE,
+  abrirAteDocumentos = false,
 }) {
   const baseId = useId();
   const [abertos, setAbertos] = useState({});
@@ -168,6 +191,10 @@ export function DeOndeVem({
     [arvore, valorEsperado]
   );
   const abreTudo = useMemo(() => contarNos(arvore) <= abrirTudoAte, [arvore, abrirTudoAte]);
+  const caminhosDocumento = useMemo(
+    () => (abrirAteDocumentos ? caminhosAteDocumentos(arvore) : new Set()),
+    [arvore, abrirAteDocumentos]
+  );
 
   useEffect(() => {
     setAbertos({});
@@ -241,7 +268,13 @@ export function DeOndeVem({
       return;
     }
 
-    const dadosOrigem = res.dados;
+    const dadosOrigem = { ...res.dados };
+    // Caminho anulado pelo banco (nome de arquivo que parece CPF): vale a nota
+    // do documento, não o leitor com erro genérico.
+    if (dadosOrigem.documento && !dadosOrigem.documento.caminho) {
+      dadosOrigem.nota = dadosOrigem.documento.nota || dadosOrigem.nota;
+      dadosOrigem.documento = null;
+    }
     if (dadosOrigem.documento) {
       setEstadoFolhas((prev) => ({
         ...prev,
@@ -295,7 +328,7 @@ export function DeOndeVem({
     if (Object.prototype.hasOwnProperty.call(abertos, caminho)) {
       return Boolean(abertos[caminho]);
     }
-    return abreTudo || caminhosAbrir.has(caminho);
+    return abreTudo || caminhosAbrir.has(caminho) || caminhosDocumento.has(caminho);
   };
 
   const alternarNo = (caminho, nivel) => {
@@ -475,6 +508,8 @@ export function DeOndeVem({
           Consultando origem…
         </p>
       )}
+
+      {estadoRaiz?.nota && <p class="de-onde-vem__nota-folha">{estadoRaiz.nota}</p>}
 
       {estadoRaiz?.erro && (
         <AvisoFalha mensagem={estadoRaiz.erro} aoTentarNovamente={() => consultarFolha(arvore, '0')} />

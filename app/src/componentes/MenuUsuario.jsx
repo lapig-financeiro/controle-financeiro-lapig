@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'preact/hooks';
-import { LogOut } from 'lucide-preact';
+import { CircleHelp, LogOut } from 'lucide-preact';
 import { iniciaisUsuario } from '../util/formato.js';
 import { MenuSuspenso, MenuSuspensoItem, MenuSuspensoSeparador } from './MenuSuspenso.jsx';
 import './MenuUsuario.css';
@@ -7,7 +7,7 @@ import './MenuUsuario.css';
 /**
  * Menu do usuário no padrão de divulgação: avatar (`--avatar`) abre painel com nome, papel e "Sair".
  */
-export function MenuUsuario({ usuario = null, isAdmin = false, onSair = null }) {
+export function MenuUsuario({ usuario = null, isAdmin = false, onSair = null, onAjuda = null }) {
   const [aberto, setAberto] = useState(false);
   const ancoraRef = useRef(null);
   const gatilhoRef = useRef(null);
@@ -46,6 +46,17 @@ export function MenuUsuario({ usuario = null, isAdmin = false, onSair = null }) 
             <span class="menu-usuario__papel">{papel}</span>
           </div>
           <MenuSuspensoSeparador />
+          {onAjuda && (
+            <MenuSuspensoItem
+              icone={CircleHelp}
+              onClick={() => {
+                setAberto(false);
+                onAjuda();
+              }}
+            >
+              Como usar o site
+            </MenuSuspensoItem>
+          )}
           <MenuSuspensoItem
             icone={LogOut}
             onClick={() => {

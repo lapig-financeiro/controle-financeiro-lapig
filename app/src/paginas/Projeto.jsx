@@ -2829,9 +2829,14 @@ export function Projeto({
             <>
               {grupoTemBolsas && linhaCabeAtePainel()}
               {grupoTemBolsas && linhaFolhaAtrasadaPainel()}
+              {/* O painel de uma rubrica abre o caminho até cada folha com
+                  documento: o "Ver no balancete/plano ›" mora na folha e,
+                  fechado atrás de setas, a pessoa não chegava ao documento.
+                  As bolsas do comprometido (sem arquivo) ficam fechadas. */}
               <DeOndeVem
                 arvore={noGrupoArvore}
                 valorEsperado={numeroFinito(grupoPainel.saldo_livre)}
+                abrirAteDocumentos
               />
             </>
           ) : arvoreRaizNula ? (

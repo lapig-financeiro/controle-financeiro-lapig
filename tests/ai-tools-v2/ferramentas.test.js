@@ -643,6 +643,38 @@ describe('pendencias', () => {
 });
 
 describe('bolsas', () => {
+  it('terminam_em_dias filtra pelo fim e devolve data-limite e contagem com origem', async () => {
+    // hoje = 25/11/2026; no fixture visível: 30.901 termina 01/09/2027 e 30.902 termina 01/01/2027.
+    const sessao = montar();
+    const dados = json(await sessao.executar('bolsas', { terminam_em_dias: 60 }));
+    const fins = dados.bolsistas.flatMap((b) => b.bolsas.map((x) => dados.nos.find((no) => no.id === x.fim).valor));
+    expect(fins).toEqual(['2027-01-01']);
+    const limite = dados.nos.find((no) => no.id === dados.periodo.termina_ate);
+    expect(limite.valor).toBe('2027-01-24');
+    const qtd = dados.nos.find((no) => no.id === dados.periodo.bolsas);
+    expect(qtd.valor).toBe(1);
+    expect(dados.nos.find((no) => no.id === dados.periodo.dias).valor).toBe(60);
+
+    // O limite é inclusivo: 37 dias chega a 01/01/2027; 36 não.
+    const com37 = json(await sessao.executar('bolsas', { terminam_em_dias: 37 }));
+    expect(com37.nos.find((no) => no.id === com37.periodo.bolsas).valor).toBe(1);
+    const com36 = json(await sessao.executar('bolsas', { terminam_em_dias: 36 }));
+    expect(com36.nos.find((no) => no.id === com36.periodo.bolsas).valor).toBe(0);
+  });
+
+  it('terminam_em_dias inválido devolve erro claro', async () => {
+    const sessao = montar();
+    for (const ruim of [0, 367, 1.5, '60']) {
+      const r = await sessao.executar('bolsas', { terminam_em_dias: ruim });
+      expect(r.erro).toContain('terminam_em_dias');
+    }
+  });
+
+  it('sem terminam_em_dias, a saída não ganha "periodo"', async () => {
+    const dados = json(await montar().executar('bolsas', {}));
+    expect(dados.periodo).toBeUndefined();
+  });
+
   it('mascara nome e não devolve CPF nem e-mail', async () => {
     const sessao = montar();
     const resultado = await sessao.executar('bolsas', { project_id: '30.901' });

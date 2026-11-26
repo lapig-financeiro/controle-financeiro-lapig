@@ -185,6 +185,10 @@ export function especificacoes() {
           type: 'boolean',
           description: 'Se true, traz todas as bolsas visíveis, inclusive encerradas e canceladas (padrão: false, só vigentes e futuras).',
         },
+        terminam_em_dias: {
+          type: 'integer',
+          description: 'Para "quais bolsas terminam nos próximos N dias": traz só as que terminam de hoje até hoje + N (1 a 366) e devolve a data-limite e a contagem em "periodo". Use sempre isto em vez de comparar datas por conta própria.',
+        },
       }
     ),
     ferramenta(

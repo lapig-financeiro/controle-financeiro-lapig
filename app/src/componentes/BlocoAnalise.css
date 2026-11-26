@@ -4,6 +4,40 @@
   gap: var(--esp-3);
 }
 
+.bloco-analise__cabeca {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-3);
+  flex-wrap: wrap;
+}
+
+.bloco-analise__copiar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--esp-2);
+  margin-left: auto;
+}
+
+/* A confirmação aparece só para leitor de tela (a tela vê o "Copiada" no
+   botão); a falha aparece para todos. */
+.bloco-analise__copiar-status:not(.bloco-analise__copiar-status--falha) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.bloco-analise__copiar-status--falha {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-problema);
+}
+
 .bloco-analise__titulo {
   font-size: var(--fs-3);
   line-height: var(--lh-3);
@@ -23,4 +57,15 @@
   color: inherit;
   border-bottom: 1px dotted var(--cor-atencao);
   padding-bottom: 0;
+}
+
+/* Área temporária da cópia de reserva: fora da tela, sem roubar layout. */
+.bloco-analise__area-copia {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }

@@ -212,8 +212,15 @@
   min-height: 100%;
 }
 
+/* A folha cabe na largura da área quando dá (fit-content: as células quebram a
+   linha) e só cresce além dela quando a tabela não cabe; aí a rolagem lateral fica na área de
+   visualização (.documento__visao), cuja barra está sempre à vista. Antes a
+   barra era da própria folha e só aparecia no fim do documento. O texto
+   corrido segue com a medida de leitura; dentro de tabela, cada célula quebra
+   a linha numa medida curta para a tabela não virar uma faixa única. */
 .documento__docx {
-  max-width: var(--medida-texto);
+  width: fit-content;
+  min-width: 100%;
   margin: 0 auto;
   background-color: var(--cor-superficie);
   border: var(--borda);
@@ -222,7 +229,24 @@
   font-size: var(--fs-2);
   line-height: var(--lh-2);
   color: var(--cor-texto);
-  overflow-x: auto;
+}
+
+.documento__docx p,
+.documento__docx h1,
+.documento__docx h2,
+.documento__docx h3,
+.documento__docx h4,
+.documento__docx ul,
+.documento__docx ol {
+  max-width: var(--medida-texto);
+}
+
+.documento__docx td p,
+.documento__docx th p,
+.documento__docx td,
+.documento__docx th {
+  max-width: var(--medida-celula);
+  overflow-wrap: break-word;
 }
 
 .documento__docx p {
@@ -241,7 +265,7 @@
 }
 
 .documento__docx table {
-  width: 100%;
+  min-width: 100%;
   border-collapse: collapse;
   margin: var(--esp-3) 0;
 }

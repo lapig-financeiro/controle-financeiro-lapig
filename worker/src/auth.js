@@ -20,7 +20,10 @@
 
 import { corrida, motivoDoAborto, sinalComPrazo } from './prazo.js';
 
-export const PAPEIS_PADRAO = Object.freeze(['admin']);
+// Toda conta de gente usa a Análise (decisão do Victor, 26/11/2026). O banco
+// filtra os centros de cada login; o agente e a automação ficam de fora.
+export const PAPEIS_PADRAO = Object.freeze(['admin', 'professor']);
+export const PAPEIS_NUNCA = Object.freeze(['agente', 'automacao']);
 
 /** `Authorization: Bearer <jwt>` → jwt. Qualquer outra coisa → null. */
 export function extrairJwt(cabecalho) {
@@ -51,7 +54,7 @@ function semPermissao(papel) {
     ok: false,
     codigo: 'sem_permissao',
     papel: papel ?? null,
-    mensagem: 'A Análise está restrita a administradores.',
+    mensagem: 'A Análise não está disponível para este tipo de conta.',
   };
 }
 
@@ -230,6 +233,9 @@ export async function autenticar({
   const papel = Array.isArray(linhas) ? linhas[0]?.role : linhas?.role;
   if (typeof papel !== 'string' || !papel) return semPermissao(null);
 
+  // Agente e automação nunca usam a Análise, mesmo que alguém os ponha em
+  // ANALISE_PAPEIS: a variável só pode restringir, não abrir para máquina.
+  if (PAPEIS_NUNCA.includes(papel)) return semPermissao(papel);
   if (!papeis.includes(papel)) return semPermissao(papel);
 
   return {

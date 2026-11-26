@@ -239,7 +239,7 @@ describe('pergunta e envio', () => {
     await tick();
 
     expect(document.querySelector('.analise__campo').value).toBe(
-      'Quanto o 30.109 tem livre hoje, e de onde vem?'
+      'Quanto cada centro tem livre hoje, e de onde vem?'
     );
     expect(executarAnalise).not.toHaveBeenCalled();
   });

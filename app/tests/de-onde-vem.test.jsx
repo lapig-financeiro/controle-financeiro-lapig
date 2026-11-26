@@ -583,5 +583,67 @@ describe('DeOndeVem', () => {
     expect(buscarOrigem).toHaveBeenCalledTimes(1);
     expect(buscarOrigem.mock.calls[0][0].alvo_tabela).toBe('balancete_lancamentos');
   });
+  it('árvore grande fica fechada por padrão; abrirAteDocumentos abre só o caminho até as folhas com documento', async () => {
+    // Como uma rubrica de Pessoal real: muitas linhas de balancete e muitas bolsas sem arquivo.
+    const lancamentos = Array.from({ length: 20 }, (_, i) => ({
+      chave: `lanc:${i}`,
+      rotulo: `7.1.3.01.0${i} LINHA ${i}`,
+      valor: 10,
+      sinal: 1,
+      tipo: 'documento',
+      ref: { alvo_tabela: 'balancete_lancamentos', alvo_id: `l-${i}`, campo: 'valor' },
+    }));
+    const bolsas = Array.from({ length: 30 }, (_, i) => ({
+      chave: `bolsa:${i}`,
+      rotulo: `Bolsa ${i} — 2 meses × R$ 1.000,00`,
+      valor: 2000,
+      sinal: 1,
+      tipo: 'digitado',
+      ref: { alvo_tabela: 'scholarships', alvo_id: `b-${i}`, campo: 'amount' },
+    }));
+    const arvore = {
+      chave: 'grupo:a',
+      rotulo: 'Pessoal',
+      valor: 200 - 60000,
+      tipo: 'calculo',
+      partes: [
+        { chave: 'rubrica:a:realizado', rotulo: 'Realizado', valor: 200, sinal: 1, tipo: 'calculo', partes: lancamentos },
+        { chave: 'rubrica:a:comprometido', rotulo: 'Comprometido', valor: 60000, sinal: -1, tipo: 'calculo', partes: bolsas },
+      ],
+    };
+
+    render(<DeOndeVem arvore={arvore} valorEsperado={null} />, document.body);
+    await tick();
+    expect(document.querySelectorAll('.de-onde-vem__atalho').length).toBe(0);
+
+    render(null, document.body);
+    render(<DeOndeVem arvore={arvore} valorEsperado={null} abrirAteDocumentos />, document.body);
+    await tick();
+    const atalhos = Array.from(document.querySelectorAll('.de-onde-vem__atalho'));
+    expect(atalhos.length).toBe(20);
+    expect(atalhos.every((b) => b.textContent.includes('Ver no balancete'))).toBe(true);
+    // O comprometido (bolsas digitadas) continua fechado.
+    const comprometido = Array.from(document.querySelectorAll('.de-onde-vem__alternar')).find((b) =>
+      b.getAttribute('aria-label').includes('Comprometido')
+    );
+    expect(comprometido.getAttribute('aria-expanded')).toBe('false');
+    expect(document.body.textContent).not.toContain('Bolsa 0');
+  });
+  it('documento com caminho anulado (nome parece CPF) mostra a nota, sem abrir o leitor', async () => {
+    const arvore = {
+      chave: 'x', rotulo: 'Linha', valor: 10, tipo: 'documento',
+      ref: { alvo_tabela: 'balancete_lancamentos', alvo_id: 'l-1', campo: 'valor' },
+    };
+    const buscarOrigem = vi.fn().mockResolvedValue({
+      dados: { tipo: 'documento', documento: { bucket: 'b', caminho: null, nota: 'arquivo com nome que parece CPF: peça ao admin' } },
+      erro: null,
+    });
+    render(<DeOndeVem arvore={arvore} buscarOrigem={buscarOrigem} />, document.body);
+    await tick();
+    document.querySelector('.de-onde-vem__atalho').click();
+    await tick();
+    expect(document.body.textContent).toContain('peça ao admin');
+    expect(document.querySelector('.documento')).toBeNull();
+  });
 });
 

@@ -70,10 +70,10 @@ describe('extrairJwt', () => {
 });
 
 describe('papeisPermitidos', () => {
-  it('sem variável, só admin', () => {
-    expect(papeisPermitidos(undefined)).toEqual(['admin']);
-    expect(papeisPermitidos('')).toEqual(['admin']);
-    expect(papeisPermitidos('  ,  ')).toEqual(['admin']);
+  it('sem variável, admin e professor', () => {
+    expect(papeisPermitidos(undefined)).toEqual(['admin', 'professor']);
+    expect(papeisPermitidos('')).toEqual(['admin', 'professor']);
+    expect(papeisPermitidos('  ,  ')).toEqual(['admin', 'professor']);
   });
 
   it('lê lista separada por vírgula', () => {
@@ -133,19 +133,35 @@ describe('autenticação', () => {
     expect(fetchImpl.chamadas[1].url).toContain('user_id=eq.u-admin');
   });
 
-  it('professor é recusado', async () => {
+  it('professor passa pelo padrão (sem passar papeis)', async () => {
     const r = await pedir(fetchFalso({ papel: 'professor' }));
-    expect(r.ok).toBe(false);
-    expect(r.codigo).toBe('sem_permissao');
+    expect(r.ok).toBe(true);
     expect(r.papel).toBe('professor');
   });
 
-  it('outro papel aceito por ANALISE_PAPEIS passa', async () => {
+  it('agente e automação são recusados pelo padrão', async () => {
+    for (const papel of ['agente', 'automacao']) {
+      const r = await pedir(fetchFalso({ papel }), { papeis: papeisPermitidos(undefined) });
+      expect(r.ok).toBe(false);
+      expect(r.codigo).toBe('sem_permissao');
+      expect(r.papel).toBe(papel);
+    }
+  });
+
+  it('agente e automação são recusados mesmo se ANALISE_PAPEIS os incluir', async () => {
+    for (const papel of ['agente', 'automacao']) {
+      const r = await pedir(fetchFalso({ papel }), { papeis: papeisPermitidos(`admin,professor,${papel}`) });
+      expect(r.ok).toBe(false);
+      expect(r.codigo).toBe('sem_permissao');
+    }
+  });
+
+  it('ANALISE_PAPEIS restringe de novo a admin', async () => {
     const r = await pedir(fetchFalso({ papel: 'professor' }), {
-      papeis: papeisPermitidos('admin,professor'),
+      papeis: papeisPermitidos('admin'),
     });
-    expect(r.ok).toBe(true);
-    expect(r.papel).toBe('professor');
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe('sem_permissao');
   });
 
   it('sem linha em app_users é sem_permissao', async () => {

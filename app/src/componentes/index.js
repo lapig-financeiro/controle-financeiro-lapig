@@ -25,3 +25,4 @@ export { BarraTopo } from './BarraTopo.jsx';
 export { GraficoProjecao } from './GraficoProjecao.jsx';
 export { BlocoAnalise, TextoComSemOrigem, ValorAnalise } from './BlocoAnalise.jsx';
 export { ListaConversas } from './ListaConversas.jsx';
+export { BoasVindas, boasVindasVista, marcarBoasVindasVista } from './BoasVindas.jsx';

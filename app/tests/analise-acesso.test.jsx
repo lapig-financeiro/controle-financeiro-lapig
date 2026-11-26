@@ -115,12 +115,30 @@ afterEach(() => {
 });
 
 describe('acesso à Análise', () => {
-  it('professor não vê o item no menu e a rota #/analise navega para #/projetos', async () => {
+  it('professor vê o item no menu e a rota #/analise renderiza a página', async () => {
     carregarPerfilMock.mockResolvedValue({
       erro: null,
       role: 'professor',
       nome: 'Pessoa Professora',
       email: 'pessoa@example.org',
+    });
+    window.location.hash = '#/analise';
+
+    render(<App />, document.body);
+
+    const pagina = await esperarPor(() => document.querySelector('.analise'));
+    expect(pagina).not.toBeNull();
+    expect(window.location.hash).toBe('#/analise');
+    expect(document.querySelector('a[href="#/analise"]')).not.toBeNull();
+    expect(document.querySelector('.analise__campo')).not.toBeNull();
+  });
+
+  it('agente não vê o item no menu e a rota #/analise navega para #/projetos', async () => {
+    carregarPerfilMock.mockResolvedValue({
+      erro: null,
+      role: 'agente',
+      nome: 'Buriti',
+      email: 'agente@example.org',
     });
     window.location.hash = '#/analise';
 
@@ -211,5 +229,82 @@ describe('acesso à Análise', () => {
     await tick();
     expect(carregarPerfilMock.mock.calls.length).toBe(chamadasPerfil);
     expect(document.querySelector('.analise__campo').value).toBe('Quanto o 30.910 tem livre?');
+  });
+});
+
+describe('guia de primeiro acesso', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('abre sozinho uma vez, não volta depois de "Entendi" e reabre pelo menu', async () => {
+    carregarPerfilMock.mockResolvedValue({
+      erro: null,
+      role: 'professor',
+      nome: 'Pessoa Professora',
+      email: 'pessoa@example.org',
+    });
+    window.location.hash = '#/projetos';
+
+    render(<App />, document.body);
+    const guia = await esperarPor(() => document.querySelector('.boas-vindas'));
+    expect(guia).not.toBeNull();
+    // Professor não vê o passo do Admin.
+    expect(guia.textContent).toContain('Análise');
+    expect(guia.textContent).not.toContain('Quem vê qual centro');
+
+    const entendi = Array.from(guia.querySelectorAll('button')).find((b) => b.textContent.includes('Entendi'));
+    entendi.click();
+    await esperarPor(() => !document.querySelector('.boas-vindas'));
+    expect(document.querySelector('.boas-vindas')).toBeNull();
+    expect(window.localStorage.getItem('cf_boas_vindas_u-1')).toBe('visto');
+
+    // Novo carregamento do site: o guia não abre de novo.
+    render(null, document.body);
+    render(<App />, document.body);
+    await esperarPor(() => document.querySelector('.menu-usuario__avatar'));
+    await tick();
+    expect(document.querySelector('.boas-vindas')).toBeNull();
+
+    // Pelo menu do usuário, "Como usar o site" abre o guia.
+    document.querySelector('.menu-usuario__avatar').click();
+    const item = await esperarPor(() =>
+      Array.from(document.querySelectorAll('button')).find((b) => b.textContent.includes('Como usar o site'))
+    );
+    item.click();
+    expect(await esperarPor(() => document.querySelector('.boas-vindas'))).not.toBeNull();
+  });
+
+  it('admin vê também o passo do Admin', async () => {
+    carregarPerfilMock.mockResolvedValue({
+      erro: null,
+      role: 'admin',
+      nome: 'Pessoa Admin',
+      email: 'admin@example.org',
+    });
+    window.location.hash = '#/projetos';
+    render(<App />, document.body);
+    const guia = await esperarPor(() => document.querySelector('.boas-vindas'));
+    expect(guia.textContent).toContain('Quem vê qual centro');
+  });
+
+  it('agente não recebe o guia', async () => {
+    carregarPerfilMock.mockResolvedValue({ erro: null, role: 'agente', nome: 'Buriti', email: 'a@example.org' });
+    window.location.hash = '#/projetos';
+    render(<App />, document.body);
+    await esperarPor(() => carregarPerfilMock.mock.calls.length > 0);
+    await tick();
+    await tick();
+    expect(document.querySelector('.boas-vindas')).toBeNull();
+    // A regra é "nunca", não "ainda não": nada foi gravado e o menu não oferece o guia.
+    expect(Object.keys(window.localStorage).some((k) => k.startsWith('cf_boas_vindas_'))).toBe(false);
+    const avatar = document.querySelector('.menu-usuario__avatar');
+    if (avatar) {
+      avatar.click();
+      await tick();
+      expect(
+        Array.from(document.querySelectorAll('button')).some((b) => b.textContent.includes('Como usar o site'))
+      ).toBe(false);
+    }
   });
 });

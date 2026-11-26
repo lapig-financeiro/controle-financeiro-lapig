@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import { AvisoFalha, BarraTopo, Esqueleto, Manutencao } from './componentes/index.js';
+import {
+  AvisoFalha,
+  BarraTopo,
+  BoasVindas,
+  boasVindasVista,
+  Esqueleto,
+  Manutencao,
+  marcarBoasVindasVista,
+} from './componentes/index.js';
 import { Admin } from './paginas/Admin.jsx';
 import { Analise } from './paginas/Analise.jsx';
 import { Bolsistas } from './paginas/Bolsistas.jsx';
@@ -169,11 +177,27 @@ export function App() {
   const papelConhecido = !carregandoSessao && !carregandoPerfil && perfil.erro === null && perfil.role !== null;
   const isAdmin = papelConhecido && perfil.role === 'admin';
   const naAnalise = rota.pagina === 'analise';
+  // Bolsistas e Análise são para toda conta de gente (admin e professor). O
+  // agente e a automação não têm tela; o banco já filtra os centros de cada um.
+  const contaDeGente = papelConhecido && (isAdmin || perfil.role === 'professor');
+  const podeBolsistas = contaDeGente;
+  const podeAnalise = contaDeGente;
 
   useEffect(() => {
-    if (naAnalise && isAdmin) setAnaliseMontada(true);
-  }, [naAnalise, isAdmin]);
-  const podeBolsistas = papelConhecido && (isAdmin || perfil.role === 'professor');
+    if (naAnalise && podeAnalise) setAnaliseMontada(true);
+  }, [naAnalise, podeAnalise]);
+
+  // Guia de primeiro acesso: abre sozinho uma vez por login (neste navegador).
+  const [boasVindasAberta, setBoasVindasAberta] = useState(false);
+  const usuarioIdAtual = usuario?.id || null;
+  useEffect(() => {
+    // Troca de login (ou saída) fecha o guia do anterior; o novo decide por si.
+    setBoasVindasAberta(Boolean(contaDeGente && usuarioIdAtual && !boasVindasVista(usuarioIdAtual)));
+  }, [contaDeGente, usuarioIdAtual]);
+  const fecharBoasVindas = useCallback(() => {
+    if (usuarioIdAtual) marcarBoasVindasVista(usuarioIdAtual);
+    setBoasVindasAberta(false);
+  }, [usuarioIdAtual]);
 
   const carregarResumo = useCallback(async () => {
     const gen = ++genResumoRef.current;
@@ -218,13 +242,13 @@ export function App() {
     if (rota.pagina === 'bolsistas' && !podeBolsistas) {
       navegarPara('#/projetos');
     }
-    if (rota.pagina === 'analise' && !isAdmin) {
+    if (rota.pagina === 'analise' && !podeAnalise) {
       navegarPara('#/projetos');
     }
     if (rota.pagina === 'componentes' && !import.meta.env.DEV && !isAdmin) {
       navegarPara('#/projetos');
     }
-  }, [papelConhecido, usuario, rota.pagina, isAdmin, podeBolsistas]);
+  }, [papelConhecido, usuario, rota.pagina, isAdmin, podeBolsistas, podeAnalise]);
 
   const salvarFiltro = useCallback(
     async (centrosOcultos) => {
@@ -411,6 +435,7 @@ export function App() {
         rotaAtiva={rota.menu}
         isAdmin={isAdmin}
         podeBolsistas={podeBolsistas}
+        podeAnalise={podeAnalise}
         usuario={{ nome: perfil.nome, email: perfil.email }}
         todosCentros={isAdmin && Array.isArray(resumoSt.dados?.todos) ? resumoSt.dados.todos : null}
         filtroSalvando={filtroSalvando}
@@ -430,11 +455,13 @@ export function App() {
             ? () => navegarPara('#/projetos')
             : sair
         }
+        onAjuda={contaDeGente ? () => setBoasVindasAberta(true) : null}
         onNavegar={navegarPara}
       />
+      <BoasVindas aberto={contaDeGente && boasVindasAberta} aoFechar={fecharBoasVindas} isAdmin={isAdmin} />
       <main>
         {renderizarPagina()}
-        {analiseMontada && isAdmin && !perfil.erro && (
+        {analiseMontada && podeAnalise && !perfil.erro && (
           <div hidden={!naAnalise}>
             <Analise ativa={naAnalise} />
           </div>

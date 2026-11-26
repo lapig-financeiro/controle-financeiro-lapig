@@ -1,0 +1,58 @@
+.boas-vindas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-5);
+}
+
+.boas-vindas__lista {
+  display: flex;
+  flex-direction: column;
+  gap: var(--esp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: passo;
+}
+
+.boas-vindas__passo {
+  counter-increment: passo;
+  display: grid;
+  grid-template-columns: var(--esp-5) 1fr;
+  column-gap: var(--esp-2);
+  row-gap: var(--esp-1);
+}
+
+.boas-vindas__passo::before {
+  content: counter(passo) '.';
+  grid-row: 1;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-semi);
+  color: var(--cor-acento);
+}
+
+.boas-vindas__titulo {
+  grid-column: 2;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  font-weight: var(--fw-semi);
+  color: var(--cor-texto);
+}
+
+.boas-vindas__texto {
+  grid-column: 2;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-texto-2);
+}
+
+.boas-vindas__nota {
+  font-size: var(--fs-1);
+  line-height: var(--lh-1);
+  color: var(--cor-texto-3);
+}
+
+.boas-vindas__acoes {
+  display: flex;
+  justify-content: flex-end;
+}

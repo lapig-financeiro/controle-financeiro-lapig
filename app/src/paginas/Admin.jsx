@@ -522,6 +522,9 @@ export function Admin({ usuarioId = null }) {
               colunas={colunas}
               dados={usuariosFiltrados}
               chaveLinha={(u) => u.user_id}
+              onClicarLinha={salvando || st.carregando ? null : abrirPainel}
+              linhaClicavel={(u) => u.role !== 'agente' && u.role !== 'automacao'}
+              rotuloLinha={(u) => `Editar ${u.nome || u.email || 'login'}`}
               legenda="Acessos por login"
               className="admin__tabela"
               vazio="Nenhum login encontrado para a busca."

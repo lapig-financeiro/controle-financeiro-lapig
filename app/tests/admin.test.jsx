@@ -827,4 +827,18 @@ describe('serviço de acessos e modo exemplo', () => {
     // Restaura estado inicial em memória do módulo de exemplo.
     await dadosExemplo.salvarAcessos(profSemCentro.user_id, 'professor', []);
   });
+  it('clicar na linha de um login editável abre o painel; Buriti e automação não abrem', async () => {
+    acessosUsuariosMock.mockResolvedValue({ dados: payloadBase(), erro: null });
+    render(<Admin usuarioId="u-admin-1" />, document.body);
+    await esperarPor(() => linhasTabela().length > 0);
+
+    expect(linhaPorNome('Buriti').querySelector('.tabela__gatilho')).toBeNull();
+    expect(linhaPorNome('Robô Ingestão').querySelector('.tabela__gatilho')).toBeNull();
+
+    const gatilho = linhaPorNome('Carla Professora').querySelector('.tabela__gatilho');
+    expect(gatilho.getAttribute('aria-label')).toBe('Editar Carla Professora');
+    gatilho.click();
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.textContent).toContain('Carla Professora');
+  });
 });

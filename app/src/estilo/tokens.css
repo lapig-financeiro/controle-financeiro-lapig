@@ -101,6 +101,7 @@
   --logo: 24px;
   --sublinhado-ativo: 2px;
   --medida-texto: 72ch;
+  --medida-celula: 32ch;
 
   /* Camadas */
   --z-base: 1;

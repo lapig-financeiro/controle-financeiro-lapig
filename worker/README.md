@@ -124,7 +124,7 @@ desconecta. Sem ela, o fetch continuaria rodando para uma tela que já fechou.
 | `SUPABASE_URL` | `[vars]` | URL do projeto (pública, a mesma do frontend) |
 | `SUPABASE_ANON_KEY` | `[vars]` | Chave pública do Supabase (a mesma do frontend) |
 | `ANALISE_MODELO` | `[vars]` | Modelo do Ollama; padrão `deepseek-v4.1-flash:cloud` |
-| `ANALISE_PAPEIS` | `[vars]` | Papéis aceitos, separados por vírgula; padrão `admin` |
+| `ANALISE_PAPEIS` | `[vars]` | Papéis aceitos, separados por vírgula; padrão `admin,professor` |
 | `ANALISE_LIMITE_DIA` | `[vars]` | Perguntas por login por dia; padrão `50` |
 | `OLLAMA_API_KEY` | **segredo** | `wrangler secret put OLLAMA_API_KEY` (quem põe é o Victor) |
 | `SUPABASE_SERVICE_ROLE_KEY` | **só na Edge Function** | injetada pelo Supabase; assina só a conclusão do registro (075). Nunca no Worker, no frontend ou no git. |

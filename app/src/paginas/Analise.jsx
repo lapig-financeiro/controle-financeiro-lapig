@@ -52,7 +52,7 @@ const CHAVE_NOVA = 'nova';
 const TITULO_MAX = 120;
 
 const SUGESTOES = [
-  'Quanto o 30.109 tem livre hoje, e de onde vem?',
+  'Quanto cada centro tem livre hoje, e de onde vem?',
   'Quais centros estão em atenção ou problema, e por quê?',
   'Onde há folha atrasada hoje, e quanto?',
   'Quais bolsas terminam nos próximos 60 dias?',
@@ -927,6 +927,12 @@ export function Analise({
     }
 
     const dados = resultado.dados;
+    // Caminho anulado pelo banco (nome de arquivo que parece CPF): a nota do
+    // documento explica; abrir o leitor só mostraria um erro genérico.
+    if (dados.documento && !dados.documento.caminho) {
+      dados.nota = dados.documento.nota || dados.nota;
+      dados.documento = null;
+    }
     if (!dados.documento) {
       setPainel({
         tipo: 'nota',
@@ -1329,7 +1335,9 @@ export function Analise({
         />
       );
     } else if (painel.tipo === 'no') {
-      conteudo = <DeOndeVem arvore={painel.arvore} valorEsperado={valorEsperadoDaArvore} />;
+      conteudo = (
+        <DeOndeVem arvore={painel.arvore} valorEsperado={valorEsperadoDaArvore} abrirAteDocumentos />
+      );
     } else if (painel.tipo === 'livre') {
       conteudo = (
         <>
@@ -1337,7 +1345,7 @@ export function Analise({
             <p class="analise__parte-de">Parte de: {painel.parteDe}</p>
           )}
           {painel.nota && <p class="analise__nota">{painel.nota}</p>}
-          <DeOndeVem arvore={painel.arvore} valorEsperado={valorEsperadoDaArvore} />
+          <DeOndeVem arvore={painel.arvore} valorEsperado={valorEsperadoDaArvore} abrirAteDocumentos />
         </>
       );
     } else if (painel.tipo === 'nota') {
