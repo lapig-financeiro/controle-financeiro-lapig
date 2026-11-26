@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 26/11/2026 (071 `analise_uso` aplicada; Edge Function da Análise publicada, cortada uma vez por CPU).
+Última atualização: 26/11/2026 (071 `analise_uso` aplicada; Edge Function da Análise publicada, máscara corrigida depois de um corte por CPU).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -188,7 +188,9 @@ função diz **`CPU Time exceeded`** (teto de 2 s de CPU). Essa requisição rod
 do Node, perguntas 2, 4 e 12 da bateria real, ~22 chamadas cada): a **máscara de nomes** gastou ~1,0 s das 3 perguntas e todo o resto
 do núcleo menos de 0,1 s. `acharTrechos` (`shared/ai-tools/mascara.js`) montava duas `RegExp` por nome conhecido para cada
 texto mascarado, mesmo sem o nome no texto. Com um `includes` antes da `RegExp` (mesmo resultado; testes verdes), a máscara
-caiu para ~0,05 s. Ainda não publicado.
+caiu para ~0,05 s. Publicado em 26/11 (d8fd64c): três perguntas pesadas seguidas (18, 5 e 14 consultas; 45, 15 e 18 s)
+terminaram com `fim`. Se o teto de CPU voltar a aparecer, o Victor topa estudar uma máscara mais leve/nativa ou passar
+para o laço no navegador (alternativa do Gemini, `analise-plano.md` §2).
 `request.signal` na desconexão não foi provado. O Worker da Cloudflare segue publicado até a troca. A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
 
 **Próximo passo, nesta ordem:**
