@@ -113,6 +113,15 @@ export function criarRoteador({
 
   const corposModelo = [];
   const chamadasRpc = [];
+  // Contagem por tipo, para a coluna "chamadas externas" do relatório.
+  const chamadasPorTipo = { modelo: 0, auth: 0, rpc: 0, contador: 0 };
+  // Cota da Edge Function simulada: a RPC analise_consumir incrementa este
+  // contador em memória e devolve { dia, usadas }, como a tabela da 071.
+  let usadas = 0;
+
+  function diaDaBancada(instante) {
+    return new Date(instante - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
 
   function filtrarResumo(resumo) {
     if (!visiveis) return resumo;
@@ -218,6 +227,10 @@ export function criarRoteador({
   }
 
   async function rotearBancada(url, init) {
+    if (url.pathname === '/auth/v1/user' || url.pathname === '/rest/v1/app_users') {
+      chamadasPorTipo.auth += 1;
+    }
+
     const authorization = cabecalho(init, 'Authorization');
     if (authorization !== tokenEsperado) {
       return json(
@@ -243,6 +256,9 @@ export function criarRoteador({
       const args = lerCorpo(init);
       chamadasRpc.push({ nome, args: clonar(args), ms: agora() });
 
+      if (nome === 'analise_consumir') chamadasPorTipo.contador += 1;
+      else chamadasPorTipo.rpc += 1;
+
       const configurada = falhasRpc[nome];
       if (configurada) {
         if (configurada === true || configurada.rede === true) {
@@ -260,6 +276,12 @@ export function criarRoteador({
         );
       }
 
+      // Cota da Edge Function (071): incrementa como a RPC analise_consumir.
+      if (nome === 'analise_consumir') {
+        usadas += 1;
+        return json({ dia: diaDaBancada(agora()), usadas });
+      }
+
       return responderRpc(nome, args);
     }
 
@@ -275,6 +297,7 @@ export function criarRoteador({
       corpo = { __bruto: bruto };
     }
     corposModelo.push({ indice: corposModelo.length + 1, corpo, ms: agora() });
+    chamadasPorTipo.modelo += 1;
 
     if (modo === 'roteiro') {
       const indice = Number.isInteger(cursor.indice) ? cursor.indice : 0;
@@ -318,6 +341,10 @@ export function criarRoteador({
     fetch: fetchDaBancada,
     corposModelo,
     chamadasRpc,
+    chamadasPorTipo,
+    get usadas() {
+      return usadas;
+    },
     papel,
   };
 }

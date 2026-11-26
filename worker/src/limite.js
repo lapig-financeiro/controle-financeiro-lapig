@@ -71,6 +71,19 @@ function falhaKv(codigo) {
 }
 
 /**
+ * Contador do Worker, no formato que o núcleo pede:
+ * `consumir({ userId, jwt, prazo, sinal })`. O `jwt` é ignorado aqui — o KV
+ * usa só o `user_id` que veio do `/auth/v1/user`.
+ */
+export function criarContadorKv({ kv, teto = TETO_PADRAO, agora = Date.now } = {}) {
+  return {
+    consumir({ userId, prazo, sinal }) {
+      return consumir({ kv, userId, teto, agora, prazo, sinal });
+    },
+  };
+}
+
+/**
  * Conta uma pergunta. Não lança: falha de KV volta como `permitido: false`
  * com código `interno` — na dúvida, não gasta o modelo. Devolver "pode" para
  * uma contagem que não foi gravada seria a falha virando zero, ao contrário.

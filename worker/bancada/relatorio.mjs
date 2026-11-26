@@ -87,6 +87,7 @@ function renderizarBloco(bloco) {
 }
 
 function detalhes(resultado) {
+  const chamadas = resultado.chamadas ?? {};
   const linhas = [];
   linhas.push(`### ${resultado.id}. ${resultado.pergunta}`);
   linhas.push('');
@@ -94,7 +95,11 @@ function detalhes(resultado) {
     `${resultado.ok ? '**Passou.**' : '**Falhou.**'} ` +
       `${(Number(resultado.ms) / 1000).toFixed(1)} s · ` +
       `${resultado.rodadas ?? '?'} rodada(s) · ` +
-      `${resultado.chamadasModelo} chamada(s) ao modelo`,
+      `${resultado.chamadasModelo} chamada(s) ao modelo · ` +
+      `${chamadas.total ?? resultado.chamadasModelo ?? 0} chamada(s) externa(s) ` +
+      `(${chamadas.modelo ?? resultado.chamadasModelo ?? 0} modelo, ` +
+      `${chamadas.rpc ?? 0} RPC, ${chamadas.auth ?? 0} auth, ` +
+      `${chamadas.contador ?? 0} contador)`,
   );
   linhas.push('');
   if (resultado.ferramentas.length) {
@@ -104,6 +109,11 @@ function detalhes(resultado) {
   if (resultado.motivos.length) {
     linhas.push('Por quê:');
     for (const motivo of resultado.motivos) linhas.push(`- ${motivo}`);
+    linhas.push('');
+  }
+  if (Array.isArray(resultado.avisos) && resultado.avisos.length) {
+    linhas.push('Avisos:');
+    for (const aviso of resultado.avisos) linhas.push(`- ${aviso}`);
     linhas.push('');
   }
   if (resultado.falhas.length) {
@@ -163,8 +173,8 @@ export function formatarRelatorio({ resultados, meta = {} }) {
 
   linhas.push('## Resumo');
   linhas.push('');
-  linhas.push('| # | Pergunta | Resultado | Tempo | Rodadas | Por quê |');
-  linhas.push('| --- | --- | --- | --- | --- | --- |');
+  linhas.push('| # | Pergunta | Resultado | Tempo | Rodadas | Chamadas externas | Por quê |');
+  linhas.push('| --- | --- | --- | --- | --- | --- | --- |');
   for (const resultado of resultados) {
     const falhas = Array.isArray(resultado.falhas) ? resultado.falhas.length : 0;
     const situacao = resultado.ok
@@ -177,6 +187,7 @@ export function formatarRelatorio({ resultados, meta = {} }) {
         `${situacao} | ` +
         `${(Number(resultado.ms) / 1000).toFixed(1)} s | ` +
         `${resultado.rodadas ?? '?'} | ` +
+        `${resultado.chamadas?.total ?? '?'} | ` +
         `${escapar(resultado.motivos.join('; ') || '—')} |`,
     );
   }
@@ -206,6 +217,8 @@ export function formatarEventosJsonl(resultados) {
         rodadas: resultado.rodadas,
         ferramentas: resultado.ferramentas,
         chamadas_modelo: resultado.chamadasModelo,
+        chamadas_externas: resultado.chamadas ?? null,
+        avisos: resultado.avisos ?? [],
         chamadas_rpc: resultado.chamadasRpc,
         falhas: resultado.falhas,
         eventos: resultado.eventos,

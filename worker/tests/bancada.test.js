@@ -127,6 +127,23 @@ describe('roteador da bancada', () => {
     expect(resposta.corpo.code).toBe('PGRST202');
   });
 
+  it('responde analise_consumir com um contador em memória', async () => {
+    const roteador = criarRoteador({
+      retrato,
+      modo: 'roteiro',
+      respostasRoteiro: [],
+      fetchOriginal: semRede(),
+    });
+
+    const primeira = await chamarRpc(roteador, 'analise_consumir');
+    const segunda = await chamarRpc(roteador, 'analise_consumir');
+    expect(primeira.status).toBe(200);
+    expect(primeira.corpo.usadas).toBe(1);
+    expect(segunda.corpo.usadas).toBe(2);
+    expect(roteador.usadas).toBe(2);
+    expect(roteador.chamadasPorTipo.contador).toBe(2);
+  });
+
   it('recusa token fora do cenário', async () => {
     const roteador = criarRoteador({
       retrato,
@@ -285,6 +302,15 @@ describe('pergunta de ponta a ponta (modo roteiro)', () => {
     expect(resultado.blocos).toHaveLength(1);
     expect(resultado.blocos[0].numero.valor).toBe(120000.5);
     expect(resultado.textoFinal).toBe('O saldo livre está no bloco acima.');
+    expect(resultado.chamadas.contador).toBe(1);
+    expect(resultado.chamadas.auth).toBe(2);
+    expect(resultado.chamadas.total).toBe(
+      resultado.chamadas.modelo +
+        resultado.chamadas.rpc +
+        resultado.chamadas.auth +
+        resultado.chamadas.contador,
+    );
+    expect(resultado.avisos).toEqual([]);
   });
 
   it('pega nome sintético escrito pelo roteiro no pedido seguinte ao modelo', async () => {
@@ -460,6 +486,38 @@ describe('checagens sempre feitas', () => {
     );
     expect(resultado.ok).toBe(false);
     expect(resultado.motivos.some((motivo) => motivo.includes('sem origem'))).toBe(true);
+  });
+});
+
+describe('chamadas externas no relatório', () => {
+  it('mostra a coluna e avisa acima de 40', () => {
+    const resultado = {
+      id: 1,
+      pergunta: 'Uma pergunta cara',
+      ok: true,
+      ms: 1000,
+      rodadas: 8,
+      chamadasModelo: 8,
+      chamadas: { modelo: 8, rpc: 30, auth: 2, contador: 1, total: 41 },
+      avisos: ['41 chamadas externas nesta pergunta (acima de 40)'],
+      motivos: [],
+      ferramentas: [],
+      chamadasRpc: [],
+      falhas: [],
+      textoFinal: 'ok',
+      blocos: [],
+      eventos: [],
+    };
+
+    const relatorio = formatarRelatorio({
+      resultados: [resultado],
+      meta: { data: 'teste', modo: 'roteiro', modelo: 'modelo-teste', retrato: 'exemplo' },
+    });
+
+    expect(relatorio).toContain('Chamadas externas');
+    expect(relatorio).toContain('| 41 |');
+    expect(relatorio).toContain('Avisos:');
+    expect(relatorio).toContain('acima de 40');
   });
 });
 

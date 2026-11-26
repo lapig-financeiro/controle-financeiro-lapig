@@ -193,8 +193,12 @@ async function main() {
       modelo: opcoes.modelo,
     });
     resultados.push(resultado);
-    console.log(`${resultado.ok ? 'passou' : 'FALHOU'} (${(resultado.ms / 1000).toFixed(1)} s)`);
+    console.log(
+      `${resultado.ok ? 'passou' : 'FALHOU'} (${(resultado.ms / 1000).toFixed(1)} s, ` +
+        `${resultado.chamadas?.total ?? 0} chamadas externas)`,
+    );
     for (const motivo of resultado.motivos) console.log(`    - ${motivo}`);
+    for (const aviso of resultado.avisos ?? []) console.log(`    ! ${aviso}`);
   }
 
   await mkdir(opcoes.saida, { recursive: true });

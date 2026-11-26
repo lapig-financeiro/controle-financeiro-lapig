@@ -81,3 +81,7 @@ tools/vigia/.publicar/
 # A saída guarda eventos, textos e blocos de uma execução; com o retrato real
 # ela carrega dado financeiro. O retrato real nunca entra no repositório.
 worker/bancada/saida/
+
+# Gerado por `npm --prefix worker run build:edge`; vai para o deploy da Edge
+# Function `analise`, não para o git.
+supabase/functions/analise/nucleo.gerado.js

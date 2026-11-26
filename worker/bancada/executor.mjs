@@ -1,10 +1,12 @@
-// Executa UMA pergunta da bateria contra o próprio `worker/src/index.js`.
+// Executa UMA pergunta da bateria contra o núcleo da Análise.
 //
-// Monta o env da bancada, troca `globalThis.fetch` pelo roteador, chama o
-// `fetch` do Worker (sem wrangler), lê o SSE e espera as promessas do
-// `ctx.waitUntil` antes de devolver. O fetch original é restaurado sempre.
+// Monta o env da bancada, troca `globalThis.fetch` pelo roteador, chama
+// `tratar` com o contador por RPC (o roteador responde `analise_consumir` com
+// um contador em memória), lê o SSE e espera as promessas do `waitUntil` antes
+// de devolver. O fetch original é restaurado sempre.
 
-import workerPadrao from '../src/index.js';
+import { tratar } from '../src/nucleo.js';
+import { criarContadorRpc } from '../src/contador-rpc.js';
 import { criarRoteador } from './roteador.mjs';
 import { lerEventos } from './sse.mjs';
 import {
@@ -14,23 +16,6 @@ import {
   verificar,
 } from './bateria.mjs';
 
-export function criarKvMemoria() {
-  const mapa = new Map();
-  return {
-    mapa,
-    async get(chave) {
-      return mapa.has(chave) ? mapa.get(chave) : null;
-    },
-    async put(chave, valor, _opcoes) {
-      mapa.set(chave, valor);
-      return undefined;
-    },
-    async delete(chave) {
-      mapa.delete(chave);
-    },
-  };
-}
-
 export function criarEnv({ modelo, papel, papeis, modo }) {
   return {
     SUPABASE_URL: 'https://bancada.invalid',
@@ -38,10 +23,33 @@ export function criarEnv({ modelo, papel, papeis, modo }) {
     ANALISE_MODELO: modelo,
     ANALISE_PAPEIS: papeis,
     ANALISE_LIMITE_DIA: '100000',
-    ANALISE_USO: criarKvMemoria(),
     OLLAMA_API_KEY:
       modo === 'local' ? 'bancada-local' : modo === 'chave' ? 'bancada-chave' : 'bancada-roteiro',
   };
+}
+
+/** Acima disso, a pergunta leva o aviso no relatório (limite da Cloudflare). */
+export const LIMITE_CHAMADAS_EXTERNAS = 40;
+
+function contarChamadas(roteador) {
+  const porTipo = roteador.chamadasPorTipo ?? { modelo: 0, auth: 0, rpc: 0, contador: 0 };
+  const chamadas = {
+    modelo: porTipo.modelo ?? 0,
+    auth: porTipo.auth ?? 0,
+    rpc: porTipo.rpc ?? 0,
+    contador: porTipo.contador ?? 0,
+  };
+  chamadas.total = chamadas.modelo + chamadas.auth + chamadas.rpc + chamadas.contador;
+  return chamadas;
+}
+
+function avisosDeChamadas(chamadas) {
+  return chamadas.total > LIMITE_CHAMADAS_EXTERNAS
+    ? [
+        `${chamadas.total} chamadas externas nesta pergunta ` +
+          `(acima de ${LIMITE_CHAMADAS_EXTERNAS})`,
+      ]
+    : [];
 }
 
 function corpoDaPergunta(definicao) {
@@ -52,7 +60,15 @@ function corpoDaPergunta(definicao) {
   return JSON.stringify(corpo);
 }
 
-function resultadoComFalha({ definicao, cenario, inicio, ms, statusHttp, motivos }) {
+function resultadoComFalha({
+  definicao,
+  cenario,
+  inicio,
+  ms,
+  statusHttp,
+  motivos,
+  chamadas = { modelo: 0, auth: 0, rpc: 0, contador: 0, total: 0 },
+}) {
   return {
     id: definicao.id,
     pergunta: definicao.pergunta,
@@ -64,7 +80,9 @@ function resultadoComFalha({ definicao, cenario, inicio, ms, statusHttp, motivos
     motivos,
     rodadas: null,
     ferramentas: [],
-    chamadasModelo: 0,
+    chamadasModelo: chamadas.modelo ?? 0,
+    chamadas,
+    avisos: avisosDeChamadas(chamadas),
     chamadasRpc: [],
     falhas: [],
     textoFinal: null,
@@ -84,7 +102,7 @@ function resultadoComFalha({ definicao, cenario, inicio, ms, statusHttp, motivos
  * @param {string} [opcoes.modelo]
  * @param {Function} [opcoes.fetchOriginal]
  * @param {Function} [opcoes.agora]
- * @param {object} [opcoes.worker]
+ * @param {Function} [opcoes.tratarImpl]
  */
 export async function executarPergunta({
   definicao,
@@ -96,7 +114,7 @@ export async function executarPergunta({
   modelo = 'deepseek-v4.1-flash:cloud',
   fetchOriginal = globalThis.fetch,
   agora = Date.now,
-  worker = workerPadrao,
+  tratarImpl = tratar,
 } = {}) {
   if (!definicao || typeof definicao !== 'object' || typeof definicao.pergunta !== 'string') {
     throw new TypeError('Cada pergunta precisa de "pergunta".');
@@ -118,6 +136,16 @@ export async function executarPergunta({
     cursor,
     chave,
     fetchOriginal,
+    agora,
+  });
+
+  // A cota entra pela RPC, como na Edge Function: o roteador responde
+  // `analise_consumir` com um contador em memória.
+  const contador = criarContadorRpc({
+    supabaseUrl: env.SUPABASE_URL,
+    anonKey: env.SUPABASE_ANON_KEY,
+    teto: 100_000,
+    fetchImpl: roteador.fetch,
     agora,
   });
 
@@ -143,7 +171,10 @@ export async function executarPergunta({
 
   try {
     globalThis.fetch = roteador.fetch;
-    const resposta = await worker.fetch(requisicao, env, ctx);
+    const resposta = await tratarImpl(requisicao, env, {
+      contador,
+      waitUntil: (promessa) => ctx.waitUntil(promessa),
+    });
     const statusHttp = resposta.status;
 
     if (!resposta.ok) {
@@ -156,6 +187,7 @@ export async function executarPergunta({
         ms: agora() - inicio,
         statusHttp,
         motivos: [`HTTP ${statusHttp}: ${corpo.slice(0, 300)}`],
+        chamadas: contarChamadas(roteador),
       });
     }
 
@@ -173,6 +205,7 @@ export async function executarPergunta({
       corposModelo: roteador.corposModelo.map((item) => item.corpo),
       ms,
     });
+    const chamadas = contarChamadas(roteador);
 
     return {
       id: definicao.id,
@@ -185,8 +218,12 @@ export async function executarPergunta({
       motivos: verificacao.motivos,
       rodadas: rodadasDe(eventos),
       ferramentas: ferramentasChamadas(eventos),
-      chamadasModelo: roteador.corposModelo.length,
-      chamadasRpc: roteador.chamadasRpc.map((item) => ({ nome: item.nome, args: item.args })),
+      chamadasModelo: chamadas.modelo,
+      chamadas,
+      avisos: avisosDeChamadas(chamadas),
+      chamadasRpc: roteador.chamadasRpc
+        .filter((item) => item.nome !== 'analise_consumir')
+        .map((item) => ({ nome: item.nome, args: item.args })),
       falhas,
       textoFinal: textoEvento?.dados?.texto ?? null,
       blocos,
@@ -200,6 +237,7 @@ export async function executarPergunta({
       ms: agora() - inicio,
       statusHttp: null,
       motivos: [`a bancada falhou nesta pergunta: ${erro && erro.message ? erro.message : 'erro desconhecido'}`],
+      chamadas: contarChamadas(roteador),
     });
   } finally {
     globalThis.fetch = fetchAnterior;
