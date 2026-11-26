@@ -99,8 +99,15 @@ function detalhes(resultado) {
       `${chamadas.total ?? resultado.chamadasModelo ?? 0} chamada(s) externa(s) ` +
       `(${chamadas.modelo ?? resultado.chamadasModelo ?? 0} modelo, ` +
       `${chamadas.rpc ?? 0} RPC, ${chamadas.auth ?? 0} auth, ` +
-      `${chamadas.contador ?? 0} contador)`,
+      `${chamadas.contador ?? 0} contador, ${chamadas.registro ?? 0} registro)`,
   );
+  if (resultado.registro) {
+    linhas.push(
+      `Registro (074): ${resultado.registro.iniciar ?? 0} abertura(s), ` +
+        `${resultado.registro.concluir ?? 0} fechamento(s)` +
+        (resultado.registro.id ? ` · ${resultado.registro.id}` : ' · sem id'),
+    );
+  }
   linhas.push('');
   if (resultado.ferramentas.length) {
     linhas.push(`Ferramentas: ${resultado.ferramentas.join(', ')}.`);
@@ -221,6 +228,7 @@ export function formatarEventosJsonl(resultados) {
         avisos: resultado.avisos ?? [],
         chamadas_rpc: resultado.chamadasRpc,
         falhas: resultado.falhas,
+        registro: resultado.registro ?? null,
         eventos: resultado.eventos,
       }),
     )

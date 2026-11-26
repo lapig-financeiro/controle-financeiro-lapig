@@ -57,6 +57,7 @@ function fetchAmbiente({
   corpoOllama,
   ollamaResposta,
   ollamaPendente,
+  registroId = null,
   aoChamar,
 } = {}) {
   const chamadas = [];
@@ -71,6 +72,12 @@ function fetchAmbiente({
     if (url.includes('/rest/v1/app_users')) return json([{ role: papel }]);
     if (url.includes('/rest/v1/rpc/')) {
       if (typeof rpc === 'function') return rpc(url, init);
+      if (url.includes('/rest/v1/rpc/analise_registro_iniciar')) {
+        return registroId ? json(registroId) : json({ ok: true });
+      }
+      if (url.includes('/rest/v1/rpc/analise_registro_concluir')) {
+        return new Response(null, { status: 204 });
+      }
       return json({ ok: true });
     }
     if (url === 'https://ollama.com/api/chat') {
@@ -368,8 +375,10 @@ describe('autenticação no /analise', () => {
       fetchFalso,
     });
 
-    expect(eventos(texto).map((e) => e.nome)).toEqual(['texto', 'fim']);
-    expect(eventos(texto)[0].dados.texto).toBe('Pronto.');
+    const ev = eventos(texto);
+    expect(ev.map((e) => e.nome)).toEqual(['inicio', 'texto', 'fim']);
+    expect(ev[0].dados).toEqual({ registro: null });
+    expect(ev.find((e) => e.nome === 'texto').dados.texto).toBe('Pronto.');
 
     const pedidoOllama = fetchFalso.chamadas.find((c) => c.url === 'https://ollama.com/api/chat');
     const corpoOllama = JSON.parse(pedidoOllama.init.body);
@@ -390,6 +399,44 @@ describe('autenticação no /analise', () => {
     const chamadaRpc = fetchFalso.chamadas.find((c) => c.url.includes('/rest/v1/rpc/'));
     expect(chamadaRpc.init.headers.Authorization).toBe('Bearer jwt-bom');
     expect(chamadaRpc.init.headers.apikey).toBe('chave-publica');
+  });
+
+  it('o Worker abre o registro com o JWT e o fecha uma vez no waitUntil', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const fetchFalso = fetchAmbiente({
+      registroId: id,
+      ollama: [{ message: { role: 'assistant', content: 'ok' } }],
+    });
+
+    const { texto, ctx } = await chamarWorker({
+      corpo: { pergunta: 'Quanto o 30.109 tem livre?' },
+      fetchFalso,
+    });
+    await Promise.all(ctx.promessas);
+
+    const ev = eventos(texto);
+    expect(ev[0]).toEqual({ nome: 'inicio', dados: { registro: id } });
+
+    const iniciar = fetchFalso.chamadas.find((c) =>
+      c.url.includes('/rest/v1/rpc/analise_registro_iniciar'),
+    );
+    expect(iniciar.init.headers.Authorization).toBe('Bearer jwt-bom');
+    expect(JSON.parse(iniciar.init.body)).toMatchObject({
+      p_pergunta: 'Quanto o 30.109 tem livre?',
+      p_anteriores: 0,
+      p_modelo: 'modelo-teste',
+    });
+
+    const concluir = fetchFalso.chamadas.find((c) =>
+      c.url.includes('/rest/v1/rpc/analise_registro_concluir'),
+    );
+    expect(concluir).toBeDefined();
+    expect(JSON.parse(concluir.init.body)).toMatchObject({
+      p_id: id,
+      p_desfecho: 'ok',
+      p_codigo_erro: null,
+      p_rodadas: 1,
+    });
   });
 
   it('ignora user_id do corpo: o id é o do /auth/v1/user', async () => {
@@ -490,20 +537,25 @@ describe('fluxo do modelo', () => {
   it('Ollama 500 vira erro modelo e fim', async () => {
     const fetchFalso = fetchAmbiente({ statusOllama: 500 });
     const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
-    expect(eventos(texto).map((e) => e.nome)).toEqual(['erro', 'fim']);
-    expect(eventos(texto)[0].dados.codigo).toBe('modelo');
+    const ev = eventos(texto);
+    expect(ev.map((e) => e.nome)).toEqual(['inicio', 'erro', 'fim']);
+    expect(ev.find((e) => e.nome === 'erro').dados.codigo).toBe('modelo');
   });
 
   it('Ollama com JSON inválido vira erro modelo', async () => {
     const fetchFalso = fetchAmbiente({ corpoOllama: '<html>fora do ar</html>' });
     const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
-    expect(eventos(texto)[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'modelo' } });
+    expect(eventos(texto).find((e) => e.nome === 'erro')).toMatchObject({
+      dados: { codigo: 'modelo' },
+    });
   });
 
   it('Ollama sem message vira erro modelo', async () => {
     const fetchFalso = fetchAmbiente({ corpoOllama: { done: true } });
     const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
-    expect(eventos(texto)[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'modelo' } });
+    expect(eventos(texto).find((e) => e.nome === 'erro')).toMatchObject({
+      dados: { codigo: 'modelo' },
+    });
   });
 });
 
@@ -613,10 +665,11 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
 
       const texto = await leitura;
       const ev = eventos(texto);
-      expect(ev.map((e) => e.nome)).toEqual(['passo', 'erro', 'fim']);
-      expect(ev[1].dados.codigo).toBe('tempo');
-      expect(ev[2].dados.rodadas).toBe(1);
-      expect(ev[2].dados.ms).toBeGreaterThanOrEqual(120_000);
+      expect(ev.map((e) => e.nome)).toEqual(['inicio', 'passo', 'erro', 'fim']);
+      expect(ev.find((e) => e.nome === 'erro').dados.codigo).toBe('tempo');
+      const fim = ev.find((e) => e.nome === 'fim');
+      expect(fim.dados.rodadas).toBe(1);
+      expect(fim.dados.ms).toBeGreaterThanOrEqual(120_000);
     } finally {
       vi.useRealTimers();
     }
@@ -650,7 +703,8 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
     const texto = await leitura;
     await Promise.all(ctx.promessas);
 
-    expect(texto).toBe('');
+    // O `inicio` já saiu antes da chamada ao modelo; a desconexão corta o resto.
+    expect(eventos(texto).map((e) => e.nome)).toEqual(['inicio']);
     const pedido = fetchFalso.chamadas.find(
       (c) => c.url === 'https://ollama.com/api/chat',
     );
@@ -686,7 +740,9 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
           },
         },
       ],
-      rpc: (_url, init) => {
+      rpc: (url, init) => {
+        // O registro (074) não é a RPC pendurada deste teste.
+        if (url.includes('/rest/v1/rpc/analise_registro_')) return json({ ok: true });
         rpcIniciouResolver();
         return new Promise((_resolve, reject) => {
           init.signal.addEventListener(
@@ -708,23 +764,31 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
     const leitura = lerAteFechar(resposta);
 
     await rpcIniciou;
+    // Deixa `inicio` e `passo` chegarem ao leitor antes de derrubar o stream.
+    await new Promise((resolve) => setTimeout(resolve, 10));
     controle.abort();
 
     const texto = await leitura;
     await Promise.all(ctx.promessas);
 
     const ev = eventos(texto);
-    expect(ev.map((e) => e.nome)).toEqual(['passo']);
-    expect(ev[0].dados).toMatchObject({ ferramenta: 'listar_centros', estado: 'inicio' });
-    const chamadaRpc = fetchFalso.chamadas.find((c) => c.url.includes('/rest/v1/rpc/'));
+    expect(ev.map((e) => e.nome)).toEqual(['inicio', 'passo']);
+    expect(ev.find((e) => e.nome === 'passo').dados).toMatchObject({
+      ferramenta: 'listar_centros',
+      estado: 'inicio',
+    });
+    const chamadaRpc = fetchFalso.chamadas.find((c) =>
+      c.url.includes('/rest/v1/rpc/listar_centros'),
+    );
     expect(chamadaRpc.init.signal.aborted).toBe(true);
   });
 
   it('Ollama com corpo vazio vira erro modelo', async () => {
     const fetchFalso = fetchAmbiente({ corpoOllama: '' });
     const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
-    expect(eventos(texto).map((e) => e.nome)).toEqual(['erro', 'fim']);
-    expect(eventos(texto)[0].dados.codigo).toBe('modelo');
+    const ev = eventos(texto);
+    expect(ev.map((e) => e.nome)).toEqual(['inicio', 'erro', 'fim']);
+    expect(ev.find((e) => e.nome === 'erro').dados.codigo).toBe('modelo');
   });
 
   it('Ollama com corpo interrompido vira erro modelo', async () => {
@@ -738,7 +802,9 @@ describe('2ª rodada: corpo, prazo e cancelamento', () => {
       },
     });
     const { texto } = await chamarWorker({ corpo: { pergunta: 'x' }, fetchFalso });
-    expect(eventos(texto)[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'modelo' } });
+    expect(eventos(texto).find((e) => e.nome === 'erro')).toMatchObject({
+      dados: { codigo: 'modelo' },
+    });
   });
 });
 
@@ -783,9 +849,15 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
       const decodificador = new TextDecoder();
       let texto = '';
 
-      const primeira = await leitor.read();
-      expect(primeira.done).toBe(false);
-      texto += decodificador.decode(primeira.value, { stream: true });
+      // Lê até o texto final chegar; aí o `fim` já pode ser enfileirado e a
+      // leitura pausa com ele bloqueado, como antes do evento `inicio`.
+      while (!texto.includes('event: texto')) {
+        const { done, value } = await leitor.read();
+        if (done) break;
+        texto += decodificador.decode(value, { stream: true });
+      }
+      expect(texto).toContain('event: inicio');
+      for (let i = 0; i < 20; i += 1) await Promise.resolve();
 
       // Pausa a leitura; o prazo chega com o `fim` já enfileirado.
       await vi.advanceTimersByTimeAsync(120_001);
@@ -798,7 +870,7 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
       texto += decodificador.decode();
 
       const ev = eventos(texto);
-      expect(ev.map((e) => e.nome)).toEqual(['texto', 'fim']);
+      expect(ev.map((e) => e.nome)).toEqual(['inicio', 'texto', 'fim']);
       expect(ev.filter((e) => e.nome === 'fim')).toHaveLength(1);
       expect(ev.at(-1).nome).toBe('fim');
       await Promise.all(ctx.promessas);
@@ -832,10 +904,17 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
       const leitor = resposta.body.getReader();
       const decodificador = new TextDecoder();
 
-      await vi.advanceTimersByTimeAsync(15_000);
+      // O `inicio` abre o stream antes da primeira ida ao modelo.
       const primeiro = await leitor.read();
       expect(primeiro.done).toBe(false);
-      expect(decodificador.decode(primeiro.value)).toBe(': ping\n\n');
+      expect(decodificador.decode(primeiro.value, { stream: true })).toContain(
+        'event: inicio',
+      );
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      const segundo = await leitor.read();
+      expect(segundo.done).toBe(false);
+      expect(decodificador.decode(segundo.value)).toBe(': ping\n\n');
 
       expect(typeof resolverModelo).toBe('function');
       resolverModelo();
@@ -884,17 +963,15 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
         ctx,
       );
 
-      // Sem leitor, a escrita do passo fica bloqueada. O prazo chega; o
+      // Sem leitor, a escrita do `inicio` fica bloqueada. O prazo chega; o
       // encerrador descarta o que não é terminal e mantém erro + fim na fila.
       await vi.advanceTimersByTimeAsync(120_001);
 
       const texto = await lerAteFechar(resposta);
       const ev = eventos(texto);
 
-      expect(ev.filter((e) => e.nome === 'fim')).toHaveLength(1);
+      expect(ev.map((e) => e.nome)).toEqual(['inicio', 'erro', 'fim']);
       expect(ev.at(-1).nome).toBe('fim');
-      expect(ev.some((e) => e.nome === 'passo')).toBe(true);
-      expect(ev.filter((e) => e.nome === 'erro')).toHaveLength(1);
       expect(ev.find((e) => e.nome === 'erro').dados.codigo).toBe('tempo');
       await Promise.all(ctx.promessas);
     } finally {
@@ -938,7 +1015,9 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
 
       const texto = await leitura;
       const ev = eventos(texto);
-      expect(ev[0]).toMatchObject({ nome: 'erro', dados: { codigo: 'tempo' } });
+      expect(ev.find((e) => e.nome === 'erro')).toMatchObject({
+        dados: { codigo: 'tempo' },
+      });
       expect(ev.at(-1).nome).toBe('fim');
     } finally {
       vi.useRealTimers();
@@ -1151,8 +1230,15 @@ describe('4ª rodada: escrita bloqueada e desconexão', () => {
         ctx,
       );
       const leitor = resposta.body.getReader();
-      const primeira = await leitor.read();
-      expect(primeira.done).toBe(false);
+      const decodificador = new TextDecoder();
+      let texto = '';
+      while (!texto.includes('event: texto')) {
+        const { done, value } = await leitor.read();
+        if (done) break;
+        texto += decodificador.decode(value, { stream: true });
+      }
+      expect(texto).toContain('event: inicio');
+      expect(texto).toContain('event: texto');
 
       // Deixa o laço chamar o encerramento de sucesso e o `fim` entrar na
       // escrita bloqueada.

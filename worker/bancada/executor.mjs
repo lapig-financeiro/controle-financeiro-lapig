@@ -32,14 +32,22 @@ export function criarEnv({ modelo, papel, papeis, modo }) {
 export const LIMITE_CHAMADAS_EXTERNAS = 40;
 
 function contarChamadas(roteador) {
-  const porTipo = roteador.chamadasPorTipo ?? { modelo: 0, auth: 0, rpc: 0, contador: 0 };
+  const porTipo = roteador.chamadasPorTipo ?? {
+    modelo: 0,
+    auth: 0,
+    rpc: 0,
+    contador: 0,
+    registro: 0,
+  };
   const chamadas = {
     modelo: porTipo.modelo ?? 0,
     auth: porTipo.auth ?? 0,
     rpc: porTipo.rpc ?? 0,
     contador: porTipo.contador ?? 0,
+    registro: porTipo.registro ?? 0,
   };
-  chamadas.total = chamadas.modelo + chamadas.auth + chamadas.rpc + chamadas.contador;
+  chamadas.total =
+    chamadas.modelo + chamadas.auth + chamadas.rpc + chamadas.contador + chamadas.registro;
   return chamadas;
 }
 
@@ -58,6 +66,25 @@ function corpoDaPergunta(definicao) {
     anteriores: Array.isArray(definicao.anteriores) ? definicao.anteriores : [],
   };
   return JSON.stringify(corpo);
+}
+
+/** O que a pergunta fez com o registro da 074 e o que ficou gravado. */
+function registroDaPergunta(roteador, eventos) {
+  const eventoInicio = eventos.find((item) => item.evento === 'inicio') ?? null;
+  const id =
+    eventoInicio && eventoInicio.dados && typeof eventoInicio.dados.registro === 'string'
+      ? eventoInicio.dados.registro
+      : null;
+  const registros = roteador.registros ?? {};
+  const fechado =
+    id && registros.fechados instanceof Map ? registros.fechados.get(id) ?? null : null;
+  return {
+    id,
+    evento: eventoInicio,
+    iniciar: registros.iniciar ?? 0,
+    concluir: registros.concluir ?? 0,
+    fechado,
+  };
 }
 
 function resultadoComFalha({
@@ -87,6 +114,7 @@ function resultadoComFalha({
     falhas: [],
     textoFinal: null,
     blocos: [],
+    registro: null,
     eventos: [],
   };
 }
@@ -200,10 +228,12 @@ export async function executarPergunta({
       .filter((item) => item.evento === 'bloco' && item.dados)
       .map((item) => item.dados);
     const falhas = falhasDeFerramenta(eventos);
+    const registro = registroDaPergunta(roteador, eventos);
     const verificacao = verificar(eventos, definicao.espera ?? {}, {
       nomesSinteticos: retrato.nomesSinteticos,
       corposModelo: roteador.corposModelo.map((item) => item.corpo),
       ms,
+      registro,
     });
     const chamadas = contarChamadas(roteador);
 
@@ -222,11 +252,17 @@ export async function executarPergunta({
       chamadas,
       avisos: avisosDeChamadas(chamadas),
       chamadasRpc: roteador.chamadasRpc
-        .filter((item) => item.nome !== 'analise_consumir')
+        .filter(
+          (item) =>
+            item.nome !== 'analise_consumir' &&
+            item.nome !== 'analise_registro_iniciar' &&
+            item.nome !== 'analise_registro_concluir',
+        )
         .map((item) => ({ nome: item.nome, args: item.args })),
       falhas,
       textoFinal: textoEvento?.dados?.texto ?? null,
       blocos,
+      registro,
       eventos,
     };
   } catch (erro) {

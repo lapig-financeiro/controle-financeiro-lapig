@@ -88,6 +88,58 @@ function verificarVazamento(contexto, motivos) {
   }
 }
 
+/**
+ * Registro da 074: toda pergunta que passou por login e limite abre o registro
+ * uma vez, emite `inicio` como primeiro evento e fecha uma vez. Os passos
+ * guardados não podem conter nome sintético do retrato — `pergunta` e
+ * `resposta` são reidratadas e podem.
+ */
+function verificarRegistro(lista, contexto, motivos) {
+  const registro = contexto.registro;
+  if (!registro || typeof registro !== 'object') return;
+
+  // Login/limite recusado antes do registro: por contrato, não há `inicio`.
+  const recusaDeEntrada = lista.some(
+    (item) =>
+      item.evento === 'erro' &&
+      ['sem_login', 'sem_permissao', 'limite'].includes(item.dados?.codigo),
+  );
+  if (recusaDeEntrada) return;
+
+  const primeiro = lista[0];
+  if (!primeiro || primeiro.evento !== 'inicio') {
+    motivos.push('o primeiro evento não é "inicio"');
+  } else if (
+    !primeiro.dados ||
+    typeof primeiro.dados.registro !== 'string' ||
+    !primeiro.dados.registro
+  ) {
+    motivos.push('evento "inicio" sem id de registro');
+  }
+
+  if (registro.iniciar !== 1) {
+    motivos.push(`registro aberto ${registro.iniciar} vez(es) (esperava 1)`);
+  }
+  if (registro.concluir !== 1) {
+    motivos.push(`registro concluído ${registro.concluir} vez(es) (esperava 1)`);
+  }
+  if (!registro.fechado) {
+    motivos.push('registro não foi concluído no banco da bancada');
+    return;
+  }
+
+  const nomes = Array.isArray(contexto.nomesSinteticos) ? contexto.nomesSinteticos : [];
+  if (!nomes.length) return;
+  const passosTexto = JSON.stringify(
+    Array.isArray(registro.fechado.passos) ? registro.fechado.passos : [],
+  );
+  for (const nome of nomes) {
+    if (passosTexto.includes(nome)) {
+      motivos.push(`vazamento: nome sintético "${nome}" apareceu nos passos do registro`);
+    }
+  }
+}
+
 function testarRegex(padrao, texto, motivos, rotulo) {
   let regex;
   try {
@@ -124,6 +176,7 @@ export function verificar(eventos, espera = {}, contexto = {}) {
   for (const bloco of blocosDe(lista)) faltaOrigem(bloco, motivos);
 
   verificarVazamento(contexto, motivos);
+  verificarRegistro(lista, contexto, motivos);
 
   const texto = textoDe(lista);
   if (!texto && erros.length === 0) motivos.push('sem texto final');

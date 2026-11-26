@@ -165,12 +165,23 @@ Resposta `text/event-stream`, eventos `event: <nome>\ndata: <json>`:
 
 | Evento | Dados |
 |---|---|
+| `inicio` | `{ registro: uuid \| null }`, o **primeiro** evento da resposta. `registro` é o id da linha da 074; `null` quando o registro falhou. Só sai depois de login e limite passarem — é isso que ele significa para a tela. |
 | `passo` | `{ ferramenta, rotulo, estado: 'inicio' \| 'fim' \| 'erro', erro? }`; `rotulo` em pt-BR ("consultando os centros") |
 | `bloco` | o bloco reidratado (§6) |
 | `texto` | `{ texto, semOrigem }`, a resposta final curta, já reidratada (nomes reais e `semOrigem` deslocado) |
 | `fim` | `{ rodadas, ms }` |
 | `erro` | `{ codigo: 'sem_login' \| 'sem_permissao' \| 'limite' \| 'modelo' \| 'tempo' \| 'interno' \| 'incompleta', mensagem }` |
 
+- Registro (074): depois do login e do limite, o Worker chama `analise_registro_iniciar` com o JWT da
+  pessoa, a pergunta original, `anteriores.length` e o modelo. A falha **não** derruba a análise:
+  `inicio` sai com `registro: null` e a pergunta segue. No encerramento (qualquer desfecho: `ok`,
+  `incompleta`, `tempo`, `erro`, `limite` ou `desconectado`), chama `analise_registro_concluir` **uma
+  vez**, agendada no `waitUntil`, com prazo próprio de 5 s e sem o sinal da requisição (num timeout ou
+  desconexão ele já está abortado, e o fechamento ainda precisa chegar ao banco). Grava o que a pessoa
+  viu — pergunta, resposta reidratada (texto + blocos) e passos com os argumentos **mascarados** que o
+  modelo usou. A tabela `analise_registro` fica atrás de RLS, sem policy; só as RPCs da 074 escrevem e só
+  o admin lê. `p_resposta` e `p_passos` acima de 240 KB são truncados com `{ truncado: true }` para caber
+  no check de 256 KB da migração.
 - Autenticação: `GET /auth/v1/user` com o JWT; papel lido de `app_users` com o mesmo JWT (como o app). Só
   `admin` (variável `ANALISE_PAPEIS`, padrão `admin`). Sem `service_role`.
 - Quando as 8 rodadas acabam e já houve ao menos um bloco emitido, o encerramento é `erro` com código
@@ -185,7 +196,9 @@ Resposta `text/event-stream`, eventos `event: <nome>\ndata: <json>`:
 - Limite: KV `ANALISE_USO`, chave `uso:<user_id>:<AAAA-MM-DD>` (fuso de Brasília), 50 por dia, expira em
   48 h. Conta a pergunta quando ela começa.
 - CORS: `https://lapig-financeiro.github.io` e `http://localhost:*`. `OPTIONS` responde sem autenticar.
-- Sem log de pergunta, resultado, bloco ou texto. `console.log` só com código de erro e tempo.
+- Sem log de pergunta, argumento, resultado, bloco ou texto. O registro da 074 vai para o **banco**
+  (atrás de RLS), nunca para o log da Edge Function nem do Worker: `console.*` continua sem conteúdo da
+  conversa.
 - Segredos: `OLLAMA_API_KEY` (o Victor põe). Variáveis: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (públicas),
   `ANALISE_MODELO`, `ANALISE_PAPEIS`.
 

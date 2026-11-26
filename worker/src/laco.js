@@ -19,6 +19,12 @@
    Texto vazio é erro do modelo; formato inválido de `marcarTexto`
    é erro interno; erro de ferramenta (inclusive exceção) é
    cortado em 500 caracteres na tela e no que volta ao modelo.
+
+   Registro da 074: quando `registro` é injetado, o laço acumula o
+   que a pessoa viu (blocos, texto final e passos)
+   para o `analise_registro_concluir`. Os argumentos e as mensagens
+   de erro dos passos passam pela máscara da sessão; nome real
+   nunca é gravado ali. Nada disso vai para console.
    ============================================================ */
 
 import { PRAZO_PADRAO_MS, timeoutEfetivo } from './prazo.js';
@@ -222,6 +228,8 @@ function textoMarcadoValido(marcado) {
  * @param {object} [opts.estado]      `{rodadas, ferramentas}` compartilhado com o watchdog
  * @param {AbortSignal} [opts.sinal]  aborta quando o encerramento/erro manda parar
  * @param {AbortSignal} [opts.sinalCliente] sinal da requisição (desconexão real do cliente)
+ * @param {object} [opts.registro] acumulador do registro da 074
+ *   (`{blocos, textoFinal, passos, falhaEscrita}`); opcional nos testes do laço
  * @returns {Promise<{ok: boolean, rodadas: number, ms: number,
  *                    codigo?: string, abortado?: boolean}>}
  */
@@ -241,6 +249,7 @@ export async function executarLaco({
   estado = { rodadas: 0, ferramentas: 0 },
   sinal,
   sinalCliente,
+  registro,
   encerrar: encerrarInjetado,
 }) {
   const limites = { ...TETOS, ...tetos };
@@ -281,6 +290,58 @@ export async function executarLaco({
     return { ok: false, abortado: true, rodadas, ms: decorrido() };
   };
 
+  // ── Registro da 074 ─────────────────────────────────────────────────────
+  // O acumulador é opcional (testes do laço não precisam dele). Os argumentos
+  // e as mensagens de erro passam pela MESMA máscara da pergunta: o que o
+  // modelo viu já era ⟦Pn⟧; se ele devolver um nome real, ele não é gravado.
+  const registroAtivo = Boolean(registro && typeof registro === 'object');
+
+  async function mascararParaRegistro(valor, profundidade = 0) {
+    if (typeof valor === 'string') {
+      try {
+        return await sessao.mascararEntrada(valor);
+      } catch {
+        // Falha fechado: nada do texto original vai para o banco.
+        return { omitido: true };
+      }
+    }
+    if (profundidade >= 8) return { omitido: true };
+    if (Array.isArray(valor)) {
+      const saida = [];
+      for (const item of valor) {
+        saida.push(await mascararParaRegistro(item, profundidade + 1));
+      }
+      return saida;
+    }
+    if (valor && typeof valor === 'object') {
+      const saida = {};
+      for (const [chave, item] of Object.entries(valor)) {
+        saida[chave] = await mascararParaRegistro(item, profundidade + 1);
+      }
+      return saida;
+    }
+    return valor;
+  }
+
+  function anotarPasso(ferramenta) {
+    if (!registroAtivo || !Array.isArray(registro.passos)) return null;
+    const entrada = { ferramenta, argumentos: null, estado: 'inicio' };
+    registro.passos.push(entrada);
+    return entrada;
+  }
+
+  async function definirArgumentos(entrada, argumentos) {
+    if (!entrada) return;
+    entrada.argumentos = await mascararParaRegistro(argumentos ?? {});
+  }
+
+  async function finalizarPasso(entrada, estadoPasso, erro) {
+    if (!entrada) return;
+    entrada.estado = estadoPasso;
+    if (erro) entrada.erro = await mascararParaRegistro(cortarErro(erro));
+    else delete entrada.erro;
+  }
+
   async function emitirPasso(ferramenta, estadoPasso, erro) {
     const dados = {
       ferramenta,
@@ -288,7 +349,9 @@ export async function executarLaco({
       estado: estadoPasso,
     };
     if (erro) dados.erro = cortarErro(erro);
-    return emitir('passo', dados);
+    const aceito = await emitir('passo', dados);
+    if (aceito === false && registroAtivo) registro.falhaEscrita = true;
+    return aceito;
   }
 
   async function encerrarComErro(codigo, mensagem) {
@@ -452,10 +515,19 @@ export async function executarLaco({
           );
         }
 
-        await emitir('texto', {
+        const textoAceito = await emitir('texto', {
           texto: reidratado.texto,
           semOrigem: reidratado.semOrigem,
         });
+        if (registroAtivo) {
+          if (textoAceito === false) registro.falhaEscrita = true;
+          else {
+            registro.textoFinal = {
+              texto: reidratado.texto,
+              semOrigem: reidratado.semOrigem,
+            };
+          }
+        }
         await encerrar();
         return { ok: true, rodadas, ms: decorrido() };
       }
@@ -506,12 +578,16 @@ export async function executarLaco({
           // A chamada nem entrou no histórico; não há a quem responder, mas a
           // tela vê o passo começar e falhar.
           const motivo = cortarErro('A chamada veio sem nome de ferramenta.');
+          const entradaDesconhecida = anotarPasso('desconhecida');
+          await definirArgumentos(entradaDesconhecida, argumentos);
           const iniciou = await emitirPasso('desconhecida', 'inicio');
           if (iniciou === false || abortado()) return interromper();
           await emitirPasso('desconhecida', 'erro', motivo);
+          await finalizarPasso(entradaDesconhecida, 'erro', motivo);
           continue;
         }
 
+        const entradaPasso = anotarPasso(nome);
         const passoIniciou = await emitirPasso(nome, 'inicio');
         if (passoIniciou === false || abortado()) return interromper();
         if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
@@ -521,10 +597,13 @@ export async function executarLaco({
           args = lerArgumentos(argumentos);
         } catch (e) {
           const motivo = cortarErro(e?.message ?? 'Argumentos inválidos.');
+          await definirArgumentos(entradaPasso, argumentos);
           await emitirPasso(nome, 'erro', motivo);
+          await finalizarPasso(entradaPasso, 'erro', motivo);
           mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
           continue;
         }
+        await definirArgumentos(entradaPasso, args);
 
         // ── criar_bloco ──────────────────────────────────────────────────
         if (nome === 'criar_bloco') {
@@ -540,6 +619,7 @@ export async function executarLaco({
           if (saida?.erro) {
             const motivo = cortarErro(saida.erro);
             await emitirPasso(nome, 'erro', motivo);
+            await finalizarPasso(entradaPasso, 'erro', motivo);
             mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
             continue;
           }
@@ -548,6 +628,11 @@ export async function executarLaco({
           try {
             blocoTela = await sessao.reidratar(saida.bloco);
           } catch {
+            await finalizarPasso(
+              entradaPasso,
+              'erro',
+              'O bloco foi aceito mas não pôde ser entregue à tela.',
+            );
             return await encerrarComErro(
               'interno',
               'O bloco foi aceito mas não pôde ser entregue à tela.',
@@ -556,6 +641,11 @@ export async function executarLaco({
           if (abortado()) return interromper();
           if (expirado()) return await encerrarComErro('tempo', mensagemTempo());
           if (!blocoTela || typeof blocoTela !== 'object') {
+            await finalizarPasso(
+              entradaPasso,
+              'erro',
+              'O bloco foi aceito mas voltou num formato inválido.',
+            );
             return await encerrarComErro(
               'interno',
               'O bloco foi aceito mas voltou num formato inválido.',
@@ -563,8 +653,17 @@ export async function executarLaco({
           }
 
           await emitirPasso(nome, 'fim');
+          await finalizarPasso(entradaPasso, 'fim');
           // Só conta como emitido o bloco que o emissor aceitou.
-          if ((await emitir('bloco', blocoTela)) !== false) blocosEmitidos += 1;
+          const blocoAceito = (await emitir('bloco', blocoTela)) !== false;
+          if (blocoAceito) {
+            blocosEmitidos += 1;
+            if (registroAtivo && Array.isArray(registro.blocos)) {
+              registro.blocos.push(blocoTela);
+            }
+          } else if (registroAtivo) {
+            registro.falhaEscrita = true;
+          }
           const recibo = saida.bloco?.id ? { id: saida.bloco.id } : { ok: true };
           mensagens.push(mensagemDeTool(chamada, nome, recibo));
           continue;
@@ -584,6 +683,7 @@ export async function executarLaco({
           if (saida?.erro) {
             const motivo = cortarErro(saida.erro);
             await emitirPasso(nome, 'erro', motivo);
+            await finalizarPasso(entradaPasso, 'erro', motivo);
             mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
             continue;
           }
@@ -592,11 +692,13 @@ export async function executarLaco({
           if (conteudo.length > limites.resultadoChars) {
             const aviso = avisoResultadoGrande(conteudo.length, limites.resultadoChars);
             await emitirPasso(nome, 'erro', aviso.erro);
+            await finalizarPasso(entradaPasso, 'erro', aviso.erro);
             mensagens.push(mensagemDeTool(chamada, nome, aviso));
             continue;
           }
 
           await emitirPasso(nome, 'fim');
+          await finalizarPasso(entradaPasso, 'fim');
           mensagens.push(mensagemDeTool(chamada, nome, conteudo));
           continue;
         }
@@ -614,6 +716,7 @@ export async function executarLaco({
         if (saida?.erro) {
           const motivo = cortarErro(saida.erro);
           await emitirPasso(nome, 'erro', motivo);
+          await finalizarPasso(entradaPasso, 'erro', motivo);
           mensagens.push(mensagemDeTool(chamada, nome, { erro: motivo }));
           continue;
         }
@@ -622,11 +725,13 @@ export async function executarLaco({
         if (conteudo.length > limites.resultadoChars) {
           const aviso = avisoResultadoGrande(conteudo.length, limites.resultadoChars);
           await emitirPasso(nome, 'erro', aviso.erro);
+          await finalizarPasso(entradaPasso, 'erro', aviso.erro);
           mensagens.push(mensagemDeTool(chamada, nome, aviso));
           continue;
         }
 
         await emitirPasso(nome, 'fim');
+        await finalizarPasso(entradaPasso, 'fim');
         mensagens.push(mensagemDeTool(chamada, nome, conteudo));
       }
     }

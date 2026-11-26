@@ -18,6 +18,19 @@ function clonar(valor) {
   return JSON.parse(JSON.stringify(valor));
 }
 
+/** UUID v4 sintético e determinístico, só para a bancada. */
+function uuidSintetico(numero) {
+  return `00000000-0000-4000-8000-${String(numero).padStart(12, '0')}`;
+}
+
+function bytesDeJson(valor) {
+  try {
+    return new TextEncoder().encode(JSON.stringify(valor)).byteLength;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
 function json(corpo, status = 200) {
   return new Response(JSON.stringify(corpo), {
     status,
@@ -114,10 +127,21 @@ export function criarRoteador({
   const corposModelo = [];
   const chamadasRpc = [];
   // Contagem por tipo, para a coluna "chamadas externas" do relatório.
-  const chamadasPorTipo = { modelo: 0, auth: 0, rpc: 0, contador: 0 };
+  const chamadasPorTipo = { modelo: 0, auth: 0, rpc: 0, contador: 0, registro: 0 };
   // Cota da Edge Function simulada: a RPC analise_consumir incrementa este
   // contador em memória e devolve { dia, usadas }, como a tabela da 071.
   let usadas = 0;
+
+  // Registro da 074 em memória: a pergunta abre uma linha, o fechamento só
+  // vale uma vez e só para o mesmo usuário. `iniciar`/`concluir` contam
+  // chamadas (não sucessos), para a bateria pegar abertura/fechamento duplo.
+  const registros = {
+    abertos: new Map(),
+    fechados: new Map(),
+    iniciar: 0,
+    concluir: 0,
+  };
+  let proximoRegistro = 0;
 
   function diaDaBancada(instante) {
     return new Date(instante - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -166,6 +190,94 @@ export function criarRoteador({
     const centro = retrato.centros[code];
     if (!centro || !Object.prototype.hasOwnProperty.call(centro, campo)) return null;
     return centro[campo];
+  }
+
+  function erroRpc(code, message, status = 400) {
+    return json({ code, details: null, hint: null, message }, status);
+  }
+
+  function iniciarRegistro(args) {
+    const pergunta = args && args.p_pergunta;
+    const anteriores = args && args.p_anteriores;
+    const modelo = args && args.p_modelo;
+
+    if (typeof pergunta !== 'string' || !pergunta.trim() || pergunta.length > 2000) {
+      return erroRpc('22023', 'Pergunta inválida.');
+    }
+    if (
+      anteriores !== undefined &&
+      anteriores !== null &&
+      (!Number.isInteger(anteriores) || anteriores < 0 || anteriores > 5)
+    ) {
+      return erroRpc('22023', 'Anteriores fora do intervalo.');
+    }
+    if (modelo !== undefined && modelo !== null && (typeof modelo !== 'string' || modelo.length > 200)) {
+      return erroRpc('22023', 'Modelo longo demais.');
+    }
+
+    registros.iniciar += 1;
+    proximoRegistro += 1;
+    const id = uuidSintetico(proximoRegistro);
+    registros.abertos.set(id, {
+      id,
+      user_id: usuario.id,
+      pergunta,
+      anteriores: anteriores ?? 0,
+      modelo: modelo ?? null,
+      iniciada_em: agora(),
+    });
+    return json(id);
+  }
+
+  function concluirRegistro(args) {
+    // Conta a tentativa: a bateria pega o fechamento duplo também.
+    registros.concluir += 1;
+
+    const id = args && args.p_id;
+    const aberto = typeof id === 'string' ? registros.abertos.get(id) : null;
+
+    if (!aberto) {
+      if (typeof id === 'string' && registros.fechados.has(id)) {
+        return erroRpc('22023', 'Registro já concluído.');
+      }
+      return json(acessoNegado(), 400);
+    }
+    if (aberto.user_id !== usuario.id) return json(acessoNegado(), 400);
+
+    const desfecho = args.p_desfecho;
+    if (
+      desfecho !== 'ok' &&
+      desfecho !== 'erro' &&
+      desfecho !== 'incompleta' &&
+      desfecho !== 'tempo' &&
+      desfecho !== 'limite' &&
+      desfecho !== 'desconectado'
+    ) {
+      return erroRpc('22023', 'Desfecho inválido.');
+    }
+
+    const resposta = args.p_resposta ?? null;
+    const passos = args.p_passos ?? null;
+    if (resposta !== null && bytesDeJson(resposta) > 262144) {
+      return erroRpc('22023', 'Resposta acima de 256 KB.');
+    }
+    if (passos !== null && bytesDeJson(passos) > 262144) {
+      return erroRpc('22023', 'Passos acima de 256 KB.');
+    }
+
+    registros.abertos.delete(id);
+    registros.fechados.set(id, {
+      ...aberto,
+      terminada_em: agora(),
+      resposta,
+      passos,
+      rodadas: args.p_rodadas ?? null,
+      ms: args.p_ms ?? null,
+      chamadas: args.p_chamadas ?? null,
+      desfecho,
+      codigo_erro: args.p_codigo_erro ?? null,
+    });
+    return new Response(null, { status: 204 });
   }
 
   function respostaDeErroDoOraculo(valor) {
@@ -257,7 +369,9 @@ export function criarRoteador({
       chamadasRpc.push({ nome, args: clonar(args), ms: agora() });
 
       if (nome === 'analise_consumir') chamadasPorTipo.contador += 1;
-      else chamadasPorTipo.rpc += 1;
+      else if (nome === 'analise_registro_iniciar' || nome === 'analise_registro_concluir') {
+        chamadasPorTipo.registro += 1;
+      } else chamadasPorTipo.rpc += 1;
 
       const configurada = falhasRpc[nome];
       if (configurada) {
@@ -281,6 +395,10 @@ export function criarRoteador({
         usadas += 1;
         return json({ dia: diaDaBancada(agora()), usadas });
       }
+
+      // Registro da 074 em memória (abertura/fechamento únicos).
+      if (nome === 'analise_registro_iniciar') return iniciarRegistro(args);
+      if (nome === 'analise_registro_concluir') return concluirRegistro(args);
 
       return responderRpc(nome, args);
     }
@@ -342,6 +460,7 @@ export function criarRoteador({
     corposModelo,
     chamadasRpc,
     chamadasPorTipo,
+    registros,
     get usadas() {
       return usadas;
     },

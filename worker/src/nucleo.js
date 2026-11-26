@@ -38,6 +38,7 @@ import { autenticar, extrairJwt, papeisPermitidos } from './auth.js';
 import { diaBrasilia } from './limite.js';
 import { criarRpc } from './rpc.js';
 import { ErroModelo, executarLaco } from './laco.js';
+import { criarRegistradorRpc } from './registro-rpc.js';
 import { CABECALHOS_SSE } from './sse.js';
 import { criarEncerrador } from './encerrador.js';
 import {
@@ -297,6 +298,34 @@ function encerrarAbortado(encerrar, sinalCliente) {
   return encerrar({ erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO } });
 }
 
+/**
+ * Traduz o desfecho real do stream para o `desfecho` da 074. A desconexão
+ * ganha do erro: quem fechou a aba não viu o aviso de tempo/modelo. Depois
+ * vêm os códigos do laço; `abortado` sem código é o watchdog do prazo.
+ */
+function desfechoDoRegistro({ resultado, estourou, falhouTarefa, sinalCliente, registro }) {
+  if (sinalCliente?.aborted) return { desfecho: 'desconectado', codigoErro: null };
+  if (estourou) return { desfecho: 'tempo', codigoErro: 'tempo' };
+  if (falhouTarefa || !resultado) return { desfecho: 'erro', codigoErro: 'interno' };
+  if (resultado.ok) {
+    return registro?.falhaEscrita
+      ? { desfecho: 'desconectado', codigoErro: null }
+      : { desfecho: 'ok', codigoErro: null };
+  }
+  if (resultado.desconectado) {
+    return { desfecho: 'desconectado', codigoErro: null };
+  }
+  const codigo =
+    typeof resultado.codigo === 'string' && resultado.codigo ? resultado.codigo : null;
+  if (codigo === 'incompleta') return { desfecho: 'incompleta', codigoErro: 'incompleta' };
+  if (codigo === 'tempo') return { desfecho: 'tempo', codigoErro: 'tempo' };
+  if (codigo === 'limite') return { desfecho: 'limite', codigoErro: 'limite' };
+  if (codigo) return { desfecho: 'erro', codigoErro: codigo };
+  if (resultado.abortado) return { desfecho: 'tempo', codigoErro: 'tempo' };
+  if (registro?.falhaEscrita) return { desfecho: 'desconectado', codigoErro: null };
+  return { desfecho: 'erro', codigoErro: 'interno' };
+}
+
 async function rodarAnalise({
   corpo,
   env,
@@ -310,6 +339,8 @@ async function rodarAnalise({
   sinalCliente,
   contador,
   mensagemSemContador,
+  registrador,
+  registro,
 }) {
   // ── Login e papel ───────────────────────────────────────────────────────
   const auth = await autenticar({
@@ -390,6 +421,35 @@ async function rodarAnalise({
     return;
   }
 
+  // ── Registro da pergunta (074) ──────────────────────────────────────────
+  // O registro não é barreira: se a RPC falhar, a pergunta segue com
+  // `registro: null`. O evento `inicio` é o primeiro da resposta e só sai
+  // depois de login e limite passarem — é isso que ele significa para a tela.
+  let registroId = null;
+  if (registrador && typeof registrador.iniciar === 'function') {
+    try {
+      const iniciado = await registrador.iniciar({
+        jwt,
+        pergunta: corpo.pergunta,
+        anteriores: Array.isArray(corpo.anteriores) ? corpo.anteriores.length : 0,
+        modelo: env.ANALISE_MODELO || MODELO_PADRAO,
+        prazo,
+        sinal,
+      });
+      registroId =
+        iniciado && typeof iniciado.id === 'string' && iniciado.id ? iniciado.id : null;
+    } catch {
+      registroId = null;
+    }
+  }
+  if (registro && typeof registro === 'object') registro.id = registroId;
+
+  const inicioAceito = await emitir('inicio', { registro: registroId });
+  if (inicioAceito === false) {
+    if (registro && typeof registro === 'object') registro.falhaEscrita = true;
+    return { ok: false, abortado: true, rodadas: 0, ms: Date.now() - inicio };
+  }
+
   // ── Sessão do pacote e modelo ────────────────────────────────────────────
   const hoje = diaBrasilia();
   let sessao;
@@ -437,6 +497,7 @@ async function rodarAnalise({
     estado,
     sinal,
     sinalCliente,
+    registro,
   });
 }
 
@@ -489,6 +550,27 @@ async function analisar(request, env, deps, origem) {
 
   const validado = validarCorpo(corpoLido.corpo);
   if (validado.erro) return json({ erro: validado.erro }, 400, origem);
+
+  // Registro da 074: `deps.registrador` facilita os testes; em produção o
+  // cliente RPC é montado aqui quando o Supabase está configurado. Sem ele,
+  // `inicio` sai com `registro: null` e a pergunta segue normalmente.
+  const registrador =
+    deps.registrador !== undefined
+      ? deps.registrador
+      : env.SUPABASE_URL && env.SUPABASE_ANON_KEY
+        ? criarRegistradorRpc({
+            supabaseUrl: env.SUPABASE_URL,
+            anonKey: env.SUPABASE_ANON_KEY,
+          })
+        : null;
+  const registro = {
+    id: null,
+    blocos: [],
+    textoFinal: null,
+    passos: [],
+    falhaEscrita: false,
+  };
+  const jwt = extrairJwt(request.headers.get('Authorization'));
 
   // ── SSE ──────────────────────────────────────────────────────────────────
   const fluxo = new TransformStream();
@@ -543,11 +625,57 @@ async function analisar(request, env, deps, origem) {
     );
   });
 
+  let resultadoLaco = null;
+  let falhouTarefa = false;
+  let conclusaoAgendada = false;
+
+  /**
+   * Fecha o registro UMA vez, sem segurar o stream. O prazo é próprio (5 s) e
+   * não usa o sinal da requisição: no timeout/desconexão ele já está abortado,
+   * e o fechamento ainda precisa chegar ao banco. `waitUntil` segura a
+   * promessa; sem ele, a promessa roda solta com a rejeição tratada.
+   */
+  function agendarConclusao(desfecho, codigoErro) {
+    if (conclusaoAgendada) return;
+    conclusaoAgendada = true;
+    if (!registro.id || !registrador || typeof registrador.concluir !== 'function') return;
+
+    let promessa;
+    try {
+      promessa = Promise.resolve(
+        registrador.concluir({
+          jwt,
+          id: registro.id,
+          resposta: { texto: registro.textoFinal, blocos: registro.blocos },
+          passos: registro.passos,
+          rodadas: Number.isInteger(resultadoLaco?.rodadas)
+            ? resultadoLaco.rodadas
+            : estado.rodadas ?? 0,
+          ms: Math.max(0, Date.now() - inicio),
+          chamadas: Number.isInteger(estado.ferramentas) ? estado.ferramentas : 0,
+          desfecho,
+          codigoErro,
+          prazo: Date.now() + 5_000,
+        }),
+      ).catch(() => ({ ok: false }));
+    } catch {
+      return;
+    }
+
+    try {
+      if (typeof deps.waitUntil === 'function') deps.waitUntil(promessa);
+      else void promessa.catch(() => {});
+    } catch {
+      // WaitUntil quebrado não pode impedir o fechamento do stream.
+      void promessa.catch(() => {});
+    }
+  }
+
   const tarefa = Promise.race([
     rodarAnalise({
       corpo: validado,
       env,
-      jwt: extrairJwt(request.headers.get('Authorization')),
+      jwt,
       inicio,
       prazo,
       estado,
@@ -557,11 +685,18 @@ async function analisar(request, env, deps, origem) {
       sinalCliente: request.signal,
       contador: deps.contador,
       mensagemSemContador: deps.mensagemSemContador,
+      registrador,
+      registro,
     }),
     esperaTarefa,
   ])
+    .then((resultado) => {
+      resultadoLaco = resultado ?? null;
+      return resultado;
+    })
     .catch(async () => {
       // Última barreira. Sem detalhe da exceção: ela pode carregar conteúdo.
+      falhouTarefa = true;
       await encerrador.encerrar({
         erro: {
           codigo: 'interno',
@@ -572,6 +707,19 @@ async function analisar(request, env, deps, origem) {
     .finally(async () => {
       clearTimeout(relogioPrazo);
       clearTimeout(relogioTarefa);
+
+      // Agenda antes do encerramento terminal: o `waitUntil` do fechamento já
+      // entrou na fila quando o stream termina, e a escrita do `fim` não
+      // espera o banco.
+      const desfecho = desfechoDoRegistro({
+        resultado: resultadoLaco,
+        estourou,
+        falhouTarefa,
+        sinalCliente: request.signal,
+        registro,
+      });
+      agendarConclusao(desfecho.desfecho, desfecho.codigoErro);
+
       await encerrador.encerrar(
         estourou ? { erro: { codigo: 'tempo', mensagem: MENSAGEM_TEMPO } } : {},
       );

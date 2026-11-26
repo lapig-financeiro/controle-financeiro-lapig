@@ -36,7 +36,16 @@ async function chamarRpc(roteador, nome, args = {}, headers = AUTH) {
     headers,
     body: JSON.stringify(args),
   });
-  return { status: resposta.status, corpo: await resposta.json() };
+  const texto = await resposta.text();
+  let corpo = null;
+  if (texto) {
+    try {
+      corpo = JSON.parse(texto);
+    } catch {
+      corpo = texto;
+    }
+  }
+  return { status: resposta.status, corpo };
 }
 
 let retrato;
@@ -191,6 +200,119 @@ describe('roteador da bancada', () => {
   });
 });
 
+describe('registro da 074 no roteador', () => {
+  const ARGS_CONCLUIR = {
+    p_resposta: { texto: { texto: 'ok', semOrigem: [] }, blocos: [] },
+    p_passos: [{ ferramenta: 'listar_centros', argumentos: {}, estado: 'fim' }],
+    p_rodadas: 1,
+    p_ms: 10,
+    p_chamadas: 1,
+    p_desfecho: 'ok',
+    p_codigo_erro: null,
+  };
+
+  function roteadorNovo() {
+    return criarRoteador({
+      retrato,
+      modo: 'roteiro',
+      respostasRoteiro: [],
+      fetchOriginal: semRede(),
+    });
+  }
+
+  it('abre com UUID sintético determinístico e conta a chamada', async () => {
+    const roteador = roteadorNovo();
+    const aberto = await chamarRpc(roteador, 'analise_registro_iniciar', {
+      p_pergunta: 'Quanto o 30.901 tem livre?',
+      p_anteriores: 0,
+      p_modelo: 'modelo-teste',
+    });
+
+    expect(aberto.status).toBe(200);
+    expect(aberto.corpo).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(roteador.registros.iniciar).toBe(1);
+    expect(roteador.registros.abertos.size).toBe(1);
+    expect(roteador.registros.abertos.get(aberto.corpo)).toMatchObject({
+      pergunta: 'Quanto o 30.901 tem livre?',
+      anteriores: 0,
+      modelo: 'modelo-teste',
+    });
+    expect(roteador.chamadasPorTipo.registro).toBe(1);
+  });
+
+  it('fecha uma vez, recusa a segunda e recusa registro de outro usuário', async () => {
+    const roteador = roteadorNovo();
+    const aberto = await chamarRpc(roteador, 'analise_registro_iniciar', {
+      p_pergunta: 'Pergunta',
+      p_anteriores: 0,
+      p_modelo: 'm',
+    });
+    const id = aberto.corpo;
+
+    const fechado = await chamarRpc(roteador, 'analise_registro_concluir', {
+      p_id: id,
+      ...ARGS_CONCLUIR,
+    });
+    expect(fechado.status).toBe(204);
+    expect(roteador.registros.concluir).toBe(1);
+    expect(roteador.registros.fechados.size).toBe(1);
+    expect(roteador.registros.fechados.get(id)).toMatchObject({
+      desfecho: 'ok',
+      passos: ARGS_CONCLUIR.p_passos,
+    });
+
+    const segunda = await chamarRpc(roteador, 'analise_registro_concluir', {
+      p_id: id,
+      ...ARGS_CONCLUIR,
+    });
+    expect(segunda.status).toBe(400);
+    expect(segunda.corpo.code).toBe('22023');
+    expect(roteador.registros.fechados.size).toBe(1);
+
+    const outro = roteadorNovo();
+    const abertoOutro = await chamarRpc(outro, 'analise_registro_iniciar', {
+      p_pergunta: 'Pergunta',
+      p_anteriores: 0,
+      p_modelo: 'm',
+    });
+    const registroOutro = outro.registros.abertos.get(abertoOutro.corpo);
+    registroOutro.user_id = 'outro-usuario';
+
+    const alheio = await chamarRpc(outro, 'analise_registro_concluir', {
+      p_id: abertoOutro.corpo,
+      ...ARGS_CONCLUIR,
+    });
+    expect(alheio.status).toBe(400);
+    expect(alheio.corpo.code).toBe('P0001');
+    expect(outro.registros.fechados.size).toBe(0);
+  });
+
+  it('recusa desfecho desconhecido e JSON acima de 256 KB', async () => {
+    const roteador = roteadorNovo();
+    const aberto = await chamarRpc(roteador, 'analise_registro_iniciar', {
+      p_pergunta: 'Pergunta',
+      p_anteriores: 0,
+      p_modelo: 'm',
+    });
+
+    const invalido = await chamarRpc(roteador, 'analise_registro_concluir', {
+      p_id: aberto.corpo,
+      ...ARGS_CONCLUIR,
+      p_desfecho: 'qualquer',
+    });
+    expect(invalido.status).toBe(400);
+    expect(invalido.corpo.code).toBe('22023');
+
+    const grande = await chamarRpc(roteador, 'analise_registro_concluir', {
+      p_id: aberto.corpo,
+      ...ARGS_CONCLUIR,
+      p_passos: [{ ferramenta: 'x', argumentos: { texto: 'a'.repeat(300_000) }, estado: 'fim' }],
+    });
+    expect(grande.status).toBe(400);
+    expect(grande.corpo.message).toContain('256 KB');
+  });
+});
+
 describe('retrato', () => {
   it('troca o [nome] da folha de bolsa pelo nome sintético da scholarship', () => {
     const preparado = prepararRetrato({
@@ -308,9 +430,32 @@ describe('pergunta de ponta a ponta (modo roteiro)', () => {
       resultado.chamadas.modelo +
         resultado.chamadas.rpc +
         resultado.chamadas.auth +
-        resultado.chamadas.contador,
+        resultado.chamadas.contador +
+        resultado.chamadas.registro,
     );
     expect(resultado.avisos).toEqual([]);
+  });
+
+  it('abre e fecha o registro uma vez e não guarda nome sintético nos passos', async () => {
+    const resultado = await executarPergunta({
+      definicao: perguntas[0],
+      retrato,
+      modo: 'roteiro',
+      respostasRoteiro: respostas.slice(0, 3),
+      fetchOriginal: semRede(),
+    });
+
+    expect(resultado.ok).toBe(true);
+    expect(resultado.eventos[0].evento).toBe('inicio');
+    expect(typeof resultado.registro.id).toBe('string');
+    expect(resultado.registro.iniciar).toBe(1);
+    expect(resultado.registro.concluir).toBe(1);
+    expect(resultado.registro.fechado).not.toBeNull();
+
+    const passosTexto = JSON.stringify(resultado.registro.fechado.passos);
+    for (const nome of retrato.nomesSinteticos) {
+      expect(passosTexto).not.toContain(nome);
+    }
   });
 
   it('pega nome sintético escrito pelo roteiro no pedido seguinte ao modelo', async () => {
@@ -486,6 +631,70 @@ describe('checagens sempre feitas', () => {
     );
     expect(resultado.ok).toBe(false);
     expect(resultado.motivos.some((motivo) => motivo.includes('sem origem'))).toBe(true);
+  });
+
+  it('pergunta sem "inicio" como primeiro evento falha', () => {
+    const resultado = verificar(
+      [
+        { evento: 'texto', dados: { texto: 'ok', semOrigem: [] } },
+        { evento: 'fim', dados: { rodadas: 1 } },
+      ],
+      {},
+      {
+        registro: {
+          id: null,
+          iniciar: 0,
+          concluir: 0,
+          fechado: null,
+        },
+      },
+    );
+    expect(resultado.ok).toBe(false);
+    expect(resultado.motivos.some((motivo) => motivo.includes('primeiro evento'))).toBe(true);
+  });
+
+  it('nome sintético nos passos do registro falha; pergunta recusada no login não exige inicio', () => {
+    const comVazamento = verificar(
+      [
+        {
+          evento: 'inicio',
+          dados: { registro: '00000000-0000-4000-8000-000000000001' },
+        },
+        { evento: 'texto', dados: { texto: 'ok', semOrigem: [] } },
+        { evento: 'fim', dados: { rodadas: 1 } },
+      ],
+      {},
+      {
+        nomesSinteticos: ['Bolsista Bancada 001'],
+        registro: {
+          iniciar: 1,
+          concluir: 1,
+          fechado: {
+            passos: [
+              {
+                ferramenta: 'listar_centros',
+                argumentos: { nome: 'Bolsista Bancada 001' },
+                estado: 'fim',
+              },
+            ],
+          },
+        },
+      },
+    );
+    expect(comVazamento.ok).toBe(false);
+    expect(
+      comVazamento.motivos.some((motivo) => motivo.includes('passos do registro')),
+    ).toBe(true);
+
+    const recusada = verificar(
+      [
+        { evento: 'erro', dados: { codigo: 'sem_login', mensagem: 'Faça login.' } },
+        { evento: 'fim', dados: { rodadas: 0 } },
+      ],
+      { erro: 'sem_login' },
+      { registro: { iniciar: 0, concluir: 0, fechado: null } },
+    );
+    expect(recusada.ok).toBe(true);
   });
 });
 
