@@ -233,3 +233,37 @@ Li `app/vite.config.js`. A CSP do build continua com
 Nenhum. `DeOndeVem` já aceitava `arvore` e abria as folhas com `ref`; não foi preciso prop nova.
 `Campo` não aceita `textarea`, mas isso foi resolvido sem editá-lo. Não alterei
 `verificar-build.mjs`; a prova do bundle ficou em teste.
+
+## Fecho do Claude (26/11/2026)
+
+**Revisões.** MiniMax 3.1 Flash max revisou as duas rodadas (só leitura, mutantes numa cópia fora do
+worktree). 1ª revisão: 8 achados (nenhum alto), todos conferidos no código; o do `ESTADO.md` ficou com o
+Claude, os outros 7 e mais 2 vistos pelo Claude no navegador (aviso de corte depois dos blocos; passo com
+erro que não aparecia no exemplo) foram para a 2ª rodada. 2ª revisão: os 9 itens corrigidos, 16 mutantes
+mortos, 7 observações novas de gravidade baixa.
+
+**Ajustes do Claude depois da 2ª revisão** (com teste e mutante morto):
+- `livre` com `chave` repetida (a 070 repete `linha:<id>`, contrato §3): com várias ocorrências, a tela
+  abre só a que tem o valor clicado ao centavo; empate ou nenhuma → árvore inteira com a nota, em vez de
+  abrir um nó que pode ser o errado. Mutante "devolve a primeira" pego por 2 testes.
+- Erro do feedback com `role="alert"` (assertivo) nos dois caminhos, e teste para o caminho do
+  comentário, que não tinha. "Obrigado, anotado." segue `role="status"`.
+- Exemplo com os rótulos e o nome de ferramenta que o Worker emite (`worker/src/laco.js`): "lendo os
+  termos do contrato", "montando o bloco", `explicar_livre`, e o erro com a mensagem da ferramenta.
+
+**Fica anotado, sem mudança** (não acontece hoje): a conferência de divergência do `DeOndeVem` compara
+centavos sem olhar a unidade (só nós de moeda chegam lá hoje); cabeçalho como "(R$ mil)" não tira o
+prefixo da célula.
+
+**Conferido no navegador** (modo exemplo, 1280 e 390 px): pergunta por Ctrl+Enter e por sugestão, passos
+ao vivo com o erro em âmbar, número, tabela (vira cartões no celular), conta, texto com "sem origem";
+cada origem abre o que deve (`no` e `livre` no "De onde vem", com "Parte de"; `termo` em "Do contrato";
+`ref` no PDF de exemplo na linha certa; `calculo` com as partes); cenários de corte (aviso antes dos
+blocos, parcial preservado), limite e bloco inválido. Console sem erro além do `manutencao.json`, que não
+existe no servidor de desenvolvimento.
+
+**Testes no fim**: app 335 passados; build com `verificar-estilo` e `verificar-build` verdes; lint limpo;
+raiz 926 passados + 5 pulados (fixtures DOCX reais fora do git).
+
+**Não testado**: a Edge Function de verdade com o login do Victor (pergunta real, feedback gravado no
+banco, PDF real de produção). É o "pronto quando" da Etapa 2: o Victor faz 5 perguntas com o próprio login.

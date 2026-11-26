@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 26/11/2026 (071 `analise_uso` aplicada; Edge Function da Análise publicada, máscara corrigida depois de um corte por CPU).
+Última atualização: 26/11/2026 (tela `#/analise` pronta na branch `redesenho/analise-2a-tela`, sem publicar; 074 aplicada; cofre confere a estrutura do auth).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -49,7 +49,7 @@
 
 | F3-A | **No ar desde 19/11: 067 aplicada** (run 44602502209) e 26 termos gravados em 10 centros (ver Registro). Datas de contrato de 30.099, 30.113 e 30.116 aplicadas pelo Victor no botão (19/11). Histórico da execução: migração 067 (`termos_contrato` só insert, 4 RPCs, roteiro PGlite com 8 mutantes) e a tela do `/v2/` (cabeçalho "do contrato"/"contrato diz"/"não está no cadastro", `taxa_total` × divisão sem correção, painel "Do contrato" com trecho, documento do Drive ou "Abrir o plano", nota do admin, conferir e usar a data). 2ª rodada incluiu `taxa_total` e `documento_id`; 3ª fechou o SELECT direto; 4ª aplicou `_tem_cpf` no gatilho, máscara de documento para não-admin, `vigencia_situacao`/`start_date` e as asserções fortes. `npx vitest run` 699 passou (5 pulados), `npm test --prefix app` 115 passou, `npm run lint` e `npm run build --prefix app` verdes. |
 | Admin mínimo | **No ar em 20/11** (merge 96513e4; CI e deploy verdes; bundle do `/v2/` com a tela e sem dado de exemplo). Branch `redesenho/admin-minimo` (7c34031 + db69d7b). Tela `#/admin`: lista de logins (sem centro primeiro; Buriti e automação só leitura), painel com papel e centros, resumo "passa a ver / deixa de ver", confirmação em dois passos ao tirar centro ou rebaixar admin, o próprio admin não se rebaixa. Sem migração (lê `app_users`/`user_projects`/`projects`, grava por `save_user_assignments`). Executor: agy Orchestrator **Argon** (pedido do Victor, 20/11), 2 rodadas; revisões MiniMax max e DeepSeek max. App 190 testes, lint e build verdes; 2 mutantes conferidos pelo Claude; tela vista em 1400 e 390 px no modo exemplo. Aberto: dois admins ao mesmo tempo podem se sobrescrever; clicar na linha não abre o painel; medidas `rem` no CSS. Falta: o Victor abrir `#/admin` com o login dele. |
-| Uso real | **20/11: a Mariana recebeu o acesso** ao `/v2/` (papel professor, 7 centros: 30.099, 30.109, 30.111, 30.113, 30.116, 30.117, 30.118). É a primeira pessoa de fora usando o site novo: o retorno dela orienta as próximas telas. Telas que ela vê: Projetos, página do projeto (dinheiro, rubricas com motivo do selo, "De onde vem", termos do contrato, pendências) e Bolsistas. Análise e Admin ainda dizem "em construção". |
+| Uso real | **20/11: a Mariana recebeu o acesso** ao `/v2/` (papel professor, 7 centros: 30.099, 30.109, 30.111, 30.113, 30.116, 30.117, 30.118). É a primeira pessoa de fora usando o site novo: o retorno dela orienta as próximas telas. Telas que ela vê: Projetos, página do projeto (dinheiro, rubricas com motivo do selo, "De onde vem", termos do contrato, pendências) e Bolsistas. Análise e Admin ela não vê (só admin). |
 | F3-B | **No ar em 20/11: 068 aplicada** (run 44649574063): tela "Bolsistas" do `/v2/` (montar pedido de bolsas: filtros de centro, equipe Pastagem/Alertas/Solos e situação; caixas com totais vindos da RPC; passo a passo no topo) e migração 068 (`bolsista_equipes`, `caixas_pedido`, `caixa_pedido_itens`, 8 RPCs, sem policy nem grant; lock por dono; agente e automação barrados). 3 rodadas; revisões MiniMax max e DeepSeek max resolvidas; PGlite com 17 mutantes. Login da Mariana criado e com os 7 centros (20/11). Ajustes da revisão final na 069. |
 | F3-C | **No ar em 20/11: 069 aplicada** (run 44748685655): motivo nos selos de situação (balão no hover, foco e toque, na lista e nas rubricas), tarifa bancária sem previsão vira atenção com o motivo escrito (ILPF 30.116), `situacao_centro_v2` e ajustes da revisão da 068 (só põe na caixa quem está na lista, confirmação no "Tirar quem saiu da lista", dono no `for update`, lock ao apagar). 2 rodadas + ajustes do Claude; revisões MiniMax max (2) e DeepSeek max cego; PGlite com 10 mutantes. |
 | Projeção das bolsas | **No ar em 23/11** (merge a49fb9e; deploy 45244076178 e CI 45244076287 verdes; sem migração). Responde "até quando as bolsas cabem": o menor entre o orçamento da rubrica de bolsas e o dinheiro em conta mês a mês (folha todo dia 07, desembolsos do plano já sem as taxas, cada bolsa posicionada pelo fim da janela da 066). Cartão "Bolsas por mês" com "Cabem até" (clicável), coluna "Cabe até" na tabela e no painel da rubrica, e seção na aba Dinheiro com botões "Contar" (desembolso futuro ligado; atrasado e rendimento desligados), gráfico SVG e tabela mês a mês. "Repasses" virou **"Desembolsos"**. Conta pura em `app/src/servicos/projecao.js` (sem RPC: vira RPC quando a IA precisar, na Análise). DeepSeek max em 2 rodadas + ajuste do gráfico pelo Claude; revisões MiniMax max e DeepSeek max. Conferida com dados reais (só leitura): 30.109 cabe até mar/27, abr/27 depende do desembolso 4 (R$ 3.111 faltando no dia 07); com rendimento, até set/27. Relatório `relatorios/projecao-bolsas.md`. |
@@ -202,11 +202,24 @@ para o laço no navegador (alternativa do Gemini, `analise-plano.md` §2).
 - **Etapa B3**: cliente SSE `app/src/servicos/analise.js` com aviso local `interrompida` quando o stream fecha sem `fim` (preservando o parcial), `enviarFeedback` pela RPC da 074, 16 testes em `app/tests/analise.test.js` e nota da Etapa 2 em `analise-plano.md` ("as perguntas ficam guardadas para melhorar a Análise"). CSP e UI intocados; revisado pelo MiniMax 3.1 Flash max.
 - **Fecho da rodada (26/11)**: bateria real inteira subiu de **9/20 para 18/20** (0 vazamentos, pergunta 18 passando, pergunta 9 caindo de 43 para 25 chamadas externas e passando); CPU das perguntas 2, 4, 9 e 12 caiu de **120,84 ms para 115,30 ms** no código nosso (`mascara.js` 42,53 ms). Todas as suítes verdes (raiz 926, Worker 204, app 273, lint 0, builds `app` e `edge` ok, PGlite 074 com 7 mutantes). Relatório completo em `docs/redesenho/relatorios/analise-correcoes.md`. Nada aplicado em produção nem publicado.
 
+**Etapa 2-A — tela `#/analise` (26/11)**: branch `redesenho/analise-2a-tela` (worktree
+`C:/Users/amara/dev/cf-analise-tela`), tarefa `tarefas/analise-2a-tela.md`. DeepSeek V4.1 Flash max executou
+em 2 rodadas (`5b19c7c`, `d2e74ac`), MiniMax 3.1 Flash max revisou as duas (pedido do Victor, 26/11), o
+Claude conferiu cada achado, fez os ajustes finais e viu a tela no navegador (modo exemplo, 1280 e 390 px).
+A tela: pergunta (2.000, Ctrl+Enter, sugestões, aviso "As perguntas ficam guardadas para melhorar a
+Análise."), passos ao vivo, Parar, blocos número/tabela/texto com "sem origem", origem clicável nos seis
+tipos do contrato §3 (`no`, `livre`, `ref`, `termo`, `calculo`, `sem_documento`), avisos de erro/corte com o
+parcial preservado, até 5 `anteriores`, feedback pela 074 e "Nova análise". **Menu e rota só para admin.**
+Corrigido no caminho: `enviarFeedback` chamava `supabase.rpc` sem o `this` (quebraria em produção). CSP não
+muda (a Edge Function é a mesma origem do Supabase). Testes: app 335, raiz 926, lint e build verdes.
+Relatório `relatorios/analise-2a-tela.md`. **Falta:** publicar (merge no master e push, com o ok do Victor)
+e o Victor fazer 5 perguntas reais com o login dele.
+
 **Próximo passo, nesta ordem:**
-0. Rodada de correção dos achados da revisão (pergunta mascarada, texto reidratado, rendimento líquido,
-   instruções da Análise, falso "sem origem"), medida pela bancada antes e depois.
-1. Etapa 2: tela `#/analise` (com o Worker no CSP do `app/vite.config.js`) + rótulo de linha nas tabelas + 071
-   `projecao_bolsas_v2` + ferramenta de dinheiro em conta e plano com `ref`.
+1. Publicar a tela (ok do Victor) e as 5 perguntas reais do Victor.
+2. Resto da Etapa 2: 072 `projecao_bolsas_v2` (porta `app/src/servicos/projecao.js` para SQL) e a
+   ferramenta de dinheiro em conta e plano com `ref` (saldo, rendimento líquido, desembolsos e total do plano
+   abrindo o documento).
 
 ## Dívidas técnicas conhecidas
 Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeçalho de cada `.sql`). Ficam:

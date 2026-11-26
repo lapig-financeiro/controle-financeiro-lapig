@@ -59,7 +59,7 @@ describe('cenários do modo exemplo', () => {
     expect(identificarCenario('Quanto o 30.910 tem livre?')).toBe('padrao');
   });
 
-  it('cenário padrão: inicio, 3 passos (um com erro recuperado), 4 blocos, texto e fim', async () => {
+  it('cenário padrão: inicio, 4 passos (um com erro), 4 blocos, texto e fim', async () => {
     const { cenario, eventos } = criarEventosAnaliseExemplo('Quanto o 30.910 tem livre?');
     expect(cenario).toBe('padrao');
     expect(eventos[0]).toEqual({

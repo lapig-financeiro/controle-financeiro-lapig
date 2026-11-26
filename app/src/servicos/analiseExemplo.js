@@ -269,11 +269,11 @@ export function criarEventosAnaliseExemplo(pergunta) {
       cenario,
       eventos: [
         inicio,
-        eventoPasso('criar_bloco', 'montando a resposta', 'inicio'),
+        eventoPasso('criar_bloco', 'montando o bloco', 'inicio'),
         { nome: 'bloco', dados: blocoNumero() },
         { nome: 'bloco', dados: blocoMalformado() },
         { nome: 'bloco', dados: blocoTexto() },
-        eventoPasso('criar_bloco', 'montando a resposta', 'fim'),
+        eventoPasso('criar_bloco', 'montando o bloco', 'fim'),
         {
           nome: 'texto',
           dados: {
@@ -312,20 +312,25 @@ export function criarEventosAnaliseExemplo(pergunta) {
       inicio,
       eventoPasso('listar_centros', 'consultando os centros', 'inicio'),
       eventoPasso('listar_centros', 'consultando os centros', 'fim'),
-      eventoPasso('explicar_livre_v2', 'explicando o saldo livre', 'inicio'),
+      eventoPasso('explicar_livre', 'explicando o saldo livre', 'inicio'),
       eventoPasso(
-        'explicar_livre_v2',
+        'explicar_livre',
         'explicando o saldo livre',
         'erro',
         'a origem demorou a responder'
       ),
-      eventoPasso('explicar_livre_v2', 'explicando o saldo livre', 'inicio'),
-      eventoPasso('explicar_livre_v2', 'explicando o saldo livre', 'fim'),
-      eventoPasso('termos_contrato', 'consultando os termos do contrato', 'inicio'),
-      eventoPasso('termos_contrato', 'consultando os termos do contrato', 'erro', 'tempo'),
-      eventoPasso('criar_bloco', 'montando a resposta', 'inicio'),
+      eventoPasso('explicar_livre', 'explicando o saldo livre', 'inicio'),
+      eventoPasso('explicar_livre', 'explicando o saldo livre', 'fim'),
+      eventoPasso('termos_contrato', 'lendo os termos do contrato', 'inicio'),
+      eventoPasso(
+        'termos_contrato',
+        'lendo os termos do contrato',
+        'erro',
+        'Não foi possível carregar os termos do contrato. (tempo)'
+      ),
+      eventoPasso('criar_bloco', 'montando o bloco', 'inicio'),
       { nome: 'bloco', dados: blocoNumero() },
-      eventoPasso('criar_bloco', 'montando a resposta', 'fim'),
+      eventoPasso('criar_bloco', 'montando o bloco', 'fim'),
       { nome: 'bloco', dados: blocoTabela() },
       { nome: 'bloco', dados: blocoCalculo() },
       { nome: 'bloco', dados: blocoTexto() },

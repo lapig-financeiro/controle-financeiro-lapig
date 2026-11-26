@@ -102,15 +102,32 @@ function descerCaminho(raiz, caminho) {
   return atual || null;
 }
 
-function acharPorChave(no, chave) {
-  if (!chave || !no || typeof no !== 'object') return null;
-  if (no.chave === chave) return no;
+function acharTodosPorChave(no, chave, achados = []) {
+  if (!chave || !no || typeof no !== 'object') return achados;
+  if (no.chave === chave) achados.push(no);
   const partes = Array.isArray(no.partes) ? no.partes : [];
-  for (const parte of partes) {
-    const achado = acharPorChave(parte, chave);
-    if (achado) return achado;
-  }
-  return null;
+  for (const parte of partes) acharTodosPorChave(parte, chave, achados);
+  return achados;
+}
+
+/**
+ * A chave não é única (a 070 repete `linha:<id>` no compromisso e na folha
+ * atrasada, contrato §3). Com uma só ocorrência, ela; com várias, só a que
+ * tem o valor clicado, ao centavo; empate ou nenhuma → null (a tela mostra a
+ * árvore inteira com a nota, em vez de um nó que pode ser o errado).
+ */
+function acharPorChave(raiz, chave, valorEsperado) {
+  const achados = acharTodosPorChave(raiz, chave);
+  if (achados.length === 1) return achados[0];
+  if (achados.length === 0) return null;
+  const esperado = Number(valorEsperado);
+  if (!Number.isFinite(esperado)) return null;
+  const centavos = Math.round(esperado * 100);
+  const mesmos = achados.filter((no) => {
+    const valor = Number(no?.valor);
+    return Number.isFinite(valor) && Math.round(valor * 100) === centavos;
+  });
+  return mesmos.length === 1 ? mesmos[0] : null;
 }
 
 function textoSegundos(ms) {
@@ -472,7 +489,7 @@ export function Analise({
       if (descida) {
         arvore = descida;
       } else {
-        const porChave = acharPorChave(raiz, origemEscolhida.chave);
+        const porChave = acharPorChave(raiz, origemEscolhida.chave, valorEsperado);
         if (porChave) {
           arvore = porChave;
         } else {
@@ -480,7 +497,7 @@ export function Analise({
         }
       }
     } else if (origemEscolhida.chave) {
-      const porChave = acharPorChave(raiz, origemEscolhida.chave);
+      const porChave = acharPorChave(raiz, origemEscolhida.chave, valorEsperado);
       if (porChave) {
         arvore = porChave;
       } else {
@@ -954,7 +971,7 @@ export function Analise({
             </Botao>
           </div>
           {feedback.erro && (
-            <p class="analise__feedback-erro" role="status">
+            <p class="analise__feedback-erro" role="alert">
               {feedback.erro}
             </p>
           )}
@@ -985,7 +1002,7 @@ export function Analise({
           </Botao>
         </div>
         {feedback.erro && (
-          <p class="analise__feedback-erro" role="status">
+          <p class="analise__feedback-erro" role="alert">
             {feedback.erro}
           </p>
         )}

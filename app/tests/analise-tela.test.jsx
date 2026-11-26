@@ -517,6 +517,50 @@ describe('origem clicável', () => {
     expect(painel.querySelector('.de-onde-vem .destaque__rotulo').textContent).toBe('Pessoal');
   });
 
+  function arvoreChaveRepetida() {
+    // A 070 repete `linha:<id>` no compromisso e na folha atrasada (contrato §3).
+    return {
+      rotulo: 'Livre raiz',
+      valor: 2100,
+      tipo: 'calculo',
+      chave: 'livre',
+      partes: [
+        { rotulo: 'Compromisso', valor: 3000, tipo: 'calculo', chave: 'linha:42', partes: [] },
+        { rotulo: 'Folha atrasada', valor: 900, tipo: 'calculo', chave: 'linha:42', partes: [] },
+      ],
+    };
+  }
+
+  it('livre com chave repetida e caminho inválido abre a ocorrência com o valor clicado', async () => {
+    explicarLivreMock.mockResolvedValue({ dados: arvoreChaveRepetida(), erro: null });
+    await abrirComBloco(
+      criarBlocoNumero({
+        valor: 900,
+        origem: { tipo: 'livre', project_id: 'projeto-1', chave: 'linha:42', caminho: [7] },
+      })
+    );
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.querySelector('.de-onde-vem .destaque__rotulo').textContent).toBe(
+      'Folha atrasada'
+    );
+    expect(painel.textContent).not.toContain('difere do valor do painel');
+  });
+
+  it('livre com chave repetida sem valor que desempate mostra a árvore inteira com a nota', async () => {
+    explicarLivreMock.mockResolvedValue({ dados: arvoreChaveRepetida(), erro: null });
+    await abrirComBloco(
+      criarBlocoNumero({
+        valor: 123,
+        origem: { tipo: 'livre', project_id: 'projeto-1', chave: 'linha:42' },
+      })
+    );
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.textContent).toContain(
+      'Não achei o item exato; mostrando a origem do livre do centro.'
+    );
+    expect(painel.querySelector('.de-onde-vem .destaque__rotulo').textContent).toBe('Livre raiz');
+  });
+
   it('livre sem caminho e com chave inexistente mostra a árvore inteira com a nota', async () => {
     const arvore = {
       rotulo: 'Livre raiz',
@@ -1353,7 +1397,7 @@ describe('modo exemplo na tela', () => {
 
     const erro = document.querySelector('.analise__passo--erro');
     expect(erro).not.toBeNull();
-    expect(erro.textContent).toContain('consultando os termos do contrato');
+    expect(erro.textContent).toContain('lendo os termos do contrato');
     expect(erro.querySelector('.analise__passo-erro').textContent).toContain('tempo');
   });
 });
@@ -1518,10 +1562,33 @@ describe('feedback', () => {
     const aviso = await esperarPor(() =>
       document.querySelector('.analise__feedback-erro')
     );
-    expect(aviso.getAttribute('role')).toBe('status');
+    expect(aviso.getAttribute('role')).toBe('alert');
     expect(aviso.textContent).toContain('Não foi possível anotar agora.');
     expect(encontrarBotao('Sim')).toBeTruthy();
     expect(encontrarBotao('Não')).toBeTruthy();
+  });
+
+  it('erro no envio do comentário é anunciado (role="alert") e o campo continua', async () => {
+    const enviarFeedback = vi.fn().mockResolvedValue({
+      id: null,
+      erro: 'Não foi possível anotar o comentário.',
+    });
+    renderizar(criarExecucao({ blocos: [] }), { enviarFeedback });
+    await enviarPergunta('Pergunta com comentário que falha');
+    await esperarAnalises(1);
+
+    encontrarBotao('Não').click();
+    await tick();
+    const campo = document.querySelector('.analise__comentario');
+    campo.value = 'faltou o centro';
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick();
+    encontrarBotao('Enviar').click();
+
+    const aviso = await esperarPor(() => document.querySelector('.analise__feedback-erro'));
+    expect(aviso.getAttribute('role')).toBe('alert');
+    expect(aviso.textContent).toContain('Não foi possível anotar o comentário.');
+    expect(document.querySelector('.analise__comentario')).not.toBeNull();
   });
 
   it('registro nulo não mostra o feedback', async () => {
