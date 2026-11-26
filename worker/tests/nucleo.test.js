@@ -95,6 +95,8 @@ function ctx() {
 }
 
 const UUID_REGISTRO = '11111111-1111-4111-8111-111111111111';
+const UUID_CONVERSA = '22222222-2222-4222-8222-222222222222';
+const CHAVE_SERVIDOR_FALSA = 'chave-de-servidor-falsa-do-teste-123';
 
 function registradorFalso({ id = UUID_REGISTRO, iniciar } = {}) {
   const chamadas = { iniciar: [], concluir: [] };
@@ -173,7 +175,7 @@ describe('núcleo sem plataforma', () => {
     await Promise.all(c.promessas);
 
     expect(eventos(texto).map((e) => e.nome)).toEqual(['inicio', 'texto', 'fim']);
-    expect(eventos(texto)[0].dados).toEqual({ registro: null });
+    expect(eventos(texto)[0].dados).toEqual({ registro: null, conversa: null, ordem: null });
     expect(recebido).toHaveLength(1);
     expect(recebido[0].userId).toBe('u1');
     expect(recebido[0].jwt).toBe('jwt-bom');
@@ -275,7 +277,10 @@ describe('registro da 074 no núcleo', () => {
 
     const ev = eventos(texto);
     expect(ev.map((e) => e.nome)).toEqual(['inicio', 'texto', 'fim']);
-    expect(ev[0]).toEqual({ nome: 'inicio', dados: { registro: UUID_REGISTRO } });
+    expect(ev[0]).toEqual({
+      nome: 'inicio',
+      dados: { registro: UUID_REGISTRO, conversa: null, ordem: null },
+    });
 
     expect(registrador.chamadas.iniciar).toHaveLength(1);
     expect(registrador.chamadas.iniciar[0]).toMatchObject({
@@ -283,12 +288,13 @@ describe('registro da 074 no núcleo', () => {
       pergunta: 'Quanto o 30.109 tem livre?',
       anteriores: 0,
       modelo: 'modelo-teste',
+      conversa: null,
     });
 
     expect(registrador.chamadas.concluir).toHaveLength(1);
     const concluir = registrador.chamadas.concluir[0];
     expect(concluir).toMatchObject({
-      jwt: 'jwt-bom',
+      user: 'u1',
       id: UUID_REGISTRO,
       desfecho: 'ok',
       codigoErro: null,
@@ -302,6 +308,113 @@ describe('registro da 074 no núcleo', () => {
     expect(concluir.passos).toEqual([]);
     expect(typeof concluir.prazo).toBe('number');
     expect(concluir.sinal).toBeUndefined();
+  });
+
+  it('passa a conversa do corpo e devolve conversa/ordem no inicio; a chave de servidor não vaza', async () => {
+    const chamadas = [];
+    vi.stubGlobal('fetch', async (url, init) => {
+      chamadas.push({ url, init });
+      if (url.endsWith('/auth/v1/user')) return json({ id: 'u1', email: 'a@b' });
+      if (url.includes('/rest/v1/app_users')) return json([{ role: 'admin' }]);
+      if (url.endsWith('/rest/v1/rpc/analise_registro_iniciar')) {
+        return json({
+          registro: UUID_REGISTRO,
+          conversa: UUID_CONVERSA,
+          ordem: 3,
+        });
+      }
+      if (url.endsWith('/rest/v1/rpc/analise_registro_concluir_servidor')) {
+        return new Response(null, { status: 204 });
+      }
+      if (url === 'https://ollama.com/api/chat') {
+        return json({ message: { role: 'assistant', content: 'Pronto.' } });
+      }
+      throw new Error(`URL inesperada: ${url}`);
+    });
+
+    const c = ctx();
+    const pedidoComConversa = new Request('https://servidor.local/analise', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer jwt-bom',
+        Origin: ORIGEM,
+      },
+      body: JSON.stringify({
+        pergunta: 'E o comprometido?',
+        conversa: UUID_CONVERSA,
+        anteriores: [
+          {
+            pergunta: 'Quanto o 30.109 tem livre?',
+            resumo: 'R$ 514.864,60.',
+            blocos: 'Livre do 30.109: R$ 514.864,60',
+          },
+        ],
+      }),
+    });
+
+    const resposta = await tratar(pedidoComConversa, ENV, {
+      contador: contadorPermitido(),
+      waitUntil: (p) => c.waitUntil(p),
+      serviceRoleKey: CHAVE_SERVIDOR_FALSA,
+    });
+    const texto = await resposta.text();
+    await Promise.all(c.promessas);
+
+    const ev = eventos(texto);
+    expect(ev[0]).toEqual({
+      nome: 'inicio',
+      dados: { registro: UUID_REGISTRO, conversa: UUID_CONVERSA, ordem: 3 },
+    });
+
+    const iniciar = chamadas.find((c) => c.url.endsWith('/analise_registro_iniciar'));
+    expect(iniciar).toBeTruthy();
+    expect(JSON.parse(iniciar.init.body)).toMatchObject({
+      p_pergunta: 'E o comprometido?',
+      p_anteriores: 1,
+      p_conversa: UUID_CONVERSA,
+    });
+
+    const concluir = chamadas.find((c) =>
+      c.url.endsWith('/analise_registro_concluir_servidor'),
+    );
+    expect(concluir).toBeTruthy();
+    expect(concluir.init.headers.apikey).toBe(CHAVE_SERVIDOR_FALSA);
+    expect(concluir.init.headers.Authorization).toBe(`Bearer ${CHAVE_SERVIDOR_FALSA}`);
+    expect(JSON.parse(concluir.init.body)).toMatchObject({
+      p_user: 'u1',
+      p_id: UUID_REGISTRO,
+      p_desfecho: 'ok',
+    });
+
+    // O que sai para a tela (stream) e o que fica no registro não contêm a chave.
+    expect(texto).not.toContain(CHAVE_SERVIDOR_FALSA);
+    expect(JSON.stringify(JSON.parse(concluir.init.body))).not.toContain(
+      CHAVE_SERVIDOR_FALSA,
+    );
+  });
+
+  it('conversa em formato inválido responde 400 antes de autenticar', async () => {
+    const fetch = vi.fn(fetchAmbiente());
+    vi.stubGlobal('fetch', fetch);
+    const c = ctx();
+    const resposta = await tratar(
+      new Request('https://servidor.local/analise', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer jwt-bom',
+          Origin: ORIGEM,
+        },
+        body: JSON.stringify({ pergunta: 'pergunta', conversa: 'não-é-uuid' }),
+      }),
+      ENV,
+      { contador: contadorPermitido(), waitUntil: (p) => c.waitUntil(p) },
+    );
+
+    expect(resposta.status).toBe(400);
+    expect(await resposta.text()).toContain('precisa ser um uuid válido');
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('falha do registro não derruba a pergunta e emite inicio com null', async () => {
@@ -322,7 +435,7 @@ describe('registro da 074 no núcleo', () => {
 
     const ev = eventos(texto);
     expect(ev.map((e) => e.nome)).toEqual(['inicio', 'texto', 'fim']);
-    expect(ev[0].dados).toEqual({ registro: null });
+    expect(ev[0].dados).toEqual({ registro: null, conversa: null, ordem: null });
     expect(registrador.chamadas.concluir).toHaveLength(0);
   });
 

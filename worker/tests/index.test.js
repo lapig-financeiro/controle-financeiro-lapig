@@ -377,7 +377,7 @@ describe('autenticação no /analise', () => {
 
     const ev = eventos(texto);
     expect(ev.map((e) => e.nome)).toEqual(['inicio', 'texto', 'fim']);
-    expect(ev[0].dados).toEqual({ registro: null });
+    expect(ev[0].dados).toEqual({ registro: null, conversa: null, ordem: null });
     expect(ev.find((e) => e.nome === 'texto').dados.texto).toBe('Pronto.');
 
     const pedidoOllama = fetchFalso.chamadas.find((c) => c.url === 'https://ollama.com/api/chat');
@@ -401,7 +401,7 @@ describe('autenticação no /analise', () => {
     expect(chamadaRpc.init.headers.apikey).toBe('chave-publica');
   });
 
-  it('o Worker abre o registro com o JWT e o fecha uma vez no waitUntil', async () => {
+  it('o Worker abre o registro com o JWT e, sem a credencial de servidor, pula o fechamento', async () => {
     const id = '11111111-1111-4111-8111-111111111111';
     const fetchFalso = fetchAmbiente({
       registroId: id,
@@ -415,7 +415,10 @@ describe('autenticação no /analise', () => {
     await Promise.all(ctx.promessas);
 
     const ev = eventos(texto);
-    expect(ev[0]).toEqual({ nome: 'inicio', dados: { registro: id } });
+    expect(ev[0]).toEqual({
+      nome: 'inicio',
+      dados: { registro: id, conversa: null, ordem: null },
+    });
 
     const iniciar = fetchFalso.chamadas.find((c) =>
       c.url.includes('/rest/v1/rpc/analise_registro_iniciar'),
@@ -427,16 +430,14 @@ describe('autenticação no /analise', () => {
       p_modelo: 'modelo-teste',
     });
 
+    // O Worker da Cloudflare não tem a credencial de servidor: nada de rede
+    // para a RPC de conclusão (o registro fica sem conclusão, como falha
+    // best-effort). A Edge Function, que tem a chave, é provada em
+    // nucleo.test.js e registro-rpc.test.js.
     const concluir = fetchFalso.chamadas.find((c) =>
       c.url.includes('/rest/v1/rpc/analise_registro_concluir'),
     );
-    expect(concluir).toBeDefined();
-    expect(JSON.parse(concluir.init.body)).toMatchObject({
-      p_id: id,
-      p_desfecho: 'ok',
-      p_codigo_erro: null,
-      p_rodadas: 1,
-    });
+    expect(concluir).toBeUndefined();
   });
 
   it('ignora user_id do corpo: o id é o do /auth/v1/user', async () => {

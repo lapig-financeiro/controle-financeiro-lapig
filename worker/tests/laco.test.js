@@ -798,6 +798,41 @@ describe('A1 — pergunta e anteriores mascarados antes do modelo', () => {
     expect(entrada).toContain('⟦P1⟧');
   });
 
+  it('mascara os blocos dos anteriores e os corta em 600 no prompt', async () => {
+    const { sessao, chamadas } = sessaoFalsa({
+      mascararEntrada: (entrada) => String(entrada).replaceAll('Pessoa Exemplo Um', '⟦P1⟧'),
+    });
+    const modelo = modeloFalso([texto('ok')]);
+
+    const r = await executarLaco({
+      ...BASE,
+      pergunta: 'E o comprometido?',
+      anteriores: [
+        {
+          pergunta: 'Quanto tem livre?',
+          resumo: 'Livre de R$ 10,00.',
+          blocos: `Livre do 30.109: R$ 10,00 — Pessoa Exemplo Um ${'x'.repeat(700)}`,
+        },
+      ],
+      sessao,
+      chamarModelo: modelo,
+      emitir: emissorFalso(),
+    });
+
+    expect(r.ok).toBe(true);
+    expect(chamadas.mascararEntrada).toHaveLength(4);
+    expect(chamadas.mascararEntrada[3]).toContain('Pessoa Exemplo Um');
+    const entrada = JSON.stringify(modelo.chamadas[0].mensagens);
+    expect(entrada).not.toContain('Pessoa Exemplo Um');
+    expect(entrada).toContain('Dados citados:');
+    expect(entrada).toContain('⟦P1⟧');
+    // O corte de 600 vale sobre o texto já mascarado.
+    const linha = modelo.chamadas[0].mensagens[0].content
+      .split('\n')
+      .find((l) => l.startsWith('   Dados citados:'));
+    expect(linha.length).toBeLessThanOrEqual('   Dados citados: '.length + 600 + 1);
+  });
+
   it('se a máscara falha, não chama o modelo e não vaza a pergunta', async () => {
     const { sessao } = sessaoFalsa({
       mascararEntrada: () => {

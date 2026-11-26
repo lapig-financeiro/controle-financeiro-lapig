@@ -119,6 +119,9 @@ export function criarRoteador({
       : `bancada-${papel}@bancada.invalid`,
   };
   const tokenEsperado = `Bearer bancada-${papel}`;
+  // A conclusão do registro (075) é assinada pela credencial de servidor; a
+  // bancada simula a Edge Function e aceita esse token só nela.
+  const tokenServidor = 'Bearer bancada-servidor';
   const visiveis = Array.isArray(cenario.centros_visiveis)
     ? new Set(cenario.centros_visiveis.map(String))
     : null;
@@ -142,6 +145,10 @@ export function criarRoteador({
     concluir: 0,
   };
   let proximoRegistro = 0;
+  // Conversas da 075 em memória: a abertura sem p_conversa cria uma; com
+  // p_conversa, só o mesmo usuário continua e a ordem cresce.
+  const conversas = new Map();
+  let proximaConversa = 0;
 
   function diaDaBancada(instante) {
     return new Date(instante - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -216,6 +223,24 @@ export function criarRoteador({
     }
 
     registros.iniciar += 1;
+
+    const conversaInformada = args && args.p_conversa;
+    let conversa;
+    if (conversaInformada !== undefined && conversaInformada !== null) {
+      if (typeof conversaInformada !== 'string' || !conversas.has(conversaInformada)) {
+        return json(acessoNegado(), 400);
+      }
+      const registroConversa = conversas.get(conversaInformada);
+      if (registroConversa.user_id !== usuario.id) return json(acessoNegado(), 400);
+      registroConversa.ordem += 1;
+      conversa = conversaInformada;
+    } else {
+      proximaConversa += 1;
+      conversa = uuidSintetico(1000 + proximaConversa);
+      conversas.set(conversa, { user_id: usuario.id, ordem: 1 });
+    }
+    const ordem = conversas.get(conversa).ordem;
+
     proximoRegistro += 1;
     const id = uuidSintetico(proximoRegistro);
     registros.abertos.set(id, {
@@ -225,8 +250,10 @@ export function criarRoteador({
       anteriores: anteriores ?? 0,
       modelo: modelo ?? null,
       iniciada_em: agora(),
+      conversa_id: conversa,
+      ordem,
     });
-    return json(id);
+    return json({ registro: id, conversa, ordem });
   }
 
   function concluirRegistro(args) {
@@ -234,6 +261,7 @@ export function criarRoteador({
     registros.concluir += 1;
 
     const id = args && args.p_id;
+    const pUser = args && args.p_user;
     const aberto = typeof id === 'string' ? registros.abertos.get(id) : null;
 
     if (!aberto) {
@@ -242,7 +270,7 @@ export function criarRoteador({
       }
       return json(acessoNegado(), 400);
     }
-    if (aberto.user_id !== usuario.id) return json(acessoNegado(), 400);
+    if (aberto.user_id !== pUser) return json(acessoNegado(), 400);
 
     const desfecho = args.p_desfecho;
     if (
@@ -344,7 +372,12 @@ export function criarRoteador({
     }
 
     const authorization = cabecalho(init, 'Authorization');
-    if (authorization !== tokenEsperado) {
+    const nomeRpc = url.pathname.startsWith('/rest/v1/rpc/')
+      ? decodeURIComponent(url.pathname.slice('/rest/v1/rpc/'.length))
+      : null;
+    const conclusaoDoServidor =
+      nomeRpc === 'analise_registro_concluir_servidor' && authorization === tokenServidor;
+    if (authorization !== tokenEsperado && !conclusaoDoServidor) {
       return json(
         {
           code: 401,
@@ -364,12 +397,15 @@ export function criarRoteador({
     }
 
     if (url.pathname.startsWith('/rest/v1/rpc/')) {
-      const nome = decodeURIComponent(url.pathname.slice('/rest/v1/rpc/'.length));
+      const nome = nomeRpc;
       const args = lerCorpo(init);
       chamadasRpc.push({ nome, args: clonar(args), ms: agora() });
 
       if (nome === 'analise_consumir') chamadasPorTipo.contador += 1;
-      else if (nome === 'analise_registro_iniciar' || nome === 'analise_registro_concluir') {
+      else if (
+        nome === 'analise_registro_iniciar' ||
+        nome === 'analise_registro_concluir_servidor'
+      ) {
         chamadasPorTipo.registro += 1;
       } else chamadasPorTipo.rpc += 1;
 
@@ -396,9 +432,9 @@ export function criarRoteador({
         return json({ dia: diaDaBancada(agora()), usadas });
       }
 
-      // Registro da 074 em memória (abertura/fechamento únicos).
+      // Registro da 074/075 em memória (abertura/fechamento únicos).
       if (nome === 'analise_registro_iniciar') return iniciarRegistro(args);
-      if (nome === 'analise_registro_concluir') return concluirRegistro(args);
+      if (nome === 'analise_registro_concluir_servidor') return concluirRegistro(args);
 
       return responderRpc(nome, args);
     }

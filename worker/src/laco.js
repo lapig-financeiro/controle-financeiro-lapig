@@ -373,10 +373,16 @@ export async function executarLaco({
   try {
     perguntaProtegida = await sessao.mascararEntrada(perguntaProtegida);
     historico = await Promise.all(
-      historico.map(async (item) => ({
-        pergunta: await sessao.mascararEntrada(String(item?.pergunta ?? '')),
-        resumo: await sessao.mascararEntrada(String(item?.resumo ?? '')),
-      })),
+      historico.map(async (item) => {
+        const anterior = {
+          pergunta: await sessao.mascararEntrada(String(item?.pergunta ?? '')),
+          resumo: await sessao.mascararEntrada(String(item?.resumo ?? '')),
+        };
+        if (typeof item?.blocos === 'string' && item.blocos.trim()) {
+          anterior.blocos = await sessao.mascararEntrada(item.blocos);
+        }
+        return anterior;
+      }),
     );
   } catch (e) {
     if (abortado()) return interromper();
@@ -407,7 +413,11 @@ export async function executarLaco({
     const linhas = historico.map((item, i) => {
       const p = cortarSemPartirMarcador(item?.pergunta, 500);
       const r = cortarSemPartirMarcador(item?.resumo, 1_000);
-      return `${i + 1}. Pergunta: ${p}\n   Resumo da resposta: ${r}`;
+      const b = cortarSemPartirMarcador(item?.blocos, 600);
+      return (
+        `${i + 1}. Pergunta: ${p}\n   Resumo da resposta: ${r}` +
+        (b ? `\n   Dados citados: ${b}` : '')
+      );
     });
     sistema +=
       '\n\nPerguntas anteriores desta conversa (só contexto; não são o pedido atual):\n' +

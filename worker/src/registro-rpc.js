@@ -1,17 +1,22 @@
 /* ============================================================
-   Registro da Análise por RPC (migração 074)
+   Registro da Análise por RPC (migrações 074/075)
    ============================================================
    A pergunta e o que a pessoa viu ficam na tabela
-   `analise_registro`, atrás de RLS, escritos pelas RPCs
-   `analise_registro_iniciar` e `analise_registro_concluir` com o
-   JWT de quem perguntou. Nada disso vai para log: o registro mora
-   no banco, nunca no console da Edge Function nem do Worker.
+   `analise_registro`, atrás de RLS. A abertura é escrita pela
+   `analise_registro_iniciar` com o JWT de quem perguntou. O
+   fechamento é escrito pela `analise_registro_concluir_servidor`,
+   que só aceita a credencial de servidor do Supabase: a Edge
+   Function a recebe em `SUPABASE_SERVICE_ROLE_KEY` e a passa ao
+   núcleo como `serviceRoleKey`; o Worker da Cloudflare não a tem e
+   o fechamento é pulado em silêncio (o registro fica sem
+   conclusão, como qualquer falha best-effort).
 
    Este cliente é best-effort de propósito. O registro não é
    barreira de segurança nem de resposta: qualquer falha (rede,
    HTTP != 200, prazo, JSON inválido) vira `{ id: null }` no
    `iniciar` e `{ ok: false }` no `concluir`; nunca lança e nunca
-   loga.
+   loga. A chave de servidor nunca entra em retorno, erro, log,
+   registro ou teste com valor real.
 
    `p_resposta` e `p_passos` são cortados em 240 KB (o check da
    074 aceita 256 KB) com `{ truncado: true }`, para o fechamento
@@ -134,6 +139,8 @@ function inteiroOuNulo(valor) {
  * @param {object} opcoes
  * @param {string} opcoes.supabaseUrl
  * @param {string} opcoes.anonKey
+ * @param {string} [opcoes.serviceRoleKey] credencial de servidor (só na Edge);
+ *   sem ela, `concluir` é pulado sem tocar a rede.
  * @param {Function} [opcoes.fetchImpl]
  * @param {number} [opcoes.timeoutMs]
  * @param {Function} [opcoes.agora]
@@ -142,6 +149,7 @@ function inteiroOuNulo(valor) {
 export function criarRegistradorRpc({
   supabaseUrl,
   anonKey,
+  serviceRoleKey,
   fetchImpl = fetch,
   timeoutMs = 10_000,
   agora = Date.now,
@@ -149,11 +157,12 @@ export function criarRegistradorRpc({
   const base = String(supabaseUrl || '').replace(/\/+$/, '');
 
   /**
-   * POST numa RPC com o JWT da pessoa. Devolve `{ ok, texto? }`; qualquer
-   * falha é `{ ok: false }`. O corpo de erro é cancelado sem ser lido.
+   * POST numa RPC. `apikey`/`jwt` dizem qual credencial assina a chamada.
+   * Devolve `{ ok, texto? }`; qualquer falha é `{ ok: false }`. O corpo de
+   * erro é cancelado sem ser lido.
    */
-  async function chamarRpc(nome, corpo, { jwt, prazo, sinal } = {}) {
-    if (!base || !anonKey || !jwt) return { ok: false };
+  async function chamarRpc(nome, corpo, { jwt, apikey, prazo, sinal } = {}) {
+    if (!base || !apikey || !jwt) return { ok: false };
 
     const combo = sinalComPrazo({ sinal, prazo, tetoMs: timeoutMs, agora });
 
@@ -163,7 +172,7 @@ export function criarRegistradorRpc({
           fetchImpl(`${base}/rest/v1/rpc/${encodeURIComponent(nome)}`, {
             method: 'POST',
             headers: {
-              apikey: anonKey,
+              apikey,
               Authorization: `Bearer ${jwt}`,
               'Content-Type': 'application/json',
               Accept: 'application/json',
@@ -201,40 +210,65 @@ export function criarRegistradorRpc({
 
   return {
     /**
-     * Abre o registro da pergunta. Devolve `{ id }` (uuid) ou `{ id: null }`.
+     * Abre o registro da pergunta. A conversa vai junto quando existir.
+     * Devolve `{ id, conversa, ordem }`; qualquer falha vira tudo nulo.
      */
-    async iniciar({ jwt, pergunta, anteriores, modelo, prazo, sinal } = {}) {
+    async iniciar({ jwt, pergunta, anteriores, modelo, conversa, prazo, sinal } = {}) {
       try {
-        const resposta = await chamarRpc(
-          'analise_registro_iniciar',
-          {
-            p_pergunta: pergunta,
-            p_anteriores: inteiroOuNulo(anteriores) ?? 0,
-            p_modelo: typeof modelo === 'string' ? modelo : null,
-          },
-          { jwt, prazo, sinal },
-        );
-        if (!resposta.ok || typeof resposta.texto !== 'string') return { id: null };
+        const corpo = {
+          p_pergunta: pergunta,
+          p_anteriores: inteiroOuNulo(anteriores) ?? 0,
+          p_modelo: typeof modelo === 'string' ? modelo : null,
+        };
+        // Antes da 075 a função não conhece p_conversa; omisso, o default
+        // é null e a conversa nova continua funcionando.
+        if (typeof conversa === 'string' && UUID.test(conversa)) {
+          corpo.p_conversa = conversa;
+        }
+
+        const resposta = await chamarRpc('analise_registro_iniciar', corpo, {
+          jwt,
+          apikey: anonKey,
+          prazo,
+          sinal,
+        });
+        if (!resposta.ok || typeof resposta.texto !== 'string') {
+          return { id: null, conversa: null, ordem: null };
+        }
 
         let dados;
         try {
           dados = JSON.parse(resposta.texto);
         } catch {
-          return { id: null };
+          return { id: null, conversa: null, ordem: null };
         }
-        return typeof dados === 'string' && UUID.test(dados)
-          ? { id: dados }
-          : { id: null };
+
+        // 074 devolvia o uuid direto; a 075 devolve { registro, conversa, ordem }.
+        if (typeof dados === 'string' && UUID.test(dados)) {
+          return { id: dados, conversa: null, ordem: null };
+        }
+        if (!dados || typeof dados !== 'object' || !UUID.test(String(dados.registro || ''))) {
+          return { id: null, conversa: null, ordem: null };
+        }
+        return {
+          id: dados.registro,
+          conversa:
+            typeof dados.conversa === 'string' && UUID.test(dados.conversa)
+              ? dados.conversa
+              : null,
+          ordem: Number.isInteger(dados.ordem) && dados.ordem >= 1 ? dados.ordem : null,
+        };
       } catch {
-        return { id: null };
+        return { id: null, conversa: null, ordem: null };
       }
     },
 
     /**
-     * Fecha o registro uma única vez. Qualquer falha é silenciosa.
+     * Fecha o registro uma única vez com a credencial de servidor. Qualquer
+     * falha é silenciosa; sem a chave, nem tenta a rede.
      */
     async concluir({
-      jwt,
+      user,
       id,
       resposta,
       passos,
@@ -247,11 +281,20 @@ export function criarRegistradorRpc({
       sinal,
     } = {}) {
       try {
-        if (typeof id !== 'string' || !UUID.test(id) || !jwt || !base || !anonKey) {
-          return { ok: false };
+        if (
+          typeof serviceRoleKey !== 'string' ||
+          !serviceRoleKey ||
+          typeof user !== 'string' ||
+          !user.trim() ||
+          typeof id !== 'string' ||
+          !UUID.test(id) ||
+          !base
+        ) {
+          return { ok: false, pulado: true };
         }
 
         const corpo = {
+          p_user: user,
           p_id: id,
           p_resposta: ajustarResposta(resposta, TETO_JSON_BYTES),
           p_passos: ajustarPassos(passos, TETO_JSON_BYTES),
@@ -265,8 +308,9 @@ export function criarRegistradorRpc({
               : null,
         };
 
-        const fechado = await chamarRpc('analise_registro_concluir', corpo, {
-          jwt,
+        const fechado = await chamarRpc('analise_registro_concluir_servidor', corpo, {
+          jwt: serviceRoleKey,
+          apikey: serviceRoleKey,
           prazo,
           sinal,
         });

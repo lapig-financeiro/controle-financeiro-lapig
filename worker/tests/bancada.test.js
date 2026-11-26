@@ -19,6 +19,11 @@ const AUTH = {
   'Content-Type': 'application/json',
 };
 
+const AUTH_SERVIDOR = {
+  Authorization: 'Bearer bancada-servidor',
+  'Content-Type': 'application/json',
+};
+
 const ID_901 = '11111111-1111-4111-8111-111111111901';
 const ID_902 = '11111111-1111-4111-8111-111111111902';
 
@@ -200,8 +205,9 @@ describe('roteador da bancada', () => {
   });
 });
 
-describe('registro da 074 no roteador', () => {
+describe('registro da 075 no roteador', () => {
   const ARGS_CONCLUIR = {
+    p_user: 'bancada-admin',
     p_resposta: { texto: { texto: 'ok', semOrigem: [] }, blocos: [] },
     p_passos: [{ ferramenta: 'listar_centros', argumentos: {}, estado: 'fim' }],
     p_rodadas: 1,
@@ -220,7 +226,7 @@ describe('registro da 074 no roteador', () => {
     });
   }
 
-  it('abre com UUID sintético determinístico e conta a chamada', async () => {
+  it('abre com UUID sintético determinístico, conversa e ordem, e conta a chamada', async () => {
     const roteador = roteadorNovo();
     const aberto = await chamarRpc(roteador, 'analise_registro_iniciar', {
       p_pergunta: 'Quanto o 30.901 tem livre?',
@@ -229,15 +235,28 @@ describe('registro da 074 no roteador', () => {
     });
 
     expect(aberto.status).toBe(200);
-    expect(aberto.corpo).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(aberto.corpo.registro).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(aberto.corpo.conversa).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(aberto.corpo.ordem).toBe(1);
     expect(roteador.registros.iniciar).toBe(1);
     expect(roteador.registros.abertos.size).toBe(1);
-    expect(roteador.registros.abertos.get(aberto.corpo)).toMatchObject({
+    expect(roteador.registros.abertos.get(aberto.corpo.registro)).toMatchObject({
       pergunta: 'Quanto o 30.901 tem livre?',
       anteriores: 0,
       modelo: 'modelo-teste',
+      conversa_id: aberto.corpo.conversa,
+      ordem: 1,
     });
     expect(roteador.chamadasPorTipo.registro).toBe(1);
+
+    const segundo = await chamarRpc(roteador, 'analise_registro_iniciar', {
+      p_pergunta: 'E o comprometido?',
+      p_anteriores: 1,
+      p_modelo: 'modelo-teste',
+      p_conversa: aberto.corpo.conversa,
+    });
+    expect(segundo.corpo.conversa).toBe(aberto.corpo.conversa);
+    expect(segundo.corpo.ordem).toBe(2);
   });
 
   it('fecha uma vez, recusa a segunda e recusa registro de outro usuário', async () => {
@@ -247,12 +266,17 @@ describe('registro da 074 no roteador', () => {
       p_anteriores: 0,
       p_modelo: 'm',
     });
-    const id = aberto.corpo;
+    const id = aberto.corpo.registro;
 
-    const fechado = await chamarRpc(roteador, 'analise_registro_concluir', {
-      p_id: id,
-      ...ARGS_CONCLUIR,
-    });
+    const fechado = await chamarRpc(
+      roteador,
+      'analise_registro_concluir_servidor',
+      {
+        p_id: id,
+        ...ARGS_CONCLUIR,
+      },
+      AUTH_SERVIDOR,
+    );
     expect(fechado.status).toBe(204);
     expect(roteador.registros.concluir).toBe(1);
     expect(roteador.registros.fechados.size).toBe(1);
@@ -261,10 +285,15 @@ describe('registro da 074 no roteador', () => {
       passos: ARGS_CONCLUIR.p_passos,
     });
 
-    const segunda = await chamarRpc(roteador, 'analise_registro_concluir', {
-      p_id: id,
-      ...ARGS_CONCLUIR,
-    });
+    const segunda = await chamarRpc(
+      roteador,
+      'analise_registro_concluir_servidor',
+      {
+        p_id: id,
+        ...ARGS_CONCLUIR,
+      },
+      AUTH_SERVIDOR,
+    );
     expect(segunda.status).toBe(400);
     expect(segunda.corpo.code).toBe('22023');
     expect(roteador.registros.fechados.size).toBe(1);
@@ -275,13 +304,18 @@ describe('registro da 074 no roteador', () => {
       p_anteriores: 0,
       p_modelo: 'm',
     });
-    const registroOutro = outro.registros.abertos.get(abertoOutro.corpo);
+    const registroOutro = outro.registros.abertos.get(abertoOutro.corpo.registro);
     registroOutro.user_id = 'outro-usuario';
 
-    const alheio = await chamarRpc(outro, 'analise_registro_concluir', {
-      p_id: abertoOutro.corpo,
-      ...ARGS_CONCLUIR,
-    });
+    const alheio = await chamarRpc(
+      outro,
+      'analise_registro_concluir_servidor',
+      {
+        p_id: abertoOutro.corpo.registro,
+        ...ARGS_CONCLUIR,
+      },
+      AUTH_SERVIDOR,
+    );
     expect(alheio.status).toBe(400);
     expect(alheio.corpo.code).toBe('P0001');
     expect(outro.registros.fechados.size).toBe(0);
@@ -295,19 +329,29 @@ describe('registro da 074 no roteador', () => {
       p_modelo: 'm',
     });
 
-    const invalido = await chamarRpc(roteador, 'analise_registro_concluir', {
-      p_id: aberto.corpo,
-      ...ARGS_CONCLUIR,
-      p_desfecho: 'qualquer',
-    });
+    const invalido = await chamarRpc(
+      roteador,
+      'analise_registro_concluir_servidor',
+      {
+        p_id: aberto.corpo.registro,
+        ...ARGS_CONCLUIR,
+        p_desfecho: 'qualquer',
+      },
+      AUTH_SERVIDOR,
+    );
     expect(invalido.status).toBe(400);
     expect(invalido.corpo.code).toBe('22023');
 
-    const grande = await chamarRpc(roteador, 'analise_registro_concluir', {
-      p_id: aberto.corpo,
-      ...ARGS_CONCLUIR,
-      p_passos: [{ ferramenta: 'x', argumentos: { texto: 'a'.repeat(300_000) }, estado: 'fim' }],
-    });
+    const grande = await chamarRpc(
+      roteador,
+      'analise_registro_concluir_servidor',
+      {
+        p_id: aberto.corpo.registro,
+        ...ARGS_CONCLUIR,
+        p_passos: [{ ferramenta: 'x', argumentos: { texto: 'a'.repeat(300_000) }, estado: 'fim' }],
+      },
+      AUTH_SERVIDOR,
+    );
     expect(grande.status).toBe(400);
     expect(grande.corpo.message).toContain('256 KB');
   });

@@ -6,11 +6,12 @@ SSE. O contrato está em [`docs/redesenho/analise-contrato.md`](../docs/redesenh
 
 Ele existe para guardar a `OLLAMA_API_KEY` fora do browser e para rodar um laço
 que não cabe no navegador. Tudo o que ele consulta passa pelas RPCs do site,
-**com o JWT de quem perguntou** — o RLS e os guards valem como na tela. O Worker
-não tem `service_role`: as duas entradas escrevem no banco apenas pelas RPCs de
-cota (`analise_consumir`, 071, só na Edge Function) e de registro
-(`analise_registro_iniciar` / `analise_registro_concluir`, 074), sempre com o JWT
-da pessoa.
+**com o JWT de quem perguntou** — o RLS e os guards valem como na tela. Escreve no
+banco apenas pelas RPCs de cota (`analise_consumir`, 071, só na Edge Function) e
+de registro (`analise_registro_iniciar`, 075, com o JWT da pessoa;
+`analise_registro_concluir_servidor`, 075, que só a Edge Function assina, com a
+credencial de servidor que o Supabase injeta). O Worker da Cloudflare não tem
+essa credencial: nele o fechamento do registro é pulado em silêncio.
 
 ## Onde o laço roda
 
@@ -32,13 +33,15 @@ estão em `docs/redesenho/analise-plano.md` §2.
 |---|---|
 | `OPTIONS *` | Preflight de CORS, sem autenticar |
 | `GET /saude` | `{ ok: true }` |
-| `POST /analise` | `Authorization: Bearer <JWT>` + `{ pergunta, anteriores? }` → `text/event-stream` |
+| `POST /analise` | `Authorization: Bearer <JWT>` + `{ pergunta, conversa?, anteriores? }` → `text/event-stream` |
 
 Eventos do `/analise`: `inicio`, `passo`, `bloco`, `texto`, `fim`, `erro` (contrato
-§7). O `inicio` é sempre o primeiro e carrega `{ registro }`: o id da linha da
-migração 074, ou `null` se o registro falhou. Ele só sai depois de login e limite
-passarem; por isso autenticação recusada e cota estourada continuam saindo como
-`erro` + `fim`, sem `inicio`.
+§7). O `inicio` é sempre o primeiro e carrega `{ registro, conversa, ordem }`: o id
+da linha da migração 074, o id da conversa da 075 e o turno dentro dela, ou três
+`null` se o registro falhou. Ele só sai depois de login e limite passarem; por
+isso autenticação recusada e cota estourada continuam saindo como `erro` + `fim`,
+sem `inicio`. `anteriores` aceita até 5 itens com `pergunta`, `resumo` e `blocos`
+(texto ≤ 600, mascarado como a pergunta).
 Enquanto o stream está aberto, um comentário SSE `: ping` sai a cada 15 s
 (constante `INTERVALO_PING_MS`) para manter a conexão viva; a tela ignora
 comentários, então o contrato de eventos não muda. O ping para em qualquer
@@ -56,26 +59,38 @@ teto de **100.000 bytes contados durante a leitura** (sem confiar em
 é 413 antes de desserializar; um corpo parado em `read()` vira **408** no prazo,
 cancelando o leitor.
 
-### Registro da pergunta (074)
+### Registro da pergunta e histórico (074/075)
 
 Depois de login e limite, e antes do primeiro `passo`, o núcleo chama
 `analise_registro_iniciar` (`worker/src/registro-rpc.js`) com o JWT da pessoa, a
-pergunta original, `anteriores.length` e o modelo. Falha de rede, HTTP, prazo ou
-JSON inválido vira `{ id: null }`; a pergunta continua e `inicio` sai com
-`registro: null`. No encerramento — `ok`, `incompleta`, `tempo`, `limite`, `erro`
-ou `desconectado` — chama `analise_registro_concluir` **uma única vez**, agendada
-no `waitUntil` e sem bloquear a escrita terminal. O `concluir` usa prazo próprio
-de 5 s e **não** usa o sinal da requisição: no timeout ou na desconexão ele já
-está abortado, e o fechamento ainda precisa chegar ao banco.
+pergunta original, `anteriores.length`, o modelo e a `conversa` (quando há).
+Falha de rede, HTTP, prazo ou JSON inválido vira `{ id: null }`; a pergunta
+continua e `inicio` sai com `registro: null`, `conversa: null` e `ordem: null`.
+No encerramento — `ok`, `incompleta`, `tempo`, `limite`, `erro` ou `desconectado` —
+a Edge Function chama `analise_registro_concluir_servidor` **uma única vez**,
+agendada no `waitUntil` e sem bloquear a escrita terminal. O `concluir` usa prazo
+próprio de 5 s e **não** usa o sinal da requisição: no timeout ou na desconexão
+ele já está abortado, e o fechamento ainda precisa chegar ao banco. A chamada é
+assinada pela credencial de servidor (`SUPABASE_SERVICE_ROLE_KEY`, que o Supabase
+injeta na Edge) e leva o `p_user` que o núcleo conferiu. **Sem a chave** — o
+Worker da Cloudflare —, `concluir` devolve `{ ok: false, pulado: true }` sem
+tocar a rede; o registro fica sem conclusão. A chave nunca vai para resposta,
+SSE, log, erro, registro nem teste com valor real.
 
 O que fica gravado é o que a pessoa viu: a pergunta, a resposta reidratada
 (`texto` + `blocos`) e os `passos` com a ferramenta, o estado, o erro (quando há)
 e os argumentos **mascarados** que o modelo passou — nome real nunca entra nos
 passos. `p_resposta` e `p_passos` acima de 240 KB são truncados com
 `{ truncado: true }` para caber no check de 256 KB da 074. A tabela
-`analise_registro` fica atrás de RLS, sem policy: só as RPCs da migração
-escrevem, e só o admin lê pela `analise_registros_admin()`. Nada disso vai para
-`console.*`.
+`analise_registro` fica atrás de RLS, sem policy: só as RPCs da 074/075 escrevem,
+e só o admin lê pela `analise_registros_admin()` (que agora devolve também
+`conversa_id` e `ordem`). Nada disso vai para `console.*`.
+
+A 075 acrescenta as conversas: `analise_conversa` (dono, título editável, última
+atividade) e o backfill de cada registro antigo numa conversa própria. **Não há
+mais retenção de 180 dias**; a conversa fica enquanto a conta existir ou até a
+pessoa excluí-la. O dono lê os turnos pela `analise_conversa_ler` (em ordem, sem
+`passos`), lista, renomeia e exclui; conversa de outra pessoa é 42501.
 
 CORS: só `https://lapig-financeiro.github.io` e `http://localhost:<porta>`.
 Qualquer outra origem recebe 403, sem cabeçalho de liberação. Os cabeçalhos
@@ -112,6 +127,7 @@ desconecta. Sem ela, o fetch continuaria rodando para uma tela que já fechou.
 | `ANALISE_PAPEIS` | `[vars]` | Papéis aceitos, separados por vírgula; padrão `admin` |
 | `ANALISE_LIMITE_DIA` | `[vars]` | Perguntas por login por dia; padrão `50` |
 | `OLLAMA_API_KEY` | **segredo** | `wrangler secret put OLLAMA_API_KEY` (quem põe é o Victor) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **só na Edge Function** | injetada pelo Supabase; assina só a conclusão do registro (075). Nunca no Worker, no frontend ou no git. |
 
 O KV `ANALISE_USO` guarda só o contador (`uso:<user_id>:<AAAA-MM-DD>`, fuso de
 Brasília, TTL de 48 h). Em produção, crie o namespace com
@@ -205,14 +221,15 @@ sintético do retrato aparece nos `passos` gravados (na `pergunta` e na
   usado nem em erro; a mensagem que chega à tela é genérica. O registro da 074 é
   a exceção deliberada à regra "sem log": ele vai para o **banco**, atrás de RLS,
   não para o console.
-- Não tem `service_role` e não faz cálculo financeiro. Escreve no banco só pelas
-  RPCs de cota (071, na Edge Function) e de registro (074), com o JWT da pessoa;
-  não decide número: todo valor vem de RPC, e o bloco só sai depois de
-  `sessao.criarBloco` + `sessao.reidratar`.
-- A pergunta e os `anteriores` são mascarados por `sessao.mascararEntrada` antes
-  da primeira ida ao modelo: o `⟦Pn⟧` é o mesmo dos resultados das ferramentas e
-  CPF/e-mail saem. Se o dicionário de nomes não carrega, o Worker encerra com
-  `erro` `interno` e **não** manda a pergunta crua ao modelo.
+- Não tem a credencial de servidor no Worker e não faz cálculo financeiro. Na Edge
+  Function ela existe só para a `analise_registro_concluir_servidor` (075); as
+  demais RPCs usam o JWT da pessoa. Não decide número: todo valor vem de RPC, e o
+  bloco só sai depois de `sessao.criarBloco` + `sessao.reidratar`.
+- A pergunta e os `anteriores` (inclusive `blocos`) são mascarados por
+  `sessao.mascararEntrada` antes da primeira ida ao modelo: o `⟦Pn⟧` é o mesmo dos
+  resultados das ferramentas e CPF/e-mail saem. Se o dicionário de nomes não
+  carrega, o Worker encerra com `erro` `interno` e **não** manda a pergunta crua ao
+  modelo.
 - O texto do modelo passa por `sessao.marcarTexto` (conferência sobre a versão
   mascarada) e depois por `sessao.reidratarTexto` antes do evento `texto`: a tela
   recebe o nome real e `semOrigem` deslocado pelo tamanho de cada substituição.

@@ -50,10 +50,13 @@ import {
 
 const MAX_PERGUNTA = 2_000;
 const MAX_ANTERIORES = 5;
+const MAX_BLOCOS_ANTERIOR = 600;
 const MAX_CORPO_BYTES = 100_000;
 const TETO_MODELO_MS = 90_000;
 const OLLAMA_ENDPOINT = 'https://ollama.com/api/chat';
 const MODELO_PADRAO = 'deepseek-v4.1-flash:cloud';
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MENSAGEM_TEMPO =
   'A análise passou de 120 s e foi interrompida. Tente uma pergunta mais específica.';
 
@@ -90,7 +93,7 @@ function json(corpo, status, origem, extras = {}) {
   });
 }
 
-/** Valida o corpo sem olhar para nada além de `pergunta` e `anteriores`. */
+/** Valida o corpo sem olhar para nada além de `pergunta`, `anteriores` e `conversa`. */
 function validarCorpo(corpo) {
   if (!corpo || typeof corpo !== 'object' || Array.isArray(corpo)) {
     return { erro: 'O corpo precisa ser um objeto JSON.' };
@@ -104,6 +107,14 @@ function validarCorpo(corpo) {
     return { erro: `A pergunta passa de ${MAX_PERGUNTA} caracteres.` };
   }
 
+  let conversa = null;
+  if (corpo.conversa !== undefined && corpo.conversa !== null) {
+    if (typeof corpo.conversa !== 'string' || !UUID.test(corpo.conversa.trim())) {
+      return { erro: '"conversa" precisa ser um uuid válido.' };
+    }
+    conversa = corpo.conversa.trim();
+  }
+
   let anteriores = [];
   if (corpo.anteriores != null) {
     if (!Array.isArray(corpo.anteriores)) {
@@ -112,13 +123,19 @@ function validarCorpo(corpo) {
     if (corpo.anteriores.length > MAX_ANTERIORES) {
       return { erro: `"anteriores" tem mais de ${MAX_ANTERIORES} itens.` };
     }
-    anteriores = corpo.anteriores.map((item) => ({
-      pergunta: typeof item?.pergunta === 'string' ? item.pergunta.slice(0, 500) : '',
-      resumo: typeof item?.resumo === 'string' ? item.resumo.slice(0, 1_000) : '',
-    }));
+    anteriores = corpo.anteriores.map((item) => {
+      const anterior = {
+        pergunta: typeof item?.pergunta === 'string' ? item.pergunta.slice(0, 500) : '',
+        resumo: typeof item?.resumo === 'string' ? item.resumo.slice(0, 1_000) : '',
+      };
+      if (typeof item?.blocos === 'string' && item.blocos.trim()) {
+        anterior.blocos = item.blocos.slice(0, MAX_BLOCOS_ANTERIOR);
+      }
+      return anterior;
+    });
   }
 
-  return { pergunta, anteriores };
+  return { pergunta, anteriores, conversa };
 }
 
 /**
@@ -421,11 +438,17 @@ async function rodarAnalise({
     return;
   }
 
-  // ── Registro da pergunta (074) ──────────────────────────────────────────
+  // ── Registro da pergunta (074/075) ──────────────────────────────────────
   // O registro não é barreira: se a RPC falhar, a pergunta segue com
   // `registro: null`. O evento `inicio` é o primeiro da resposta e só sai
   // depois de login e limite passarem — é isso que ele significa para a tela.
   let registroId = null;
+  let conversaId = null;
+  let ordem = null;
+  if (registro && typeof registro === 'object') {
+    // A Edge usa este id no fechamento com a credencial de servidor.
+    registro.usuarioId = auth.usuario.id;
+  }
   if (registrador && typeof registrador.iniciar === 'function') {
     try {
       const iniciado = await registrador.iniciar({
@@ -433,18 +456,37 @@ async function rodarAnalise({
         pergunta: corpo.pergunta,
         anteriores: Array.isArray(corpo.anteriores) ? corpo.anteriores.length : 0,
         modelo: env.ANALISE_MODELO || MODELO_PADRAO,
+        conversa: corpo.conversa ?? null,
         prazo,
         sinal,
       });
       registroId =
         iniciado && typeof iniciado.id === 'string' && iniciado.id ? iniciado.id : null;
+      conversaId =
+        iniciado && typeof iniciado.conversa === 'string' && iniciado.conversa
+          ? iniciado.conversa
+          : null;
+      ordem =
+        iniciado && Number.isInteger(iniciado.ordem) && iniciado.ordem >= 1
+          ? iniciado.ordem
+          : null;
     } catch {
       registroId = null;
+      conversaId = null;
+      ordem = null;
     }
   }
-  if (registro && typeof registro === 'object') registro.id = registroId;
+  if (registro && typeof registro === 'object') {
+    registro.id = registroId;
+    registro.conversa = conversaId;
+    registro.ordem = ordem;
+  }
 
-  const inicioAceito = await emitir('inicio', { registro: registroId });
+  const inicioAceito = await emitir('inicio', {
+    registro: registroId,
+    conversa: conversaId,
+    ordem,
+  });
   if (inicioAceito === false) {
     if (registro && typeof registro === 'object') registro.falhaEscrita = true;
     return { ok: false, abortado: true, rodadas: 0, ms: Date.now() - inicio };
@@ -551,9 +593,9 @@ async function analisar(request, env, deps, origem) {
   const validado = validarCorpo(corpoLido.corpo);
   if (validado.erro) return json({ erro: validado.erro }, 400, origem);
 
-  // Registro da 074: `deps.registrador` facilita os testes; em produção o
-  // cliente RPC é montado aqui quando o Supabase está configurado. Sem ele,
-  // `inicio` sai com `registro: null` e a pergunta segue normalmente.
+  // Registro da 074/075: `deps.registrador` facilita os testes; em produção o
+  // cliente RPC é montado aqui quando o Supabase está configurado. A Edge passa
+  // `serviceRoleKey` para o fechamento; sem ele (Worker), o fechamento é pulado.
   const registrador =
     deps.registrador !== undefined
       ? deps.registrador
@@ -561,10 +603,14 @@ async function analisar(request, env, deps, origem) {
         ? criarRegistradorRpc({
             supabaseUrl: env.SUPABASE_URL,
             anonKey: env.SUPABASE_ANON_KEY,
+            serviceRoleKey: deps.serviceRoleKey,
           })
         : null;
   const registro = {
     id: null,
+    conversa: null,
+    ordem: null,
+    usuarioId: null,
     blocos: [],
     textoFinal: null,
     passos: [],
@@ -644,7 +690,7 @@ async function analisar(request, env, deps, origem) {
     try {
       promessa = Promise.resolve(
         registrador.concluir({
-          jwt,
+          user: registro.usuarioId,
           id: registro.id,
           resposta: { texto: registro.textoFinal, blocos: registro.blocos },
           passos: registro.passos,

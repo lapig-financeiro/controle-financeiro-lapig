@@ -202,6 +202,9 @@ export async function executarPergunta({
     const resposta = await tratarImpl(requisicao, env, {
       contador,
       waitUntil: (promessa) => ctx.waitUntil(promessa),
+      // A bancada roda o núcleo como a Edge Function: a conclusão do registro
+      // usa a credencial de servidor simulada pelo roteador.
+      serviceRoleKey: 'bancada-servidor',
     });
     const statusHttp = resposta.status;
 
@@ -256,7 +259,7 @@ export async function executarPergunta({
           (item) =>
             item.nome !== 'analise_consumir' &&
             item.nome !== 'analise_registro_iniciar' &&
-            item.nome !== 'analise_registro_concluir',
+            item.nome !== 'analise_registro_concluir_servidor',
         )
         .map((item) => ({ nome: item.nome, args: item.args })),
       falhas,

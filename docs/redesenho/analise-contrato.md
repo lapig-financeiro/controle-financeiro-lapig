@@ -160,30 +160,43 @@ código (`http_4xx`, `tempo`, `formato`, `rede`).
 ## 7. Worker (`worker/`)
 
 `POST /analise` com `Authorization: Bearer <JWT do Supabase>` e corpo
-`{ pergunta: string (≤ 2.000), anteriores?: [{ pergunta, resumo }] (≤ 5) }`.
+`{ pergunta: string (≤ 2.000), conversa?: uuid, anteriores?: [{ pergunta, resumo, blocos? }] (≤ 5) }`.
+`conversa` é a conversa aberta na tela; `null`/ausente cria uma nova. Cada item de `anteriores` aceita
+`blocos` (texto ≤ 600 caracteres, a projeção "título: valor formatado" dos blocos número/tabela), que
+passa pela mesma máscara da pergunta e do resumo.
 Resposta `text/event-stream`, eventos `event: <nome>\ndata: <json>`:
 
 | Evento | Dados |
 |---|---|
-| `inicio` | `{ registro: uuid \| null }`, o **primeiro** evento da resposta. `registro` é o id da linha da 074; `null` quando o registro falhou. Só sai depois de login e limite passarem — é isso que ele significa para a tela. |
+| `inicio` | `{ registro: uuid \| null, conversa: uuid \| null, ordem: int \| null }`, o **primeiro** evento da resposta. `registro` é o id da linha da 074, `conversa` o id da conversa da 075 e `ordem` o turno dentro dela; os três são nulos quando o registro falhou. Só sai depois de login e limite passarem — é isso que ele significa para a tela. |
 | `passo` | `{ ferramenta, rotulo, estado: 'inicio' \| 'fim' \| 'erro', erro? }`; `rotulo` em pt-BR ("consultando os centros") |
 | `bloco` | o bloco reidratado (§6) |
 | `texto` | `{ texto, semOrigem }`, a resposta final curta, já reidratada (nomes reais e `semOrigem` deslocado) |
 | `fim` | `{ rodadas, ms }` |
 | `erro` | `{ codigo: 'sem_login' \| 'sem_permissao' \| 'limite' \| 'modelo' \| 'tempo' \| 'interno' \| 'incompleta', mensagem }` |
 
-- Registro (074): depois do login e do limite, o Worker chama `analise_registro_iniciar` com o JWT da
-  pessoa, a pergunta original, `anteriores.length` e o modelo. A falha **não** derruba a análise:
-  `inicio` sai com `registro: null` e a pergunta segue. No encerramento (qualquer desfecho: `ok`,
-  `incompleta`, `tempo`, `erro`, `limite` ou `desconectado`), chama `analise_registro_concluir` **uma
-  vez**, agendada no `waitUntil`, com prazo próprio de 5 s e sem o sinal da requisição (num timeout ou
-  desconexão ele já está abortado, e o fechamento ainda precisa chegar ao banco). Grava o que a pessoa
-  viu — pergunta, resposta reidratada (texto + blocos) e passos com os argumentos **mascarados** que o
-  modelo usou. A tabela `analise_registro` fica atrás de RLS, sem policy; só as RPCs da 074 escrevem e só
-  o admin lê. `p_resposta` e `p_passos` acima de 240 KB são truncados com `{ truncado: true }` para caber
-  no check de 256 KB da migração.
+- Registro (074/075): depois do login e do limite, o Worker chama `analise_registro_iniciar` com o JWT
+  da pessoa, a pergunta original, `anteriores.length`, o modelo e a `conversa` (quando há). A falha
+  **não** derruba a análise: `inicio` sai com `registro: null`, `conversa: null` e `ordem: null`, e a
+  pergunta segue. No encerramento (qualquer desfecho: `ok`, `incompleta`, `tempo`, `erro`, `limite` ou
+  `desconectado`), a Edge Function chama `analise_registro_concluir_servidor` **uma vez**, agendada no
+  `waitUntil`, com prazo próprio de 5 s e sem o sinal da requisição (num timeout ou desconexão ele já
+  está abortado, e o fechamento ainda precisa chegar ao banco). A conclusão usa a credencial de servidor
+  (`SUPABASE_SERVICE_ROLE_KEY`, injetada no ambiente da Edge) e o `p_user` que o núcleo já conferiu; a
+  chave nunca vai para resposta, SSE, log, erro, registro nem teste. Sem a chave (Worker da Cloudflare),
+  o fechamento é pulado em silêncio e o registro fica sem conclusão, como qualquer falha best-effort.
+  Grava o que a pessoa viu — pergunta, resposta reidratada (texto + blocos) e passos com os argumentos
+  **mascarados** que o modelo usou. A tabela `analise_registro` fica atrás de RLS, sem policy; só as RPCs
+  da 074/075 escrevem e só o admin lê. `p_resposta` e `p_passos` acima de 240 KB são truncados com
+  `{ truncado: true }` para caber no check de 256 KB da migração.
+- Histórico (075): `analise_conversa` guarda a conversa enquanto a conta existir ou até a pessoa
+  excluí-la; **não há mais retenção de 180 dias**. O dono lista (`analise_conversas_listar`), lê os turnos
+  em ordem sem os `passos` (`analise_conversa_ler`), renomeia (`analise_conversa_renomear`) e exclui
+  (`analise_conversa_excluir`, com cascade nos registros e feedbacks). Conversa de outra pessoa é sempre
+  42501. O fechamento sobe `analise_conversa.atualizada_em`.
 - Autenticação: `GET /auth/v1/user` com o JWT; papel lido de `app_users` com o mesmo JWT (como o app). Só
-  `admin` (variável `ANALISE_PAPEIS`, padrão `admin`). Sem `service_role`.
+  `admin` (variável `ANALISE_PAPEIS`, padrão `admin`). As RPCs da pessoa usam o JWT dela; a credencial de
+  servidor só assina o fechamento do registro na Edge Function.
 - Quando as 8 rodadas acabam e já houve ao menos um bloco emitido, o encerramento é `erro` com código
   `incompleta` e a mensagem fixa "A resposta ficou incompleta: parei em 8 rodadas. Os blocos acima estão
   certos; para o resto, faça uma pergunta mais específica." Sem bloco emitido, continua `interno`.
@@ -193,14 +206,16 @@ Resposta `text/event-stream`, eventos `event: <nome>\ndata: <json>`:
   `tools` = `especificacoes()`.
 - Tetos: 8 rodadas, 30 chamadas de ferramenta, 60.000 caracteres por resultado (acima disso volta erro
   pedindo filtro), 120 s no total.
-- Limite: KV `ANALISE_USO`, chave `uso:<user_id>:<AAAA-MM-DD>` (fuso de Brasília), 50 por dia, expira em
-  48 h. Conta a pergunta quando ela começa.
+- Limite: no Worker, KV `ANALISE_USO`, chave `uso:<user_id>:<AAAA-MM-DD>` (fuso de Brasília), 50 por dia,
+  expira em 48 h; na Edge Function, a RPC `analise_consumir` (071) sobre `analise_uso`. Conta a pergunta
+  quando ela começa.
 - CORS: `https://lapig-financeiro.github.io` e `http://localhost:*`. `OPTIONS` responde sem autenticar.
-- Sem log de pergunta, argumento, resultado, bloco ou texto. O registro da 074 vai para o **banco**
+- Sem log de pergunta, argumento, resultado, bloco ou texto. O registro da 074/075 vai para o **banco**
   (atrás de RLS), nunca para o log da Edge Function nem do Worker: `console.*` continua sem conteúdo da
   conversa.
 - Segredos: `OLLAMA_API_KEY` (o Victor põe). Variáveis: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (públicas),
-  `ANALISE_MODELO`, `ANALISE_PAPEIS`.
+  `ANALISE_MODELO`, `ANALISE_PAPEIS`. Na Edge Function, `SUPABASE_SERVICE_ROLE_KEY` é injetada pelo
+  Supabase e usada **só** no fechamento do registro; nunca sai do servidor.
 
 ## 8. Instruções ao modelo (`INSTRUCOES` no pacote)
 

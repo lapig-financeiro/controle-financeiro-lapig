@@ -17,7 +17,9 @@
 //
 // Segredos/variáveis: SUPABASE_URL e SUPABASE_ANON_KEY já existem no ambiente
 // das Edge Functions; OLLAMA_API_KEY é o mesmo segredo da `assistente`;
-// ANALISE_MODELO, ANALISE_PAPEIS e ANALISE_LIMITE_DIA são opcionais.
+// SUPABASE_SERVICE_ROLE_KEY é injetada pelo Supabase e usada só no fechamento
+// do registro (075), que a RPC restringe a essa credencial; ANALISE_MODELO,
+// ANALISE_PAPEIS e ANALISE_LIMITE_DIA são opcionais.
 
 import {
   criarContadorRpc,
@@ -55,6 +57,11 @@ const env = {
   ANALISE_LIMITE_DIA: Deno.env.get("ANALISE_LIMITE_DIA"),
 };
 
+// A credencial de servidor não entra no `env` (que circula no núcleo): vai
+// como uma dependência só do fechamento do registro, que a 075 restringe a ela.
+// O Supabase a injeta no ambiente da Edge Function; o Worker não a tem.
+const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? undefined;
+
 const teto = tetoDoAmbiente(env.ANALISE_LIMITE_DIA);
 
 Deno.serve(async (request: Request) => {
@@ -77,6 +84,7 @@ Deno.serve(async (request: Request) => {
   return tratar(normalizarRequisicao(request), env, {
     contador,
     waitUntil,
+    serviceRoleKey,
     // Só aparece se o contador não for montado; mantém a mensagem própria da
     // Edge Function (o Worker passa a dele).
     mensagemSemContador: "O limite de uso não está configurado no servidor.",
