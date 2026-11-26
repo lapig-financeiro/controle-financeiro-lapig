@@ -91,6 +91,9 @@ bloco) é escrito pelo Claude **antes**, na tarefa, para que ninguém espere o o
   ESTADO já previa: "vira RPC quando a IA precisar"). O roteiro PGlite compara com o JS nos casos
   sintéticos, incluindo a folha atrasada e o exemplo 30.910. A tela do projeto continua no JS até a RPC
   bater em todos os centros. Pelo cofre, com o ok do Victor.
+- **Aviso de registro (decisão do Victor, 26/11)**: a tela avisa, junto do campo de pergunta, que
+  **"as perguntas ficam guardadas para melhorar a Análise"**. O registro vai para o banco (migração 074),
+  atrás de RLS — só o admin lê, retenção de 180 dias — e nada vai para o log da Edge Function.
 - **Bateria**: as 20 perguntas contra o DeepSeek V4.1 Flash **high** (o único modelo, decisão do Victor).
   Nota por pergunta: número certo, origem certa (o clique chega ao documento), recusa honesta quando não
   há dado.
