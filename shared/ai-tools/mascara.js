@@ -307,6 +307,7 @@ export function criarMascara({ rpc } = {}) {
       ? item.chave ?? chaveDoNome(item.nome)
       : item.chaveExata ?? chaveExataDoNome(item.nome);
     if (!chave) return [];
+    if (!comparavel.includes(chave)) return [];
     const padrao = new RegExp(
       `(^|[^\\p{L}\\p{N}])(${escaparRegex(chave)})(?=$|[^\\p{L}\\p{N}])`,
       'gu'

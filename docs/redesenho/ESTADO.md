@@ -184,8 +184,11 @@ sem login, CORS do site ok, `OLLAMA_API_KEY` presente. Perguntas reais com o log
 aos poucos (o gateway não junta o SSE) e o ping passando; o contador da 071 deixou passar. **Mas a primeira tentativa
 da pergunta "em todos os centros" teve o stream fechado aos 5,5 s, depois de 11 consultas, sem `fim` nem `erro`**: o log da
 função diz **`CPU Time exceeded`** (teto de 2 s de CPU). Essa requisição rodou na mesma instância da pergunta anterior
-(um só `booted` para as duas); a repetição, que passou, caiu numa instância nova. Falta medir na bancada quanto CPU o
-núcleo gasta por pergunta e onde (JSON das RPCs, máscara, validação dos blocos) antes de decidir a correção.
+(um só `booted` para as duas); a repetição, que passou, caiu numa instância nova. Medido na bancada (perfil de CPU
+do Node, perguntas 2, 4 e 12 da bateria real, ~22 chamadas cada): a **máscara de nomes** gastou ~1,0 s das 3 perguntas e todo o resto
+do núcleo menos de 0,1 s. `acharTrechos` (`shared/ai-tools/mascara.js`) montava duas `RegExp` por nome conhecido para cada
+texto mascarado, mesmo sem o nome no texto. Com um `includes` antes da `RegExp` (mesmo resultado; testes verdes), a máscara
+caiu para ~0,05 s. Ainda não publicado.
 `request.signal` na desconexão não foi provado. O Worker da Cloudflare segue publicado até a troca. A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
 
 **Próximo passo, nesta ordem:**
