@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 26/11/2026 (tela `#/analise` pronta na branch `redesenho/analise-2a-tela`, sem publicar; 074 aplicada; cofre confere a estrutura do auth).
+Última atualização: 26/11/2026 (tela `#/analise` publicada no `/v2/`; 074 aplicada; cofre confere a estrutura do auth).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -212,11 +212,12 @@ tipos do contrato §3 (`no`, `livre`, `ref`, `termo`, `calculo`, `sem_documento`
 parcial preservado, até 5 `anteriores`, feedback pela 074 e "Nova análise". **Menu e rota só para admin.**
 Corrigido no caminho: `enviarFeedback` chamava `supabase.rpc` sem o `this` (quebraria em produção). CSP não
 muda (a Edge Function é a mesma origem do Supabase). Testes: app 335, raiz 926, lint e build verdes.
-Relatório `relatorios/analise-2a-tela.md`. **Falta:** publicar (merge no master e push, com o ok do Victor)
-e o Victor fazer 5 perguntas reais com o login dele.
+Relatório `relatorios/analise-2a-tela.md`. **No ar em 26/11** com o ok do Victor (master `dbdd0d4`; CI
+45860524317 e deploy 45860524472 verdes; bundle `index-BT-kQVSQ.js` com a tela e sem dado de exemplo). **Falta:**
+o Victor fazer 5 perguntas reais com o login dele.
 
 **Próximo passo, nesta ordem:**
-1. Publicar a tela (ok do Victor) e as 5 perguntas reais do Victor.
+1. As 5 perguntas reais do Victor na tela publicada (anotar aqui o que ele estranhar).
 2. Resto da Etapa 2: 072 `projecao_bolsas_v2` (porta `app/src/servicos/projecao.js` para SQL) e a
    ferramenta de dinheiro em conta e plano com `ref` (saldo, rendimento líquido, desembolsos e total do plano
    abrindo o documento).
