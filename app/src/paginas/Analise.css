@@ -220,6 +220,13 @@
   color: var(--cor-texto-2);
 }
 
+.analise__feedback-erro {
+  flex-basis: 100%;
+  font-size: var(--fs-2);
+  line-height: var(--lh-2);
+  color: var(--cor-problema);
+}
+
 .analise__comentario {
   width: 100%;
   min-height: var(--esp-8);

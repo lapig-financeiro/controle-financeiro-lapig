@@ -316,6 +316,7 @@ export function BlocoAnalise({ bloco, onOrigem = null, className = '' }) {
     const colunas = bloco.tabela.colunas.map((coluna, indice) => {
       const unidade = UNIDADES.has(coluna?.unidade) ? coluna.unidade : 'texto';
       const alinhada = ALINHADAS_DIREITA.has(unidade);
+      const cabecalhoComPrefixo = String(coluna?.rotulo || '').includes('(R$)');
       return {
         chave: `coluna-${indice}`,
         titulo: coluna?.rotulo || '',
@@ -334,6 +335,7 @@ export function BlocoAnalise({ bloco, onOrigem = null, className = '' }) {
               onOrigem={onOrigem}
               valorEsperado={celula.valor}
               alinhadoDireita={alinhada}
+              semPrefixo={unidade === 'moeda' && cabecalhoComPrefixo}
             />
           );
         },

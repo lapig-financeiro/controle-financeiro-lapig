@@ -32,6 +32,7 @@ vi.mock('../src/servicos/supabase.js', () => ({
 
 import { Analise } from '../src/paginas/Analise.jsx';
 import { TITULO_SEM_ORIGEM } from '../src/componentes/BlocoAnalise.jsx';
+import { executarAnaliseExemplo } from '../src/servicos/analiseExemplo.js';
 
 const tick = () => new Promise((resolver) => setTimeout(resolver, 20));
 
@@ -214,6 +215,7 @@ describe('pergunta e envio', () => {
 
     const chips = Array.from(document.querySelectorAll('.analise__sugestoes .chip'));
     expect(chips).toHaveLength(4);
+    expect(chips.every((chip) => !chip.hasAttribute('aria-pressed'))).toBe(true);
     chips[0].click();
     await tick();
 
@@ -348,10 +350,35 @@ describe('blocos', () => {
 
     expect(linhas[0].textContent).toContain('12,5%');
     expect(linhas[0].textContent).toContain('30/09/2026');
-    expect(semNbsp(linhas[0].textContent)).toContain('R$ 1.000,50');
+    expect(semNbsp(linhas[0].textContent)).toContain('1.000,50');
+    expect(semNbsp(linhas[0].textContent)).not.toContain('R$ 1.000,50');
     expect(document.querySelector('.analise__texto-final').textContent).toContain(
       'Texto final da resposta.'
     );
+  });
+
+  it('célula de moeda só perde o R$ quando o cabeçalho da coluna tem (R$)', async () => {
+    const bloco = criarBlocoTabela({
+      colunas: [
+        { rotulo: 'Centro', unidade: 'texto' },
+        { rotulo: 'Livre (R$)', unidade: 'moeda' },
+        { rotulo: 'Comprometido', unidade: 'moeda' },
+      ],
+      linhas: [
+        [
+          { valor: 'Centro A', unidade: 'texto', origem: null },
+          { valor: 1000.5, unidade: 'moeda', origem: null },
+          { valor: 2000.25, unidade: 'moeda', origem: null },
+        ],
+      ],
+    });
+    renderizar(criarExecucao({ blocos: [bloco], texto: null }));
+    await enviarPergunta('Pergunta com cabeçalhos de moeda');
+    await esperarAnalises(1);
+
+    const celulas = Array.from(document.querySelectorAll('.tabela tbody tr:first-child td'));
+    expect(semNbsp(celulas[1].textContent).trim()).toBe('1.000,50');
+    expect(semNbsp(celulas[2].textContent).trim()).toBe('R$ 2.000,25');
   });
 
   it('bloco inválido é omitido com uma nota e os vizinhos aparecem', async () => {
@@ -438,6 +465,90 @@ describe('origem clicável', () => {
     expect(painel.querySelector('.de-onde-vem')).not.toBeNull();
     expect(painel.textContent).toContain('Nó de teste');
     expect(painel.textContent).toContain('Parte do nó');
+    expect(painel.querySelector('.aviso-falha')).toBeNull();
+  });
+
+  it('no: árvore com valor diferente do número clicado mostra o aviso de divergência', async () => {
+    const no = {
+      rotulo: 'Nó divergente',
+      valor: 90,
+      tipo: 'legado',
+      chave: 'no-divergente',
+      partes: [],
+    };
+    await abrirComBloco(
+      criarBlocoNumero({ valor: 100, origem: { tipo: 'no', no } })
+    );
+
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    const aviso = painel.querySelector('.aviso-falha');
+    expect(aviso).not.toBeNull();
+    expect(aviso.textContent).toContain('O total da árvore');
+    expect(aviso.textContent).toContain('difere do valor do painel');
+  });
+
+  it('livre sem caminho, mas com chave, desce até a chave e mostra "Parte de"', async () => {
+    const arvore = {
+      rotulo: 'Livre raiz',
+      valor: 100,
+      tipo: 'calculo',
+      chave: 'livre',
+      partes: [
+        {
+          rotulo: 'Pessoal',
+          valor: 100,
+          tipo: 'calculo',
+          chave: 'grupo:a',
+          partes: [],
+        },
+      ],
+    };
+    explicarLivreMock.mockResolvedValue({ dados: arvore, erro: null });
+
+    await abrirComBloco(
+      criarBlocoNumero({
+        valor: 100,
+        origem: { tipo: 'livre', project_id: 'projeto-1', chave: 'grupo:a' },
+      })
+    );
+
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.textContent).toContain('Parte de: Livre raiz');
+    expect(painel.querySelector('.de-onde-vem .destaque__rotulo').textContent).toBe('Pessoal');
+  });
+
+  it('livre sem caminho e com chave inexistente mostra a árvore inteira com a nota', async () => {
+    const arvore = {
+      rotulo: 'Livre raiz',
+      valor: 100,
+      tipo: 'calculo',
+      chave: 'livre',
+      partes: [
+        {
+          rotulo: 'Pessoal',
+          valor: 100,
+          tipo: 'calculo',
+          chave: 'grupo:a',
+          partes: [],
+        },
+      ],
+    };
+    explicarLivreMock.mockResolvedValue({ dados: arvore, erro: null });
+
+    await abrirComBloco(
+      criarBlocoNumero({
+        valor: 100,
+        origem: { tipo: 'livre', project_id: 'projeto-1', chave: 'nao-existe' },
+      })
+    );
+
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.textContent).toContain(
+      'Não achei o item exato; mostrando a origem do livre do centro.'
+    );
+    expect(painel.querySelector('.de-onde-vem .destaque__rotulo').textContent).toBe(
+      'Livre raiz'
+    );
   });
 
   it('livre: chama explicarLivre com o project_id, desce pelo caminho e mostra "Parte de"', async () => {
@@ -477,6 +588,43 @@ describe('origem clicável', () => {
     expect(painel.textContent).toContain('Parte de: Livre raiz');
     expect(painel.textContent).toContain('Pessoal');
     expect(painel.textContent).toContain('Filho');
+    expect(painel.querySelector('.aviso-falha')).toBeNull();
+  });
+
+  it('livre: subárvore com valor diferente do número clicado mostra o aviso de divergência', async () => {
+    const arvore = {
+      rotulo: 'Livre raiz',
+      valor: 100,
+      tipo: 'calculo',
+      chave: 'livre',
+      partes: [
+        {
+          rotulo: 'Pessoal',
+          valor: 90,
+          tipo: 'calculo',
+          chave: 'grupo:a',
+          partes: [],
+        },
+      ],
+    };
+    explicarLivreMock.mockResolvedValue({ dados: arvore, erro: null });
+
+    await abrirComBloco(
+      criarBlocoNumero({
+        valor: 100,
+        origem: {
+          tipo: 'livre',
+          project_id: 'projeto-1',
+          chave: 'grupo:a',
+          caminho: [0],
+        },
+      })
+    );
+
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    const aviso = painel.querySelector('.aviso-falha');
+    expect(aviso).not.toBeNull();
+    expect(aviso.textContent).toContain('difere do valor do painel');
   });
 
   it('livre: caminho inválido cai na chave do nó', async () => {
@@ -594,6 +742,46 @@ describe('origem clicável', () => {
     );
   });
 
+  it('ref: Documento usa o valor clicado quando a resposta não traz valor', async () => {
+    origemMock.mockResolvedValue({
+      dados: {
+        tipo: 'legado',
+        valor: undefined,
+        documento: {
+          id: 'doc-sem-valor',
+          titulo: 'Documento sem valor na resposta',
+          formato: 'pdf',
+          bucket: 'teste',
+          caminho: 'pasta/sem-valor.pdf',
+        },
+        fato: null,
+        busca: { texto: 'saldo', valor: 123.45 },
+        nota: '',
+      },
+      erro: null,
+    });
+
+    await abrirComBloco(
+      criarBlocoNumero({
+        valor: 123.45,
+        origem: {
+          tipo: 'ref',
+          ref: {
+            alvo_tabela: 'balancetes',
+            alvo_id: 'alvo-sem-valor',
+            campo: 'saldo_disponivel',
+          },
+          nome: 'Saldo sem valor na resposta',
+        },
+      })
+    );
+
+    const documento = await esperarPor(() => document.querySelector('.documento'));
+    expect(semNbsp(documento.querySelector('.documento__valor').textContent)).toContain(
+      'R$ 123,45'
+    );
+  });
+
   it('termo: acha o termo pelo id e mostra rótulo, valor e trecho; termo sumido vira Vazio', async () => {
     termosContratoMock.mockResolvedValue({
       dados: {
@@ -683,6 +871,7 @@ describe('origem clicável', () => {
     expect(semNbsp(painel.querySelector('.analise__conta-total').textContent)).toContain(
       'R$ 5.000,30'
     );
+    expect(painel.querySelector('.aviso-falha')).toBeNull();
 
     const botaoParteA = painel.querySelector('.analise__conta-parte button.valor--origem');
     expect(botaoParteA).not.toBeNull();
@@ -704,8 +893,33 @@ describe('origem clicável', () => {
     expect(painel.querySelectorAll('.analise__conta-parte')).toHaveLength(2);
   });
 
-  it('calculo que não fecha ao centavo mostra "A soma das partes difere do total."', async () => {
+  it('calculo com parte de sinal -1 que fecha ao centavo não mostra aviso', async () => {
     await abrirComBloco(
+      criarBlocoNumero({
+        valor: 5000.3,
+        origem: {
+          tipo: 'calculo',
+          op: 'soma',
+          partes: [
+            { id: 'p1', sinal: 1, valor: 7000.4, rotulo: 'Receita', origem: null },
+            { id: 'p2', sinal: -1, valor: 2000.1, rotulo: 'Despesa', origem: null },
+          ],
+        },
+      })
+    );
+
+    const painel = await esperarPor(() => document.querySelector('.painel-lateral'));
+    expect(painel.querySelectorAll('.analise__conta-parte')).toHaveLength(2);
+    expect(painel.textContent).toContain('Receita');
+    expect(painel.textContent).toContain('Despesa');
+    expect(painel.textContent).toContain('−');
+    expect(semNbsp(painel.querySelector('.analise__conta-total').textContent)).toContain(
+      'R$ 5.000,30'
+    );
+    expect(painel.querySelector('.aviso-falha')).toBeNull();
+  });
+
+  it('calculo que não fecha ao centavo mostra "A soma das partes difere do total."', async () => {    await abrirComBloco(
       criarBlocoNumero({
         valor: 5001,
         origem: {
@@ -1004,22 +1218,52 @@ describe('erros e cortes', () => {
     expect(segundo.anteriores).toEqual(primeiro.anteriores);
     expect(document.querySelectorAll('.analise__cartao')).toHaveLength(1);
   });
+
+  it('aviso de corte fica antes do texto final e dos blocos', async () => {
+    const bloco = criarBlocoNumero({ valor: 10, id: 'ordem-bloco' });
+    const texto = { texto: 'Texto que chegou antes do corte.', semOrigem: [] };
+    const executarAnalise = criarExecucao({
+      inicio: { registro: 'reg-1' },
+      blocos: [bloco],
+      texto,
+      fim: null,
+      erro: { codigo: 'interrompida', mensagem: 'A análise foi interrompida.' },
+      retorno: { interrompida: true },
+    });
+
+    renderizar(executarAnalise);
+    await enviarPergunta('Pergunta com corte');
+    await esperarAnalises(1);
+
+    const corpo = document.querySelector('.analise__cartao .cartao__corpo');
+    const filhos = Array.from(corpo.children);
+    const aviso = corpo.querySelector('.aviso-falha');
+    const textoEl = corpo.querySelector('.analise__texto-final');
+    const blocoEl = corpo.querySelector('.bloco-analise');
+
+    expect(aviso).not.toBeNull();
+    expect(filhos.indexOf(aviso)).toBeLessThan(filhos.indexOf(textoEl));
+    expect(filhos.indexOf(aviso)).toBeLessThan(filhos.indexOf(blocoEl));
+  });
 });
 
 describe('parar a análise', () => {
-  it('o botão vira Parar, aborta o signal e deixa a nota sem banner de erro', async () => {
+  it('o botão vira Parar, aborta o signal, mantém o bloco que já chegou e deixa a nota sem banner de erro', async () => {
     let capturado;
     let resolver;
+    const blocoParcial = criarBlocoNumero({ valor: 10, id: 'parcial' });
     const executarAnalise = vi.fn(
       (opcoes) =>
         new Promise((res) => {
           capturado = opcoes.signal;
+          opcoes.onInicio?.({ registro: 'reg-1' });
+          opcoes.onBloco?.(blocoParcial);
           resolver = () =>
             res({
               ok: false,
               abortada: true,
               registro: 'reg-1',
-              blocos: [criarBlocoNumero({ valor: 10, id: 'parcial' })],
+              blocos: [blocoParcial],
               texto: null,
             });
         })
@@ -1031,16 +1275,86 @@ describe('parar a análise', () => {
     const parar = await esperarPor(() => encontrarBotao('Parar'));
     expect(parar).toBeTruthy();
     expect(capturado.aborted).toBe(false);
+    expect(document.querySelectorAll('.bloco-analise')).toHaveLength(1);
     parar.click();
     await tick();
 
     expect(capturado.aborted).toBe(true);
     expect(document.body.textContent).toContain('Você parou a análise.');
     expect(document.querySelector('.aviso-falha')).toBeNull();
-    expect(document.querySelector('.bloco-analise')).toBeNull();
+    expect(document.querySelectorAll('.bloco-analise')).toHaveLength(1);
 
     resolver();
     await tick();
+  });
+
+  it('cartão parado oferece Tentar de novo com a mesma pergunta e os mesmos anteriores', async () => {
+    let resolverPrimeira;
+    let chamadas = 0;
+    const blocoParcial = criarBlocoNumero({ valor: 10, id: 'parcial-retry' });
+    const blocoFinal = criarBlocoNumero({ valor: 20, id: 'final-retry' });
+    const executarAnalise = vi.fn((opcoes) => {
+      chamadas += 1;
+      opcoes.onInicio?.({ registro: `reg-${chamadas}` });
+      if (chamadas === 1) {
+        opcoes.onBloco?.(blocoParcial);
+        return new Promise((resolver) => {
+          resolverPrimeira = () =>
+            resolver({
+              ok: false,
+              abortada: true,
+              registro: 'reg-1',
+              blocos: [blocoParcial],
+              texto: null,
+            });
+        });
+      }
+      opcoes.onBloco?.(blocoFinal);
+      opcoes.onFim?.({ rodadas: 1, ms: 1000 });
+      return Promise.resolve({
+        ok: true,
+        erro: null,
+        registro: 'reg-2',
+        blocos: [blocoFinal],
+        texto: null,
+        fim: { rodadas: 1, ms: 1000 },
+      });
+    });
+
+    renderizar(executarAnalise);
+    await enviarPergunta('Pergunta que vai ser parada');
+    await esperarPor(() => encontrarBotao('Parar'));
+    encontrarBotao('Parar').click();
+    await tick();
+
+    const primeira = executarAnalise.mock.calls[0][0];
+    const tentar = await esperarPor(() => encontrarBotao('Tentar de novo'));
+    expect(tentar).toBeTruthy();
+    tentar.click();
+
+    await esperarPor(() => executarAnalise.mock.calls.length === 2);
+    const segunda = executarAnalise.mock.calls[1][0];
+    expect(segunda.pergunta).toBe(primeira.pergunta);
+    expect(segunda.anteriores).toEqual(primeira.anteriores);
+    expect(document.querySelectorAll('.analise__cartao')).toHaveLength(1);
+
+    resolverPrimeira();
+    await tick();
+  });
+});
+
+describe('modo exemplo na tela', () => {
+  it('mostra o passo de termos que terminou em erro', async () => {
+    const executar = (opcoes) => executarAnaliseExemplo({ ...opcoes, atraso: 0 });
+    renderizar(executar);
+
+    await enviarPergunta('Quanto o 30.910 tem livre?');
+    await esperarAnalises(1);
+
+    const erro = document.querySelector('.analise__passo--erro');
+    expect(erro).not.toBeNull();
+    expect(erro.textContent).toContain('consultando os termos do contrato');
+    expect(erro.querySelector('.analise__passo-erro').textContent).toContain('tempo');
   });
 });
 
@@ -1157,6 +1471,8 @@ describe('feedback', () => {
 
     encontrarBotao('Sim').click();
     await esperarPor(() => document.body.textContent.includes('Obrigado, anotado.'));
+    const obrigado = document.querySelector('.analise__feedback-obrigado');
+    expect(obrigado.getAttribute('role')).toBe('status');
     expect(enviarFeedback).toHaveBeenCalledWith('reg-1', {
       nota: 1,
       comentario: null,
@@ -1199,7 +1515,10 @@ describe('feedback', () => {
     await esperarAnalises(1);
 
     encontrarBotao('Sim').click();
-    const aviso = await esperarPor(() => document.querySelector('.analise__feedback .aviso-falha'));
+    const aviso = await esperarPor(() =>
+      document.querySelector('.analise__feedback-erro')
+    );
+    expect(aviso.getAttribute('role')).toBe('status');
     expect(aviso.textContent).toContain('Não foi possível anotar agora.');
     expect(encontrarBotao('Sim')).toBeTruthy();
     expect(encontrarBotao('Não')).toBeTruthy();

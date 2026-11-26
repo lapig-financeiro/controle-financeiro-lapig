@@ -70,9 +70,13 @@ describe('cenários do modo exemplo', () => {
 
     const passos = eventos.filter((evento) => evento.nome === 'passo');
     const chaves = new Set(passos.map((evento) => `${evento.dados.ferramenta}|${evento.dados.rotulo}`));
-    expect(chaves.size).toBe(3);
+    expect(chaves.size).toBe(4);
     expect(passos.some((evento) => evento.dados.estado === 'erro')).toBe(true);
     expect(passos.at(-1).dados.estado).toBe('fim');
+
+    const deTermos = passos.filter((evento) => evento.dados.ferramenta === 'termos_contrato');
+    expect(deTermos.some((evento) => evento.dados.estado === 'erro')).toBe(true);
+    expect(deTermos.some((evento) => evento.dados.estado === 'fim')).toBe(false);
 
     const blocos = eventos.filter((evento) => evento.nome === 'bloco');
     expect(blocos.map((evento) => evento.dados.tipo)).toEqual([

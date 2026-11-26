@@ -3,9 +3,11 @@ import './Chip.css';
 /**
  * Chip para filtro de visão e filtros rápidos (`--altura-chip`, `--fs-2` 500).
  * Quando ativo, usa fundo `--cor-acento-suave` e texto `--cor-texto`.
+ * `aria-pressed` só é emitido quando `ativo` é passado explicitamente: chips de
+ * sugestão que só preenchem um campo não devem anunciar "não pressionado".
  */
 export function Chip({
-  ativo = false,
+  ativo,
   icone: Icone = null,
   iconeDireita: IconeDireita = null,
   onClick,
@@ -14,12 +16,15 @@ export function Chip({
   children,
   className = '',
 }) {
+  const ativoBooleano = Boolean(ativo);
+  const ariaPressed =
+    ativo === undefined ? undefined : ativoBooleano ? 'true' : 'false';
   return (
     <button
       type="button"
-      class={`chip${ativo ? ' chip--ativo' : ''}${className ? ` ${className}` : ''}`}
+      class={`chip${ativoBooleano ? ' chip--ativo' : ''}${className ? ` ${className}` : ''}`}
       onClick={onClick}
-      aria-pressed={ativo ? 'true' : 'false'}
+      aria-pressed={ariaPressed}
       aria-label={ariaLabel}
       aria-expanded={ariaExpanded}
     >

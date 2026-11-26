@@ -321,6 +321,8 @@ export function criarEventosAnaliseExemplo(pergunta) {
       ),
       eventoPasso('explicar_livre_v2', 'explicando o saldo livre', 'inicio'),
       eventoPasso('explicar_livre_v2', 'explicando o saldo livre', 'fim'),
+      eventoPasso('termos_contrato', 'consultando os termos do contrato', 'inicio'),
+      eventoPasso('termos_contrato', 'consultando os termos do contrato', 'erro', 'tempo'),
       eventoPasso('criar_bloco', 'montando a resposta', 'inicio'),
       { nome: 'bloco', dados: blocoNumero() },
       eventoPasso('criar_bloco', 'montando a resposta', 'fim'),

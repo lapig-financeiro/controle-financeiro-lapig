@@ -479,6 +479,13 @@ export function Analise({
           nota = 'Não achei o item exato; mostrando a origem do livre do centro.';
         }
       }
+    } else if (origemEscolhida.chave) {
+      const porChave = acharPorChave(raiz, origemEscolhida.chave);
+      if (porChave) {
+        arvore = porChave;
+      } else {
+        nota = 'Não achei o item exato; mostrando a origem do livre do centro.';
+      }
     }
 
     setPainel({
@@ -540,7 +547,7 @@ export function Analise({
       fato: dados.fato || null,
       busca: dados.busca || null,
       nota: dados.nota || '',
-      valor: dados.valor ?? null,
+      valor: dados.valor ?? valorEsperado,
       parte: origemEscolhida.nome || '',
     });
   };
@@ -824,6 +831,11 @@ export function Analise({
   const renderPainel = () => {
     if (!painel) return null;
 
+    const valorEsperadoDaArvore =
+      typeof painel.valorEsperado === 'number' && Number.isFinite(painel.valorEsperado)
+        ? painel.valorEsperado
+        : undefined;
+
     if (painel.carregando) {
       return <Esqueleto variante="linha" linhas={4} rotulo="Carregando origem" />;
     }
@@ -838,7 +850,7 @@ export function Analise({
     }
 
     if (painel.tipo === 'no') {
-      return <DeOndeVem arvore={painel.arvore} />;
+      return <DeOndeVem arvore={painel.arvore} valorEsperado={valorEsperadoDaArvore} />;
     }
 
     if (painel.tipo === 'livre') {
@@ -848,7 +860,7 @@ export function Analise({
             <p class="analise__parte-de">Parte de: {painel.parteDe}</p>
           )}
           {painel.nota && <p class="analise__nota">{painel.nota}</p>}
-          <DeOndeVem arvore={painel.arvore} />
+          <DeOndeVem arvore={painel.arvore} valorEsperado={valorEsperadoDaArvore} />
         </>
       );
     }
@@ -896,7 +908,11 @@ export function Analise({
     const feedback = analise.feedback;
 
     if (feedback.enviado) {
-      return <p class="analise__feedback-obrigado">Obrigado, anotado.</p>;
+      return (
+        <p class="analise__feedback-obrigado" role="status">
+          Obrigado, anotado.
+        </p>
+      );
     }
 
     if (feedback.modo === 'comentario') {
@@ -937,7 +953,11 @@ export function Analise({
               Cancelar
             </Botao>
           </div>
-          {feedback.erro && <AvisoFalha mensagem={feedback.erro} />}
+          {feedback.erro && (
+            <p class="analise__feedback-erro" role="status">
+              {feedback.erro}
+            </p>
+          )}
         </div>
       );
     }
@@ -964,7 +984,11 @@ export function Analise({
             Não
           </Botao>
         </div>
-        {feedback.erro && <AvisoFalha mensagem={feedback.erro} />}
+        {feedback.erro && (
+          <p class="analise__feedback-erro" role="status">
+            {feedback.erro}
+          </p>
+        )}
       </div>
     );
   };
@@ -983,6 +1007,7 @@ export function Analise({
     return (
       <Cartao key={analise.id} titulo={analise.pergunta} className="analise__cartao">
         {renderPassos(analise)}
+        {renderAviso(analise)}
 
         {analise.status === 'correndo' && analise.blocos.length === 0 && !textoFinal && (
           <Esqueleto variante="cartao" linhas={3} rotulo="Montando a análise" />
@@ -1012,14 +1037,23 @@ export function Analise({
         )}
 
         {analise.status === 'parada' && (
-          <p class="analise__nota">Você parou a análise.</p>
+          <>
+            <p class="analise__nota">Você parou a análise.</p>
+            <div class="analise__acoes">
+              <Botao
+                variante="fantasma"
+                tamanho="compacto"
+                onClick={() => tentarDeNovo(analise)}
+              >
+                Tentar de novo
+              </Botao>
+            </div>
+          </>
         )}
 
         {analise.status === 'correndo' && (
           <p class="analise__tempo">{textoTempoDecorrido(analise.segundos)}</p>
         )}
-
-        {renderAviso(analise)}
 
         {analise.status !== 'correndo' && (
           <footer class="analise__rodape">
