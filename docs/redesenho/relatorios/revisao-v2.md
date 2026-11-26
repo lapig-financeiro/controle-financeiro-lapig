@@ -34,3 +34,7 @@ O DeepSeek V4.1 Flash Max revisou os 16 arquivos de `fd516ac` pelo OpenCode, em 
 O guia devolve o foco ao avatar quando aberto pelo menu. A verificação de manutenção usa `AbortController` com limite de cinco segundos e preserva um aviso já confirmado durante uma falha de rede. A permissão de Bolsistas é da conta. Papéis técnicos são barrados enquanto estiverem ativos. Para encerrar o uso temporário da conta, revogue a permissão explicitamente.
 
 O DeepSeek fez uma segunda leitura dos ajustes e não apontou impedimento. A volta da manutenção exige o arquivo com `"ativo": false`, conforme o procedimento do cofre. A interface corrigida passou no lint, nos 390 testes da v2 e no build. O tour voltou a passar no Edge em computador e celular.
+
+## Resultado do ensaio
+
+O [ensaio 45911591317](https://github.com/CofreIA/cofre-lapig/actions/runs/45911591317) passou na cópia da produção com a migração do commit `986e02a`. As seis contas ganharam o campo de permissão desligado. O total de contas ficou igual, nenhuma outra tabela teve linhas alteradas e a 076 não abriu acesso sem login. A aplicação e a concessão em produção aguardam autorização.
