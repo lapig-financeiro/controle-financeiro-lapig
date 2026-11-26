@@ -37,6 +37,7 @@
 ## Onde está
 | Item | Situação |
 |---|---|
+| Bolsistas · acesso temporário | A migração `076_acesso_pedido_bolsas.sql` está pronta para ensaio pelo cofre. A interface com a restrição entra na mesma janela de manutenção em que a permissão for concedida à conta indicada. |
 | Plano, estética, tarefas F0-A/F0-B | escritos e revisados por dois DeepSeek (correções em README §7b) |
 | Identidade do Buriti | Pronta no worktree `redesenho/identidade-buriti`: símbolo em leque, logotipo Inter 600 em curvas, favicon e ícones de instalação, marca no topo, login, manutenção e catálogo do `/v2/`. Faltam a revisão do Claude e o ok do Victor para publicar. [Relatório](relatorios/identidade-buriti.md) |
 | F0-A — migração 062 (arquivos por centro) | **aplicada em produção em 18/11** (run 44406913645, "tudo bate"); manutenção desligada; admin segue vendo os 3 buckets. Falta só um teste real com login de professor quando houver um à mão. |
