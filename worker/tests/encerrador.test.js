@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { criarEncerrador } from '../src/encerrador.js';
+import { INTERVALO_PING_MS } from '../src/sse.js';
 
 describe('encerrador', () => {
   it('só a primeira chamada vale: um erro, um fim, erro antes do fim', async () => {
@@ -81,6 +82,32 @@ describe('encerrador', () => {
       // A promessa do `texto` pode continuar pendente (o write nunca resolve);
       // o que o teste garante é que o encerramento não esperou por ela.
       expect(typeof texto.then).toBe('function');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('falha de escrita do ping vira desconexão e fecha o encerrador', async () => {
+    vi.useFakeTimers();
+    try {
+      const escritor = {
+        write: () => Promise.reject(new Error('cliente foi embora')),
+        abort: () => Promise.resolve(),
+        close: () => Promise.resolve(),
+      };
+      const encerrador = criarEncerrador({
+        writable: { getWriter: () => escritor },
+        estado: { rodadas: 0 },
+        inicio: 0,
+        prazo: 60_000,
+        agora: () => 0,
+      });
+
+      await vi.advanceTimersByTimeAsync(INTERVALO_PING_MS);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(encerrador.fase).toBe('fechado');
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }

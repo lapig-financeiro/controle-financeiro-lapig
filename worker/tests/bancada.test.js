@@ -522,6 +522,20 @@ describe('chamadas externas no relatório', () => {
 });
 
 describe('leitor de SSE', () => {
+  it('ignora comentário de sinal de vida (: ping)', async () => {
+    const codificador = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(codificador.encode(': ping\n\nevent: fim\ndata: {"rodadas":1}\n\n'));
+        controller.close();
+      },
+    });
+
+    const eventos = await lerEventos(stream, { inicio: 0, agora: () => 5 });
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]).toMatchObject({ evento: 'fim', dados: { rodadas: 1 } });
+  });
+
   it('junta pedaços cortados no meio de um evento', async () => {
     const codificador = new TextEncoder();
     const partes = [

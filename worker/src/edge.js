@@ -11,3 +11,4 @@
 export { tratar } from './nucleo.js';
 export { criarContadorRpc } from './contador-rpc.js';
 export { tetoDoAmbiente } from './limite.js';
+export { normalizarCaminhoEdge } from './edge-caminho.js';

@@ -33,6 +33,11 @@ estão em `docs/redesenho/analise-plano.md` §2.
 | `POST /analise` | `Authorization: Bearer <JWT>` + `{ pergunta, anteriores? }` → `text/event-stream` |
 
 Eventos do `/analise`: `passo`, `bloco`, `texto`, `fim`, `erro` (contrato §7).
+Enquanto o stream está aberto, um comentário SSE `: ping` sai a cada 15 s
+(constante `INTERVALO_PING_MS`) para manter a conexão viva; a tela ignora
+comentários, então o contrato de eventos não muda. O ping para em qualquer
+encerramento e nunca sai depois do `fim`; falha de escrita dele conta como
+desconexão.
 Um único **encerrador** é dono do fim: laço, watchdog, desconexão e exceção
 chamam `encerrar`; só a primeira chamada vale, sai no máximo um `erro`, sempre
 um `fim` e o stream fecha. A exceção é a desconexão do cliente: nada mais é
@@ -46,7 +51,9 @@ teto de **100.000 bytes contados durante a leitura** (sem confiar em
 cancelando o leitor.
 
 CORS: só `https://lapig-financeiro.github.io` e `http://localhost:<porta>`.
-Qualquer outra origem recebe 403, sem cabeçalho de liberação.
+Qualquer outra origem recebe 403, sem cabeçalho de liberação. Os cabeçalhos
+liberados são `authorization, apikey, content-type, x-client-info` (o
+`apikey`/`x-client-info` são os que o supabase-js manda na Edge Function).
 
 ## Rodar local
 

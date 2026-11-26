@@ -13,6 +13,12 @@ não tem `service_role` e não escreve no banco, exceto a RPC de cota
 `analise_consumir()` (migração 071), que só incrementa o contador do próprio
 usuário.
 
+**Caminho.** Dentro do Supabase a função recebe o caminho sem `/functions/v1` e
+com o nome dela: `POST /functions/v1/analise` chega como `/analise`, e
+`GET /functions/v1/analise/saude` chega como `/analise/saude`. A entrada
+normaliza (`/analise[/saude]` e `/functions/v1/analise[/saude]`) antes de
+chamar `tratar`; o núcleo e o Worker continuam com `/analise` e `/saude`.
+
 ## Deploy
 
 O deploy do Supabase só empacota o que está em `supabase/functions/`. Por isso

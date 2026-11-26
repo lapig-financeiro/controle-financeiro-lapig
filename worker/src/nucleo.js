@@ -71,7 +71,8 @@ function cabecalhosCors(origem) {
   if (origem && origemPermitida(origem)) {
     headers['Access-Control-Allow-Origin'] = origem;
     headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
-    headers['Access-Control-Allow-Headers'] = 'authorization, content-type';
+    headers['Access-Control-Allow-Headers'] =
+      'authorization, apikey, content-type, x-client-info';
     headers['Access-Control-Max-Age'] = '86400';
   }
   return headers;
@@ -303,6 +304,7 @@ async function rodarAnalise({
   sinal,
   sinalCliente,
   contador,
+  mensagemSemContador,
 }) {
   // ── Login e papel ───────────────────────────────────────────────────────
   const auth = await autenticar({
@@ -334,7 +336,10 @@ async function rodarAnalise({
     await encerrar({
       erro: {
         codigo: 'interno',
-        mensagem: 'O limite de uso não está configurado no servidor.',
+        mensagem:
+          typeof mensagemSemContador === 'string' && mensagemSemContador
+            ? mensagemSemContador
+            : 'O limite de uso não está configurado no servidor.',
       },
     });
     return;
@@ -546,6 +551,7 @@ async function analisar(request, env, deps, origem) {
       sinal: controle.signal,
       sinalCliente: request.signal,
       contador: deps.contador,
+      mensagemSemContador: deps.mensagemSemContador,
     }),
     esperaTarefa,
   ])
@@ -577,8 +583,9 @@ async function analisar(request, env, deps, origem) {
 
 /**
  * Roteia a requisição. Só usa APIs web (Request/Response/TransformStream) e o
- * que vier em `deps`: `contador` (obrigatório para /analise) e `waitUntil`
- * (opcional). Nada aqui depende do runtime que chamou.
+ * que vier em `deps`: `contador` (obrigatório para /analise), `waitUntil`
+ * (opcional) e `mensagemSemContador` (opcional; padrão "no servidor", o Worker
+ * passa a dele). Nada aqui depende do runtime que chamou.
  */
 export async function tratar(request, env, deps = {}) {
   const url = new URL(request.url);

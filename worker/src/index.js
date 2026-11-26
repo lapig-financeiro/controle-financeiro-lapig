@@ -28,6 +28,11 @@ export default {
         ? (promessa) => ctx.waitUntil(promessa)
         : undefined;
 
-    return tratar(request, env, { contador, waitUntil });
+    return tratar(request, env, {
+      contador,
+      waitUntil,
+      // No Worker a mensagem é a de sempre; a Edge Function tem a dela.
+      mensagemSemContador: 'O limite de uso não está configurado no Worker.',
+    });
   },
 };

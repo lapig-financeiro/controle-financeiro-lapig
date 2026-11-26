@@ -26,7 +26,13 @@ export function criarEncerrador({
   abortar,
   agora = Date.now,
 }) {
-  const emissor = criarEmissor(writable);
+  const emissor = criarEmissor(writable, {
+    // Evento ou ping que não pôde ser escrito = cliente foi embora. O
+    // encerrador assume na hora, como no caminho de `emitir` que devolve false.
+    aoDesconectar: () => {
+      void encerrar({ desconectado: true });
+    },
+  });
   let fase = 'aberto'; // aberto | encerrando | fechado
   let promessa = null;
 

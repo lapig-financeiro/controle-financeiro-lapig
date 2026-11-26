@@ -155,3 +155,60 @@
   é ambiente, não mudança de código.
 - A tela (`app/`) ainda não consome a Edge Function; isso é a Etapa 2, fora
   desta tarefa.
+
+## Rodada 2
+
+Correções pedidas pelo revisor, e só elas:
+
+- **Caminho da Edge Function.** `worker/src/edge-caminho.js` tem
+  `normalizarCaminhoEdge(pathname)`, exportada no bundle e usada pela entrada
+  Deno antes de `tratar`: `/analise` e `/functions/v1/analise` → `/analise`;
+  `/analise/saude` e `/functions/v1/analise/saude` → `/saude`; o resto fica
+  como está. O núcleo e o Worker continuam só com `/analise` e `/saude` (há um
+  teste que confirma `/analise/saude` = 404 no Worker). A entrada reconstrói a
+  `Request` só quando o caminho muda, preservando `signal`, headers e corpo
+  (com `duplex: 'half'`), para a desconexão continuar valendo.
+- **CORS.** `Access-Control-Allow-Headers` passou a ser
+  `authorization, apikey, content-type, x-client-info` no núcleo; o teste do
+  preflight confere a string exata.
+- **esbuild declarado.** `worker/package.json` e `worker/package-lock.json`
+  agora têm `esbuild` em `devDependencies`, na versão exata já instalada
+  (`0.28.2`), em vez de depender só do hoisting de `vitest`/`wrangler`.
+- **Sinal de vida no SSE.** `worker/src/sse.js` exporta
+  `INTERVALO_PING_MS = 15_000` e `COMENTARIO_PING = ': ping\n\n'`; o emissor
+  manda o comentário 15 s depois de abrir e a cada 15 s enquanto o stream está
+  aberto. O timer para em `fim`, `erro`, prazo, desconexão e fechamento; um ping
+  já na fila é cancelado junto com os eventos comuns, então nunca sai depois do
+  `fim`. Falha de escrita do ping chama o mesmo caminho de desconexão do
+  encerrador (`aoDesconectar`), que aborta o laço. A bancada e os testes de
+  eventos ignoram comentários, como a tela.
+- **Mensagem do contador ausente.** O Worker voltou a dizer “O limite de uso
+  não está configurado no Worker.”; a Edge Function diz “no servidor”. A
+  mensagem entra por `deps.mensagemSemContador` (o núcleo tem o padrão
+  “no servidor”).
+
+**Testes da rodada (números):**
+
+- `npm --prefix worker test`: **14 arquivos, 168 testes verdes**. Novos testes:
+  caminho da Edge (tabela de aliases), CORS exato, ping com relógio falso
+  (15 s, dois pings, nenhum depois do `fim`, nenhum depois de erro), timer
+  limpo em fim/erro/desconexão/fechamento, falha do ping como desconexão e a
+  mensagem do Worker.
+- `npm test`: **52 arquivos, 858 passaram, 5 pulados (863)**.
+- `npm run lint`: **0 erros**.
+- `npm --prefix worker run build:edge`: **142.292 bytes** exportando `tratar`,
+  `criarContadorRpc`, `tetoDoAmbiente` e `normalizarCaminhoEdge`.
+- Bancada roteiro: **4/4**, com 9/8/8/9 chamadas externas (o ping não aparece
+  como evento).
+- PGlite da 071: continua verde; a migração não mudou nesta rodada.
+- **Deno rodou** (2.9.6) com `fetch` falso: `/saude`, `/analise/saude` e
+  `/functions/v1/analise/saude` responderam `{ok:true}`; `POST /analise` e
+  `POST /functions/v1/analise` devolveram `texto` + `fim`; `analise_consumir`
+  foi chamada duas vezes, uma por pergunta.
+
+**O que continua em aberto:** o mesmo da rodada 1 — nada aplicado nem
+publicado; limite de `fetch`, `request.signal` na desconexão no runtime do
+Supabase e SSE pelo gateway só se provam publicando. O Deno 2.9.6 continua
+avisando do comportamento legado de `request.signal` (aborta também no fim de
+uma resposta bem-sucedida); o stream chegou inteiro no teste, mas o runtime do
+Supabase é quem decide.

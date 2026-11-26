@@ -27,11 +27,17 @@ describe('build da Edge Function', () => {
     expect(typeof modulo.tratar).toBe('function');
     expect(typeof modulo.criarContadorRpc).toBe('function');
     expect(typeof modulo.tetoDoAmbiente).toBe('function');
+    expect(typeof modulo.normalizarCaminhoEdge).toBe('function');
   });
 
   it('a entrada Deno importa exatamente esses nomes', async () => {
     const entrada = await readFile(ENTRADA, 'utf8');
-    for (const nome of ['tratar', 'criarContadorRpc', 'tetoDoAmbiente']) {
+    for (const nome of [
+      'tratar',
+      'criarContadorRpc',
+      'tetoDoAmbiente',
+      'normalizarCaminhoEdge',
+    ]) {
       expect(entrada).toContain(nome);
     }
     expect(entrada).toContain('./nucleo.gerado.js');

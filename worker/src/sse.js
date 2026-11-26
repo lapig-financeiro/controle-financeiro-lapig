@@ -19,6 +19,12 @@ export const CABECALHOS_SSE = Object.freeze({
   'Cache-Control': 'no-store',
 });
 
+/** Comentário de sinal de vida; a tela ignora, proxies e o navegador não. */
+export const COMENTARIO_PING = ': ping\n\n';
+
+/** Primeiro ping 15 s depois de abrir; depois, um a cada 15 s. */
+export const INTERVALO_PING_MS = 15_000;
+
 /** Um evento SSE completo. `dados` precisa ser serializável em JSON. */
 export function formatarEvento(nome, dados) {
   return `event: ${nome}\ndata: ${JSON.stringify(dados)}\n\n`;
@@ -35,7 +41,13 @@ function abortarEscritor(escritor, motivo) {
   }
 }
 
-export function criarEmissor(writable) {
+/**
+ * @param {WritableStream} writable
+ * @param {{aoDesconectar?: Function}} [opcoes] `aoDesconectar` roda quando uma
+ *   escrita (evento ou ping) falha; o encerrador usa para abortar o laço como
+ *   numa desconexão do cliente.
+ */
+export function criarEmissor(writable, { aoDesconectar } = {}) {
   const escritor = writable.getWriter();
   const codificador = new TextEncoder();
 
@@ -46,6 +58,7 @@ export function criarEmissor(writable) {
   let bombeando = false;
   let finalizadoResolvido = false;
   let resolverFinalizado;
+  let relogioPing = null;
   const finalizado = new Promise((resolve) => {
     resolverFinalizado = resolve;
   });
@@ -54,6 +67,23 @@ export function criarEmissor(writable) {
     if (finalizadoResolvido) return;
     finalizadoResolvido = true;
     resolverFinalizado();
+  }
+
+  function pararPing() {
+    if (relogioPing !== null) {
+      clearInterval(relogioPing);
+      relogioPing = null;
+    }
+  }
+
+  function avisarDesconexao() {
+    if (typeof aoDesconectar !== 'function') return;
+    try {
+      aoDesconectar();
+    } catch {
+      // O encerrador é quem decide; uma exceção aqui não pode derrubar o
+      // emissor. A falha de escrita já fechou o stream.
+    }
   }
 
   function resolverFila(valor) {
@@ -77,13 +107,19 @@ export function criarEmissor(writable) {
         }
 
         try {
-          await escritor.write(codificador.encode(formatarEvento(item.nome, item.dados)));
+          const bytes = item.comentario
+            ? codificador.encode(item.comentario)
+            : codificador.encode(formatarEvento(item.nome, item.dados));
+          await escritor.write(bytes);
           item.resolver(true);
         } catch {
+          // Falha de escrita é desconexão, venha de um evento ou do ping.
+          pararPing();
           estado = 'fechado';
           item.resolver(false);
           resolverFila(false);
           finalizar();
+          avisarDesconexao();
           return;
         }
       }
@@ -110,6 +146,26 @@ export function criarEmissor(writable) {
     });
   }
 
+  function enfileirarComentario(comentario) {
+    return new Promise((resolve) => {
+      fila.push({ comentario, terminal: false, cancelado: false, resolver: resolve });
+      void bombear();
+    });
+  }
+
+  // Sinal de vida: a partir de 15 s, um comentário a cada 15 s enquanto o
+  // stream está aberto. Para em qualquer encerramento; um ping já na fila é
+  // cancelado junto com os outros eventos comuns, então nunca sai depois do
+  // `fim`. `unref` (Node) evita segurar o processo nos testes.
+  relogioPing = setInterval(() => {
+    if (estado !== 'aberto') {
+      pararPing();
+      return;
+    }
+    void enfileirarComentario(COMENTARIO_PING);
+  }, INTERVALO_PING_MS);
+  if (relogioPing && typeof relogioPing.unref === 'function') relogioPing.unref();
+
   return {
     /** Evento comum. Depois do encerramento, devolve `false` sem escrever. */
     emitir(nome, dados) {
@@ -123,6 +179,7 @@ export function criarEmissor(writable) {
      * absoluto; se a escrita não terminar até ele, aborta o escritor.
      */
     encerrar({ erro, fim, limite, agora = Date.now } = {}) {
+      pararPing();
       if (estado !== 'aberto') return finalizado;
 
       estado = 'encerrando';
@@ -158,6 +215,7 @@ export function criarEmissor(writable) {
 
     /** Desconexão: não escreve mais nada e aborta o stream. */
     abortar() {
+      pararPing();
       if (estado === 'fechado') return finalizado;
       estado = 'fechado';
       resolverFila(false);
@@ -168,6 +226,7 @@ export function criarEmissor(writable) {
 
     /** Fecha sem eventos terminais. Usado só pelos testes do formatador. */
     fechar() {
+      pararPing();
       if (estado !== 'aberto') return finalizado;
       estado = 'encerrando';
       void bombear();

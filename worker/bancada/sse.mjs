@@ -17,6 +17,8 @@ export async function lerEventos(stream, { inicio = Date.now(), agora = Date.now
 
   function processar(bloco) {
     if (!bloco || !bloco.trim()) return;
+    // Comentário SSE (`: ping`) não é evento; a tela e a bancada ignoram.
+    if (!/(^|\n)(event|data):/.test(bloco)) return;
 
     let evento = 'message';
     const dados = [];

@@ -21,9 +21,30 @@
 
 import {
   criarContadorRpc,
+  normalizarCaminhoEdge,
   tetoDoAmbiente,
   tratar,
 } from "./nucleo.gerado.js";
+
+// Dentro do Supabase o caminho chega sem `/functions/v1` e com o nome da
+// função (`/analise`, `/analise/saude`). O núcleo continua com `/analise` e
+// `/saude`; esta é a única tradução. O resto do caminho fica como está.
+function normalizarRequisicao(request: Request): Request {
+  const url = new URL(request.url);
+  const caminho = normalizarCaminhoEdge(url.pathname);
+  if (caminho === url.pathname) return request;
+
+  url.pathname = caminho;
+  const init: RequestInit & { duplex?: "half" } = {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+    signal: request.signal,
+  };
+  // Corpo em stream exige `duplex`; requisições sem corpo (GET/OPTIONS) não.
+  if (request.body) init.duplex = "half";
+  return new Request(url, init);
+}
 
 const env = {
   SUPABASE_URL: Deno.env.get("SUPABASE_URL"),
@@ -53,5 +74,11 @@ Deno.serve(async (request: Request) => {
       ? (promessa: Promise<unknown>) => runtime.waitUntil!(promessa)
       : undefined;
 
-  return tratar(request, env, { contador, waitUntil });
+  return tratar(normalizarRequisicao(request), env, {
+    contador,
+    waitUntil,
+    // Só aparece se o contador não for montado; mantém a mensagem própria da
+    // Edge Function (o Worker passa a dele).
+    mensagemSemContador: "O limite de uso não está configurado no servidor.",
+  });
 });

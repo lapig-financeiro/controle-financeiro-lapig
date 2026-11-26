@@ -136,7 +136,10 @@ describe('núcleo sem plataforma', () => {
 
     const ev = eventos(texto);
     expect(ev.map((e) => e.nome)).toEqual(['erro', 'fim']);
-    expect(ev[0].dados.codigo).toBe('interno');
+    expect(ev[0].dados).toMatchObject({
+      codigo: 'interno',
+      mensagem: 'O limite de uso não está configurado no servidor.',
+    });
     expect(chamadas.some((url) => url.includes('ollama'))).toBe(false);
   });
 

@@ -136,10 +136,13 @@ function eventos(texto) {
     .filter(Boolean)
     .map((bloco) => {
       const linhas = bloco.split('\n');
+      // Comentário SSE (`: ping`) não é evento: a tela ignora.
+      if (!linhas.some((l) => l.startsWith('event: '))) return null;
       const nome = linhas.find((l) => l.startsWith('event: '))?.slice(7);
       const dados = JSON.parse(linhas.find((l) => l.startsWith('data: '))?.slice(6) ?? 'null');
       return { nome, dados };
-    });
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -272,8 +275,15 @@ describe('rotas e CORS', () => {
     expect(resposta.status).toBe(204);
     expect(resposta.headers.get('Access-Control-Allow-Origin')).toBe(ORIGEM);
     expect(resposta.headers.get('Access-Control-Allow-Methods')).toContain('POST');
-    expect(resposta.headers.get('Access-Control-Allow-Headers')).toContain('authorization');
+    expect(resposta.headers.get('Access-Control-Allow-Headers')).toBe(
+      'authorization, apikey, content-type, x-client-info',
+    );
     expect(fetchFalso.chamadas).toHaveLength(0);
+  });
+
+  it('o Worker não aceita o caminho da Edge Function (/analise/saude)', async () => {
+    const { resposta } = await chamarWorker({ metodo: 'GET', caminho: '/analise/saude' });
+    expect(resposta.status).toBe(404);
   });
 
   it('OPTIONS de origem recusada responde 403', async () => {
@@ -427,6 +437,22 @@ describe('limite diário no fluxo', () => {
     expect(ev[1].dados).toMatchObject({ rodadas: 0 });
     expect(fetchFalso.chamadas.some((c) => c.url.includes('ollama'))).toBe(false);
     expect(kv.mapa.get(chaveUso('u1', dia))).toBe('50');
+  });
+
+  it('sem KV, o Worker mantém a mensagem própria de contador ausente', async () => {
+    const { texto } = await chamarWorker({
+      corpo: { pergunta: 'x' },
+      env: { ANALISE_USO: undefined },
+    });
+
+    const ev = eventos(texto);
+    expect(ev[0]).toMatchObject({
+      nome: 'erro',
+      dados: {
+        codigo: 'interno',
+        mensagem: 'O limite de uso não está configurado no Worker.',
+      },
+    });
   });
 
   it('respeita ANALISE_LIMITE_DIA', async () => {
@@ -772,6 +798,56 @@ describe('3ª rodada: encerramento único, waitUntil, corpo', () => {
       expect(ev.map((e) => e.nome)).toEqual(['texto', 'fim']);
       expect(ev.filter((e) => e.nome === 'fim')).toHaveLength(1);
       expect(ev.at(-1).nome).toBe('fim');
+      await Promise.all(ctx.promessas);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('manda ping durante a espera longa do modelo e não depois do fim', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolverModelo;
+      const fetchFalso = async (url) => {
+        if (url.endsWith('/auth/v1/user')) return json({ id: 'u1', email: 'a@b' });
+        if (url.includes('/rest/v1/app_users')) return json([{ role: 'admin' }]);
+        if (url.includes('/rest/v1/rpc/analise_consumir')) {
+          return json({ dia: '2026-11-25', usadas: 1 });
+        }
+        if (url === 'https://ollama.com/api/chat') {
+          return new Promise((resolve) => {
+            resolverModelo = () =>
+              resolve(json({ message: { role: 'assistant', content: 'ok' } }));
+          });
+        }
+        throw new Error(`URL inesperada: ${url}`);
+      };
+      vi.stubGlobal('fetch', fetchFalso);
+
+      const ctx = ctxFalso();
+      const resposta = await worker.fetch(pedidoAnalise(), { ...ENV, ANALISE_USO: kv }, ctx);
+      const leitor = resposta.body.getReader();
+      const decodificador = new TextDecoder();
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      const primeiro = await leitor.read();
+      expect(primeiro.done).toBe(false);
+      expect(decodificador.decode(primeiro.value)).toBe(': ping\n\n');
+
+      expect(typeof resolverModelo).toBe('function');
+      resolverModelo();
+
+      let resto = '';
+      while (true) {
+        const { done, value } = await leitor.read();
+        if (done) break;
+        resto += decodificador.decode(value, { stream: true });
+      }
+      resto += decodificador.decode();
+
+      expect(resto).toContain('event: texto');
+      expect(resto).toContain('event: fim');
+      expect(resto).not.toContain(': ping');
       await Promise.all(ctx.promessas);
     } finally {
       vi.useRealTimers();
