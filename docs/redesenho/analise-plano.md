@@ -27,6 +27,17 @@ que não vem de ferramenta aparece marcado como **sem origem**. As análises pod
   - Por que o Worker e não a Edge Function `assistente`, que já guarda a chave: o laço com várias idas ao
     modelo passa fácil do teto de tempo da Edge Function. No Worker, esperar `fetch` não conta como CPU.
     A `assistente` segue servindo a aba antiga até o corte.
+  - **Mudança de 25/11 (decisão do Victor): o laço vai para uma Edge Function do Supabase (`analise`).** O
+    Cloudflare gratuito limita a 50 subrequests por requisição (fetch e KV) e a bancada mediu até 34 numa
+    pergunta "em todos os centros"; o Victor não quer pagar o plano. A premissa acima não se confirmou: no
+    plano gratuito a Edge Function aceita 150 s por requisição e 2 s de CPU (espera de rede não conta), e a
+    pergunta mais lenta da bancada levou 46 s, dentro do prazo de 120 s. O laço continua no servidor (máscara,
+    blocos e tetos fora do navegador); o contador diário vira uma tabela (o Supabase não tem KV). O Worker
+    publicado fica até a Edge Function provar uma pergunta real.
+  - **Alternativa anotada (Gemini 4 Neon, 25/11)**, se a Edge Function esbarrar em limite não documentado:
+    o laço roda no navegador, como a aba Assistente antiga, e um servidor mínimo só repassa cada rodada ao
+    Ollama (sem limite por pergunta). Custo: a máscara passa a ser feita no cliente e boa parte do Worker
+    (SSE, encerrador, prazo) sai. Avaliação completa em `NãoColocarNoGit/analise/etapa2-pre/opiniao-gemini-arquitetura.md`.
 - **Ferramentas** (`shared/ai-tools/`): um pacote só, com especificação, executor que recebe o cliente
   Supabase de fora, máscara de dados pessoais, resolvedor de referências, `calcular` e validador de
   blocos. Só leitura, sobre RPCs que o `/v2/` já usa: `resumo_projetos_v2`, `situacao_centro_v2`,
