@@ -467,8 +467,51 @@ describe('desembolsos', () => {
 
     const bloco = sessao.criarBloco({ tipo: 'numero', titulo: '', no: rendimento.id }).bloco;
     expect(bloco.numero.origem.tipo).toBe('sem_documento');
-    expect(bloco.numero.origem.motivo).toBe('rendimento lido do balancete vigente');
+    expect(bloco.numero.origem.motivo).toBe(
+      'rendimento bruto de aplicação lido do balancete vigente'
+    );
+    expect(bloco.numero.origem.motivo).not.toContain('já incluído no saldo disponível, não somar');
     expect(bloco.numero.origem.consulta).toBe('get_repasses_v2');
+  });
+
+  it('A5: rendimento líquido tem rótulo e ressalva próprios e não se soma', async () => {
+    const repasses = fixture('repasses');
+    repasses.recursos.rendimento_liquido = 12000.34;
+    const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
+    const dados = json(await sessao.executar('desembolsos', { project_id: '30.901' }));
+
+    expect(dados.recursos.rendimento_liquido).toMatch(/^r1\./);
+    const liquido = dados.nos.find((no) => no.id === dados.recursos.rendimento_liquido);
+    expect(liquido.valor).toBe(12000.34);
+    expect(liquido.unidade).toBe('moeda');
+    expect(liquido.rotulo).toBe('Rendimento líquido de aplicação');
+
+    const bloco = sessao.criarBloco({ tipo: 'numero', titulo: '', no: liquido.id }).bloco;
+    expect(bloco.numero.origem.tipo).toBe('sem_documento');
+    expect(bloco.numero.origem.motivo).toBe(
+      'rendimento líquido lido do balancete vigente; já incluído no saldo disponível, não somar'
+    );
+    expect(bloco.numero.origem.consulta).toBe('get_repasses_v2');
+  });
+
+  it('A5: rendimento líquido ausente ou nulo não vira zero nem erro', async () => {
+    for (const valor of [undefined, null]) {
+      const repasses = fixture('repasses');
+      if (valor === undefined) delete repasses.recursos.rendimento_liquido;
+      else repasses.recursos.rendimento_liquido = valor;
+      const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
+      const dados = json(await sessao.executar('desembolsos', { project_id: '30.901' }));
+      expect(dados.recursos.rendimento_liquido).toBeNull();
+      expect(dados.nos.some((no) => no.rotulo === 'Rendimento líquido de aplicação')).toBe(false);
+    }
+  });
+
+  it('A5: rendimento líquido malformado é erro de formato, nunca número', async () => {
+    const repasses = fixture('repasses');
+    repasses.recursos.rendimento_liquido = 'não é número';
+    const sessao = montar({ get_repasses_v2: { data: repasses, error: null } });
+    const resultado = await sessao.executar('desembolsos', { project_id: '30.901' });
+    expect(resultado.erro).toBe('Não foi possível carregar os desembolsos. (formato)');
   });
 
   it.each(['0x0', '1e3', 'Infinity', ' 12 34 '])(

@@ -195,6 +195,7 @@ para o laço no navegador (alternativa do Gemini, `analise-plano.md` §2).
 
 **Rodada de correção da Análise (branch `redesenho/analise-correcoes`, 26/11):**
 - **Etapa A1**: pergunta e `anteriores` mascarados antes de ir ao modelo (fail-closed), texto final reidratado com `semOrigem` deslocado, 403 em `app_users` → `sem_permissao`, `codigoDoErro` reconhecendo `{ codigo, mensagem }` de `worker/src/rpc.js` e ajustes G5/G7/G9 do Worker. Revisado pelo MiniMax 3.1 Flash max e achados médios fechados.
+- **Etapa A2**: rendimento líquido em `desembolsos` com a ressalva do saldo e bruto com rótulo próprio (observado que `get_repasses_v2` hoje traz só o bruto; líquido entra quando a RPC trouxer ou na ferramenta de balancete da Etapa 2), `INSTRUCOES` e contrato §8 sem referências do MCP e proibindo id de nó no texto, "sem origem" isentando nome de centro da sessão (inclusive NFD), ano sozinho e datas mantendo R$ obrigatório, e rótulo literal na 1ª coluna das tabelas (contrato §6). Revisado pelo MiniMax 3.1 Flash max e achados fechados.
 
 **Próximo passo, nesta ordem:**
 0. Rodada de correção dos achados da revisão (pergunta mascarada, texto reidratado, rendimento líquido,

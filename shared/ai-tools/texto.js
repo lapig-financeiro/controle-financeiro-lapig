@@ -3,12 +3,48 @@
 // A IA não escreve número com origem própria: todo valor de bloco vem de um
 // nó. Quando um número aparece no texto livre e não é o valor de nenhum nó já
 // citado em bloco ou `calcular`, ele volta em `semOrigem` para a tela marcar.
-// Código de centro (30.109) e código de conta (7.1.3.99) não são números.
+// Código de centro (30.109) e código de conta (7.1.3.99) não são números, e o
+// mesmo vale para nome de centro da sessão ("GPW fase 2"), ano sozinho (2026)
+// e data (15/12/2025, 12/2026, 2025-12-15, jan/2027). Valor em R$ sempre exige
+// origem, inclusive "R$ 2026".
 
 const MESES = {
   jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
   jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
 };
+
+function escaparRegex(valor) {
+  return valor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Texto comparável sem acento e em minúsculas, com o intervalo de origem de
+ * cada unidade UTF-16. Serve só para achar nome de centro; a identidade nunca
+ * depende dele.
+ */
+function normalizarBusca(valor) {
+  const fonte = String(valor ?? '');
+  let texto = '';
+  const mapa = [];
+  let deslocamento = 0;
+  for (const caractere of Array.from(fonte)) {
+    const inicio = deslocamento;
+    const fim = inicio + caractere.length;
+    deslocamento = fim;
+    const base = caractere
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    if (base === '') {
+      const ultimo = mapa[mapa.length - 1];
+      if (ultimo) ultimo.fim = fim;
+      continue;
+    }
+    texto += base;
+    for (let unidade = 0; unidade < base.length; unidade += 1) mapa.push({ inicio, fim });
+  }
+  return { texto, mapa };
+}
 
 function perto(a, b) {
   const na = Number(a);
@@ -148,8 +184,14 @@ function coletarCandidatos(texto) {
   return achados;
 }
 
-function intervalosProibidos(texto) {
+function intervalosProibidos(texto, datas = []) {
   const intervalos = [];
+  // Data não é número a conferir: nem a data inteira nem os dígitos internos
+  // entram em `semOrigem`. Os intervalos vêm dos candidatos de data já
+  // reconhecidos por `coletarCandidatos`.
+  for (const data of datas) {
+    intervalos.push({ inicio: data.inicio, fim: data.fim });
+  }
   for (const m of texto.matchAll(/⟦P\d+⟧/g)) {
     intervalos.push({ inicio: m.index, fim: m.index + m[0].length });
   }
@@ -164,6 +206,41 @@ function intervalosProibidos(texto) {
   // Código de conta contábil (7.1.3.99) também não é número.
   for (const m of texto.matchAll(/\b\d{1,2}(?:\.\d{1,2}){2,}\b/g)) {
     intervalos.push({ inicio: m.index, fim: m.index + m[0].length });
+  }
+  // Ano sozinho ("2026", "março de 2027") não é número a conferir. Valor em R$
+  // continua exigindo origem ("R$ 2026"), e "2026%" / "2026,5" / "2026.5" não
+  // são ano: o número tem de concorrer sozinho.
+  for (const m of texto.matchAll(/(?<![0-9A-Za-zÀ-ÖØ-öø-ÿ])(?:19\d{2}|20\d{2})\b/g)) {
+    if (/^\s*%/.test(texto.slice(m.index + m[0].length))) continue;
+    if (/^[.,]\d/.test(texto.slice(m.index + m[0].length))) continue;
+    const antes = texto.slice(Math.max(0, m.index - 6), m.index);
+    if (/(?:R\$\s*[+\-−]?|[+\-−])\s*$/.test(antes)) continue;
+    intervalos.push({ inicio: m.index, fim: m.index + m[0].length });
+  }
+  return intervalos;
+}
+
+/** Nome de centro listado na sessão não tem número a conferir. */
+function intervalosDeNomes(texto, nomesCentros) {
+  if (!Array.isArray(nomesCentros) || nomesCentros.length === 0) return [];
+  const alvo = normalizarBusca(texto);
+  if (alvo.texto === '') return [];
+  const intervalos = [];
+  for (const nome of nomesCentros) {
+    if (typeof nome !== 'string') continue;
+    const chave = normalizarBusca(nome).texto.trim();
+    if (chave === '') continue;
+    if (!alvo.texto.includes(chave)) continue;
+    const padrao = new RegExp(
+      `(^|[^\\p{L}\\p{N}])(${escaparRegex(chave)})(?=$|[^\\p{L}\\p{N}])`,
+      'gu'
+    );
+    for (let achado = padrao.exec(alvo.texto); achado; achado = padrao.exec(alvo.texto)) {
+      const inicio = achado.index + achado[1].length;
+      const fim = inicio + achado[2].length;
+      intervalos.push({ inicio: alvo.mapa[inicio].inicio, fim: alvo.mapa[fim - 1].fim });
+      padrao.lastIndex = inicio + 1;
+    }
   }
   return intervalos;
 }
@@ -193,15 +270,19 @@ function citou(token, citados) {
 
 /**
  * Devolve os trechos de números do texto que não são valor de nó citado.
- * `citados` é a lista de nós já usados em bloco ou em `calcular`.
+ * `citados` é a lista de nós já usados em bloco ou em `calcular`;
+ * `nomesCentros` são os nomes dos centros listados na sessão.
  */
-export function marcarNumeros(texto, citados = []) {
+export function marcarNumeros(texto, citados = [], { nomesCentros = [] } = {}) {
   if (typeof texto !== 'string' || texto === '') return [];
-  const proibidos = intervalosProibidos(texto);
   const candidatos = coletarCandidatos(texto).sort((a, b) => {
     if (a.inicio !== b.inicio) return a.inicio - b.inicio;
     return b.fim - b.inicio - (a.fim - a.inicio);
   });
+  const proibidos = [
+    ...intervalosProibidos(texto, candidatos.filter((candidato) => candidato.tipo === 'data')),
+    ...intervalosDeNomes(texto, nomesCentros),
+  ];
 
   const escolhidos = [];
   for (const candidato of candidatos) {
@@ -221,7 +302,7 @@ export function marcarNumeros(texto, citados = []) {
 }
 
 /** Marca o texto já mascarado; devolve o texto e os intervalos sem origem. */
-export function marcarTexto(texto, { mascara, citados = [] } = {}) {
+export function marcarTexto(texto, { mascara, citados = [], nomesCentros = [] } = {}) {
   const limpo = mascara ? mascara.texto(texto) : texto;
-  return { texto: limpo, semOrigem: marcarNumeros(limpo, citados) };
+  return { texto: limpo, semOrigem: marcarNumeros(limpo, citados, { nomesCentros }) };
 }

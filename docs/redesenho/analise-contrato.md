@@ -118,7 +118,9 @@ O que o modelo pede (`criar_bloco`):
 ```js
 { tipo: 'numero', titulo: 'Livre do 30.109', no: 'r2.1', contexto: 'r2.4' /* opcional, nó texto ou data */ }
 { tipo: 'tabela', titulo: 'Centros em atenção', colunas: ['Centro', 'Livre', 'Motivo'],
-  linhas: [['r1.3', 'r1.4', 'r1.9'], ['r1.12', 'r1.13', 'r1.18']] }   // toda célula é id de nó
+  linhas: [['r1.3', 'r1.4', 'r1.9'], ['Pessoal', 'r1.13', 'r1.18']] }
+  // a primeira coluna pode ser id de nó ou rótulo de linha em texto literal;
+  // as demais colunas só aceitam id de nó
 { tipo: 'texto', texto: 'Dois centros estão em atenção pela tarifa bancária.' }
 ```
 
@@ -131,9 +133,18 @@ O que sai para a tela (evento `bloco`):
   texto:  { texto, semOrigem: [{ inicio, fim }] } }
 ```
 
-Recusas (voltam ao modelo como erro, e o bloco não sai): id que não existe; célula literal; coluna com
-unidades misturadas; tabela com mais de 50 linhas ou 8 colunas; título ou cabeçalho de coluna com número
-que não é de nó.
+Na tabela, a primeira coluna aceita duas formas: id de um nó registrado (célula com
+`{ valor, unidade, origem }`, como as demais) ou **rótulo de linha** em texto literal
+(`'Pessoal'`, `'Serviços PJ'`, `'30.109'`), que sai como
+`{ valor: textoMascarado, unidade: 'texto', origem: null }`, não vira nó e não entra em
+`citados`. A primeira coluna não pode misturar rótulo literal com unidade numérica.
+Texto literal nas colunas 2 em diante continua recusado.
+
+Recusas (voltam ao modelo como erro, e o bloco não sai): id que não existe; célula literal
+nas colunas 2 em diante; rótulo de linha vazio, com cara de id de nó inexistente ou com
+número sem origem (código de centro e nome de centro da sessão passam; `R$ 500` inventado
+não); coluna com unidades misturadas; tabela com mais de 50 linhas ou 8 colunas; título ou
+cabeçalho de coluna com número que não é de nó.
 
 Mensagem de erro de RPC nunca vai crua ao modelo nem à tela: sai uma mensagem fixa por ferramenta com o
 código (`http_4xx`, `tempo`, `formato`, `rede`).
@@ -172,6 +183,28 @@ Resposta `text/event-stream`, eventos `event: <nome>\ndata: <json>`:
 
 ## 8. Instruções ao modelo (`INSTRUCOES` no pacote)
 
-As quatro regras do MCP, palavra por palavra (não calcule, não recomende, diga o que o número cobre,
-panorama descreve), mais: toda resposta é feita de blocos; número só por `criar_bloco` ou `calcular`; o
-texto final tem no máximo 3 frases e não repete número dos blocos; sem dado, diga que não há e por quê.
+Quatro regras valem para todas as tools, adaptadas às ferramentas reais da Análise (`listar_centros`,
+`explicar_livre`, `situacao_centro`, `desembolsos`, `termos_contrato`, `pendencias`, `bolsas`,
+`criar_bloco` e `calcular`):
+
+1. **Não calcule.** Todo número sai de uma RPC; a única conta permitida é `calcular`, que soma ou
+   subtrai nós de moeda/número da mesma unidade. Somar, projetar ou reordenar por conta própria
+   produz um segundo resultado, que vai discordar do site.
+2. **Não recomende — apresente.** As tools trazem valores e motivos, sem shortlist e sem ranking de
+   mérito. Exponha as opções com o porquê de cada uma; escolher é de quem coordena.
+3. **Diga o que o número cobre quando isso muda a leitura:** data do balancete (`desembolsos`), centro
+   sem plano ou sem balancete (`listar_centros`, `explicar_livre`, `situacao_centro`), vigência do
+   cadastro contra a do contrato (`termos_contrato`), folha atrasada (`explicar_livre`) e rendimento
+   líquido, que já está incluído no saldo disponível e não se soma de novo (`desembolsos`).
+4. **`listar_centros` descreve os centros**; a ordem da lista não significa prioridade e não ranqueia
+   mérito.
+
+Além disso:
+
+- Toda resposta é feita de blocos; número só por `criar_bloco` ou `calcular`. Sem dado, diga que não há,
+  e diga o porquê só quando a ferramenta informar o motivo.
+- **Não escrever id de nó** (`r2.7`, `c1`, `{{r2.7}}`) no texto final nem em bloco de texto.
+- **Número no texto só se for valor de nó já citado** em bloco ou `calcular`; o texto final tem no
+  máximo 3 frases corridas, sem repetir tabela markdown nem listas de números.
+- Em tabelas (`criar_bloco`), a **primeira coluna** pode ser texto literal (rótulo de linha) e as
+  demais colunas citam ids de nós.

@@ -61,7 +61,7 @@ describe('marcarTexto', () => {
     expect(sessao.marcarTexto('Conta 7.1.3.99 sem rubrica.').semOrigem).toEqual([]);
   });
 
-  it('não marca data citada e marca a diferente', async () => {
+  it('data não é número a conferir, nem a citada nem a diferente', async () => {
     const { sessao, centros } = await preparar();
     const vigencia = acharNo(centros, 'Vigência — 30.901');
     sessao.criarBloco({ tipo: 'numero', titulo: '', no: vigencia.id });
@@ -69,8 +69,8 @@ describe('marcarTexto', () => {
     expect(sessao.marcarTexto('Vence em 30/09/2027.').semOrigem).toEqual([]);
     expect(sessao.marcarTexto('Vence em 2027-09-30.').semOrigem).toEqual([]);
     expect(sessao.marcarTexto('Vence em set/27.').semOrigem).toEqual([]);
-    expect(sessao.marcarTexto('Vence em 30/09/2028.').semOrigem).toHaveLength(1);
-    expect(sessao.marcarTexto('Vence em set/28.').semOrigem).toHaveLength(1);
+    expect(sessao.marcarTexto('Vence em 30/09/2028.').semOrigem).toEqual([]);
+    expect(sessao.marcarTexto('Vence em set/28.').semOrigem).toEqual([]);
   });
 
   it('não marca percentual citado e marca o diferente', async () => {
@@ -146,14 +146,14 @@ describe('marcarTexto', () => {
     );
   });
 
-  it('data completa compara dia, mês e ano', async () => {
+  it('data completa não é conferida contra nó de data', async () => {
     const { sessao, termos } = await preparar();
     const inicio = acharNo(termos, 'Vigência — início');
     sessao.criarBloco({ tipo: 'numero', titulo: '', no: inicio.id });
 
     expect(sessao.marcarTexto('Vence em 31/12/2025.').semOrigem).toEqual([]);
     expect(sessao.marcarTexto('Vence em dez/25.').semOrigem).toEqual([]);
-    expect(sessao.marcarTexto('Vence em 15/12/2025.').semOrigem).toHaveLength(1);
+    expect(sessao.marcarTexto('Vence em 15/12/2025.').semOrigem).toEqual([]);
   });
 
   it('comparação de moeda respeita unidade e sinal', async () => {
@@ -251,28 +251,87 @@ describe('data mês/ano (MM/AAAA)', () => {
     expect(marcarNumeros('11/2026  %', [data('2026-11-30')])).not.toEqual([]);
   });
 
-  it('reconhece MM/AAAA e casa com nó de data do mesmo ano-mês', () => {
+  it('MM/AAAA é data e não se confere, com ou sem nó de data', () => {
     expect(marcarNumeros('Vence em 09/2027.', [data('2027-09-30')])).toEqual([]);
-    expect(marcarNumeros('Vence em 10/2027.', [data('2027-09-30')])).toHaveLength(1);
+    expect(marcarNumeros('Vence em 10/2027.', [data('2027-09-30')])).toEqual([]);
+    expect(marcarNumeros('Vence em 10/2027.', [])).toEqual([]);
   });
 
-  it('11/2026 sem nó de data continua marcado como sem origem', () => {
-    const texto = 'O balancete cobre até 11/2026.';
-    const marcado = marcarNumeros(texto, []);
-    expect(trechos(texto, marcado)).toEqual(['11/2026']);
+  it('11/2026 sem nó de data também é data, não número', () => {
+    expect(marcarNumeros('O balancete cobre até 11/2026.', [])).toEqual([]);
   });
 
   it('não quebra dd/mm/aaaa, 1/2 nem 30.109', () => {
     expect(marcarNumeros('15/12/2025', [data('2025-12-15')])).toEqual([]);
-    expect(trechos('15/12/2025', marcarNumeros('15/12/2025', [data('2025-12-16')]))).toEqual([
-      '15/12/2025',
-    ]);
+    expect(marcarNumeros('15/12/2025', [data('2025-12-16')])).toEqual([]);
     expect(trechos('32/01/2026', marcarNumeros('32/01/2026', [data('2026-01-15')]))).toEqual([
       '32',
       '01',
-      '2026',
     ]);
     expect(marcarNumeros('1/2', [data('2001-02-01')])).toHaveLength(2);
     expect(marcarNumeros('O centro 30.109 tem saldo.', [])).toEqual([]);
+  });
+});
+
+describe('A7 — nome de centro, ano sozinho e valor em R$', () => {
+  const nomes = ['GPW fase 2', 'Centro Exemplo Um'];
+  function trechos(texto, semOrigem) {
+    return semOrigem.map((faixa) => texto.slice(faixa.inicio, faixa.fim));
+  }
+
+  it('dígito dentro do nome do centro listado não é sem origem', () => {
+    expect(marcarNumeros('O GPW fase 2 está em dia.', [], { nomesCentros: nomes })).toEqual([]);
+    expect(trechos('O GPW fase 2 está em dia.', marcarNumeros('O GPW fase 2 está em dia.'))).toEqual([
+      '2',
+    ]);
+  });
+
+  it('nome do centro compara sem acento e sem maiúsculas, com fronteira de palavra', () => {
+    expect(marcarNumeros('O gpw FÁSE 2 está em dia.', [], { nomesCentros: nomes })).toEqual([]);
+    expect(
+      trechos('O GPW fase 27 tem saldo.', marcarNumeros('O GPW fase 27 tem saldo.', [], { nomesCentros: nomes }))
+    ).toEqual(['27']);
+  });
+
+  // Frases representativas das perguntas 2, 11, 13, 14, 15 e 16 da bateria
+  // real (nome de projeto "GPW fase 2", ano sozinho e data no texto).
+  it.each([
+    'O GPW fase 2 e o Centro Exemplo Um estão em dia.',
+    'Os maiores livres são do GPW fase 2.',
+    'O balancete do GPW fase 2 cobre até 10/2026.',
+    'O contrato do GPW fase 2 vence em março de 2027.',
+    'A folha do GPW fase 2 está atrasada desde 2026.',
+    'Em 2026, o GPW fase 2 recebeu a primeira parcela.',
+    'O GPW fase 2 vence em 30/09/2027.',
+  ])('frase com nome/ano/data não gera sem origem: %s', (texto) => {
+    expect(marcarNumeros(texto, [], { nomesCentros: nomes })).toEqual([]);
+  });
+
+  it('ano sozinho não é número; ano em R$ ou com %/decimal continua sendo', () => {
+    expect(marcarNumeros('em 2026', [])).toEqual([]);
+    expect(marcarNumeros('fim de 2026', [])).toEqual([]);
+    expect(marcarNumeros('março de 2027', [])).toEqual([]);
+    expect(marcarNumeros('R$ 2026', [])).toHaveLength(1);
+    expect(trechos('R$ 2026', marcarNumeros('R$ 2026', []))).toEqual(['R$ 2026']);
+    expect(trechos('R$ -2026', marcarNumeros('R$ -2026', []))).toEqual(['R$ -2026']);
+    expect(trechos('-2026', marcarNumeros('-2026', []))).toEqual(['-2026']);
+    expect(trechos('R$ 2.026,00', marcarNumeros('R$ 2.026,00', []))).toEqual(['R$ 2.026,00']);
+    expect(trechos('2026%', marcarNumeros('2026%', []))).toEqual(['2026%']);
+    expect(trechos('2026,5', marcarNumeros('2026,5', []))).toEqual(['2026,5']);
+    expect(trechos('2026.5', marcarNumeros('2026.5', []))).toEqual(['2026.5']);
+  });
+
+  it('R$ 500,00 sem nó continua sem origem', () => {
+    expect(trechos('O custo é R$ 500,00.', marcarNumeros('O custo é R$ 500,00.', []))).toEqual([
+      'R$ 500,00',
+    ]);
+  });
+
+  it('todos os formatos de data são ignorados, inclusive os dígitos internos', () => {
+    expect(marcarNumeros('15/12/2025', [])).toEqual([]);
+    expect(marcarNumeros('12/2025', [])).toEqual([]);
+    expect(marcarNumeros('2025-12-15', [])).toEqual([]);
+    expect(marcarNumeros('jan/2027', [])).toEqual([]);
+    expect(marcarNumeros('dez/2027', [])).toEqual([]);
   });
 });

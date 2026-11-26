@@ -18,10 +18,10 @@ function origemDoNo(no) {
   return no.origem ?? { tipo: 'sem_documento', motivo: 'sem origem registrada', consulta: '' };
 }
 
-function tituloComNumeroSemOrigem(titulo, citados, extras = []) {
+function tituloComNumeroSemOrigem(titulo, citados, nomesCentros, extras = []) {
   if (!titulo) return false;
   const lista = [...citados, ...extras];
-  return marcarNumeros(titulo, lista).length > 0;
+  return marcarNumeros(titulo, lista, { nomesCentros }).length > 0;
 }
 
 function citar(citados, nos) {
@@ -31,8 +31,20 @@ function citar(citados, nos) {
   }
 }
 
-export function criarBlocos({ registro, citados = [], mascara }) {
+function pareceIdDeNo(valor) {
+  return /^[rc]\d+(?:\.\d+)?$/.test(valor);
+}
+
+export function criarBlocos({ registro, citados = [], mascara, nomesCentros }) {
   let proximo = 0;
+
+  function nomesDaSessao() {
+    if (typeof nomesCentros === 'function') {
+      const nomes = nomesCentros();
+      return Array.isArray(nomes) ? nomes : [];
+    }
+    return Array.isArray(nomesCentros) ? nomesCentros : [];
+  }
 
   function criarBloco(args) {
     if (!args || typeof args !== 'object' || Array.isArray(args)) {
@@ -51,11 +63,11 @@ export function criarBlocos({ registro, citados = [], mascara }) {
       if (typeof args.texto !== 'string' || args.texto.trim() === '') {
         return erro('bloco texto exige "texto".');
       }
-      if (tituloComNumeroSemOrigem(titulo, citados)) {
+      if (tituloComNumeroSemOrigem(titulo, citados, nomesDaSessao())) {
         return erro('o título tem número que não é valor de nó citado.');
       }
       const texto = mascara.texto(args.texto);
-      const semOrigem = marcarNumeros(texto, citados);
+      const semOrigem = marcarNumeros(texto, citados, { nomesCentros: nomesDaSessao() });
       proximo += 1;
       return { bloco: { id: `b${proximo}`, tipo, titulo, texto: { texto, semOrigem } } };
     }
@@ -81,7 +93,7 @@ export function criarBlocos({ registro, citados = [], mascara }) {
       }
 
       const usados = contexto ? [no, contexto] : [no];
-      if (tituloComNumeroSemOrigem(titulo, citados, usados)) {
+      if (tituloComNumeroSemOrigem(titulo, citados, nomesDaSessao(), usados)) {
         return erro('o título tem número que não é valor de nó citado.');
       }
 
@@ -125,6 +137,18 @@ export function criarBlocos({ registro, citados = [], mascara }) {
     const linhas = [];
     const usados = [];
 
+    function conferirUnidade(no, indiceColuna) {
+      const coluna = colunas[indiceColuna];
+      if (coluna.unidade === null) {
+        coluna.unidade = no.unidade;
+        return null;
+      }
+      if (coluna.unidade !== no.unidade) {
+        return erro(`a coluna "${coluna.rotulo}" mistura unidades (${coluna.unidade} e ${no.unidade}).`);
+      }
+      return null;
+    }
+
     for (let indiceLinha = 0; indiceLinha < args.linhas.length; indiceLinha += 1) {
       const linha = args.linhas[indiceLinha];
       if (!Array.isArray(linha) || linha.length !== colunas.length) {
@@ -132,27 +156,55 @@ export function criarBlocos({ registro, citados = [], mascara }) {
       }
       const saida = [];
       for (let indiceColuna = 0; indiceColuna < linha.length; indiceColuna += 1) {
-        const id = linha[indiceColuna];
-        if (typeof id !== 'string') {
+        const bruto = linha[indiceColuna];
+        const primeira = indiceColuna === 0;
+
+        if (primeira && typeof bruto === 'string') {
+          const texto = bruto.trim();
+          const no = texto === '' ? null : registro.obter(texto);
+          if (no) {
+            const conflito = conferirUnidade(no, indiceColuna);
+            if (conflito) return conflito;
+            saida.push({ valor: no.valor, unidade: no.unidade, origem: origemDoNo(no) });
+            usados.push(no);
+            continue;
+          }
+          if (texto === '') {
+            return erro('o rótulo de linha da primeira coluna não pode ser vazio.');
+          }
+          // Id de nó que não existe é erro do modelo, não rótulo de linha.
+          if (pareceIdDeNo(texto)) return erro(`nó não encontrado: ${bruto}`);
+          const mascarado = mascara.texto(texto);
+          if (marcarNumeros(mascarado, citados, { nomesCentros: nomesDaSessao() }).length > 0) {
+            return erro(`o rótulo de linha "${mascarado}" tem número que não é valor de nó citado.`);
+          }
+          // Rótulo literal não vira nó nem entra em `citados`.
+          if (colunas[0].unidade === null) {
+            colunas[0].unidade = 'texto';
+          } else if (colunas[0].unidade !== 'texto') {
+            return erro(
+              `a coluna "${colunas[0].rotulo}" mistura texto literal com a unidade ` +
+                `${colunas[0].unidade}.`
+            );
+          }
+          saida.push({ valor: mascarado, unidade: 'texto', origem: null });
+          continue;
+        }
+
+        if (typeof bruto !== 'string') {
           return erro('toda célula da tabela é o id de um nó, não um valor literal.');
         }
-        const no = registro.obter(id.trim());
-        if (!no) return erro(`nó não encontrado: ${id}`);
-        if (colunas[indiceColuna].unidade === null) {
-          colunas[indiceColuna].unidade = no.unidade;
-        } else if (colunas[indiceColuna].unidade !== no.unidade) {
-          return erro(
-            `a coluna "${colunas[indiceColuna].rotulo}" mistura unidades ` +
-              `(${colunas[indiceColuna].unidade} e ${no.unidade}).`
-          );
-        }
+        const no = registro.obter(bruto.trim());
+        if (!no) return erro(`nó não encontrado: ${bruto}`);
+        const conflito = conferirUnidade(no, indiceColuna);
+        if (conflito) return conflito;
         saida.push({ valor: no.valor, unidade: no.unidade, origem: origemDoNo(no) });
         usados.push(no);
       }
       linhas.push(saida);
     }
 
-    if (tituloComNumeroSemOrigem(titulo, citados, usados)) {
+    if (tituloComNumeroSemOrigem(titulo, citados, nomesDaSessao(), usados)) {
       return erro('o título tem número que não é valor de nó citado.');
     }
     for (const coluna of colunas) {

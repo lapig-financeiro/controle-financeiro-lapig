@@ -147,6 +147,9 @@ describe('criarBloco tabela', () => {
     ).toContain('id de um nó');
     expect(
       sessao.criarBloco({ tipo: 'tabela', titulo: '', colunas: ['x'], linhas: [['123']] }).erro
+    ).toContain('número');
+    expect(
+      sessao.criarBloco({ tipo: 'tabela', titulo: '', colunas: ['x'], linhas: [['r9.9']] }).erro
     ).toContain('nó não encontrado');
     expect(
       sessao.criarBloco({ tipo: 'tabela', titulo: '', colunas: ['x'], linhas: [[codigo.id, codigo.id]] }).erro
@@ -214,6 +217,165 @@ describe('criarBloco tabela', () => {
     const resultado = sessao.criarBloco({ tipo: 'tabela', titulo: '', colunas, linhas });
     expect(resultado.erro).toBeUndefined();
     expect(resultado.bloco.tabela.linhas).toHaveLength(50);
+  });
+});
+
+describe('criarBloco tabela — rótulo de linha (A8)', () => {
+  it('primeira coluna pode ser texto literal e as demais citam nós', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const pessoal = porRotulo(dados, 'Livre — Centro Exemplo Um');
+    const total = dados.nos.find((no) => no.id === dados.total);
+    const resultado = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: 'Comparação',
+      colunas: ['Rubrica', 'Livre', 'Centros'],
+      linhas: [
+        ['Pessoal', pessoal.id, total.id],
+        ['Serviços PJ', pessoal.id, total.id],
+      ],
+    });
+    expect(resultado.erro).toBeUndefined();
+    const { bloco } = resultado;
+    expect(bloco.tabela.colunas).toEqual([
+      { rotulo: 'Rubrica', unidade: 'texto' },
+      { rotulo: 'Livre', unidade: 'moeda' },
+      { rotulo: 'Centros', unidade: 'numero' },
+    ]);
+    expect(bloco.tabela.linhas[0][0]).toEqual({
+      valor: 'Pessoal',
+      unidade: 'texto',
+      origem: null,
+    });
+    expect(bloco.tabela.linhas[0][1].valor).toBe(84300);
+    expect(bloco.tabela.linhas[0][1].origem.tipo).toBe('livre');
+    // O rótulo literal não virou nó: não dá para citar "Pessoal" como id.
+    expect(sessao.criarBloco({ tipo: 'numero', titulo: '', no: 'Pessoal' }).erro).toContain(
+      'nó não encontrado'
+    );
+  });
+
+  it('aceita código de centro e nome de centro da sessão como rótulo', async () => {
+    const resumo = fixture('resumo_projetos');
+    resumo.centros[0].name = 'GPW fase 2';
+    const sessao = criarSessao({
+      rpc: async (nome) => {
+        if (nome === 'resumo_projetos_v2') return { data: resumo, error: null };
+        if (nome === 'get_pedido_bolsas_v2') return { data: fixture('pedido_bolsas'), error: null };
+        return { data: null, error: { message: `sem fixture: ${nome}` } };
+      },
+      hoje: '2026-11-25',
+    });
+    // `listar_centros` carrega os nomes da sessão antes do bloco.
+    const centros = JSON.parse((await sessao.executar('listar_centros', {})).paraModelo);
+    const livre = porRotulo(centros, 'Livre — GPW fase 2');
+    const codigo = porRotulo(centros, 'Código — GPW fase 2');
+    const resultado = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: '',
+      colunas: ['Linha', 'Código', 'Livre'],
+      linhas: [
+        ['GPW fase 2', codigo.id, livre.id],
+        ['30.109', codigo.id, livre.id],
+      ],
+    });
+    expect(resultado.erro).toBeUndefined();
+    expect(resultado.bloco.tabela.linhas[0][0].valor).toBe('GPW fase 2');
+    expect(resultado.bloco.tabela.linhas[1][0].valor).toBe('30.109');
+  });
+
+  it('recusa rótulo vazio, id inexistente e valor inventado', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const livre = porRotulo(dados, 'Livre — Centro Exemplo Um');
+    const montarLinha = (rotulo) =>
+      sessao.criarBloco({
+        tipo: 'tabela',
+        titulo: '',
+        colunas: ['Linha', 'Livre'],
+        linhas: [[rotulo, livre.id]],
+      });
+    expect(montarLinha('   ').erro).toContain('vazio');
+    expect(montarLinha('r9.9').erro).toContain('nó não encontrado');
+    expect(montarLinha('c12.3').erro).toContain('nó não encontrado');
+    expect(montarLinha('R$ 500,00').erro).toContain('número');
+  });
+
+  it('não mistura texto literal com unidade numérica na primeira coluna', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const livre = porRotulo(dados, 'Livre — Centro Exemplo Um');
+    const texto = porRotulo(dados, 'Nome do centro 30.901');
+    expect(
+      sessao.criarBloco({
+        tipo: 'tabela',
+        titulo: '',
+        colunas: ['Linha', 'Livre'],
+        linhas: [
+          ['Pessoal', livre.id],
+          [livre.id, livre.id],
+        ],
+      }).erro
+    ).toContain('mistura');
+    expect(
+      sessao.criarBloco({
+        tipo: 'tabela',
+        titulo: '',
+        colunas: ['Linha', 'Livre'],
+        linhas: [
+          [livre.id, livre.id],
+          ['Pessoal', livre.id],
+        ],
+      }).erro
+    ).toContain('mistura');
+    // Texto literal combina com nó de texto: a coluna continua sendo texto.
+    expect(
+      sessao.criarBloco({
+        tipo: 'tabela',
+        titulo: '',
+        colunas: ['Linha', 'Nome'],
+        linhas: [
+          [texto.id, texto.id],
+          ['Pessoal', texto.id],
+        ],
+      }).erro
+    ).toBeUndefined();
+  });
+
+  it('texto literal nas colunas 2+ continua recusado', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const livre = porRotulo(dados, 'Livre — Centro Exemplo Um');
+    const resultado = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: '',
+      colunas: ['Linha', 'Livre'],
+      linhas: [['Pessoal', 'Serviços PJ']],
+    });
+    expect(resultado.erro).toContain('nó não encontrado');
+  });
+
+  it('reidratar funciona com célula de origem null', async () => {
+    const sessao = montar();
+    const dados = await dadosDosCentros(sessao);
+    const livre = porRotulo(dados, 'Livre — Centro Exemplo Um');
+    const bloco = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: '',
+      colunas: ['Linha', 'Livre'],
+      linhas: [
+        ['Pessoa Exemplo Um', livre.id],
+        ['Pessoal', livre.id],
+      ],
+    }).bloco;
+    expect(bloco.tabela.linhas[0][0].valor).toBe('⟦P1⟧');
+    const reidratado = sessao.reidratar(bloco);
+    expect(reidratado.tabela.linhas[0][0]).toEqual({
+      valor: 'Pessoa Exemplo Um',
+      unidade: 'texto',
+      origem: null,
+    });
+    expect(reidratado.tabela.linhas[1][0].origem).toBeNull();
   });
 });
 

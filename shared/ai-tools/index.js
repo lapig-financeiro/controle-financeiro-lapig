@@ -26,44 +26,53 @@ regra financeira é calculada aqui — todo número sai de RPC.
 
 Quatro regras valem para todas as tools:
 
-1. Não calcule. Todo número sai das RPCs. Somar, projetar ou reordenar por conta
-   própria produz um segundo resultado, que vai discordar do site.
+1. Não calcule. Todo número sai de uma RPC; a única conta permitida é
+   "calcular", que soma ou subtrai nós de moeda/número da mesma unidade.
+   Somar, projetar ou reordenar por conta própria produz um segundo resultado,
+   que vai discordar do site.
 
-2. Não recomende — apresente. As tools de decisão devolvem shortlist com
-   justificativa. A ordem mede urgência de gasto, e urgência não é mérito: se um
-   bolsista se justifica dentro do objeto daquele projeto é decisão humana e não
-   está em tabela nenhuma. Exponha as opções com o porquê de cada uma; escolher
-   é de quem coordena.
+2. Não recomende — apresente. As tools ("listar_centros", "explicar_livre",
+   "situacao_centro", "desembolsos", "termos_contrato", "pendencias" e
+   "bolsas") trazem valores e motivos, sem shortlist e sem ranking de mérito.
+   Exponha as opções com o porquê de cada uma; escolher é de quem coordena.
 
-3. Diga o que o número cobre quando isso muda a leitura. Os campos existem para
-   isso: compromissos_cobertura, situacao_dado, caixa.cobertura,
-   risco_devolucao.base, truncado. Saldo alto sem balancete é previsto integral
-   com realizado zero por falta de dado — não é dinheiro sobrando.
+3. Diga o que o número cobre quando isso muda a leitura: a data do balancete
+   ("desembolsos"), o centro sem plano ou sem balancete ("listar_centros",
+   "explicar_livre", "situacao_centro"), a vigência do cadastro contra a do
+   contrato ("termos_contrato"), a folha atrasada ("explicar_livre") e o
+   rendimento líquido, que já está incluído no saldo disponível e não se soma
+   de novo ("desembolsos").
 
-4. "panorama" descreve, "simular_alocacao" ranqueia. A ordem do panorama é
-   alfabética e não significa prioridade.
+4. "listar_centros" descreve os centros; a ordem da lista não significa
+   prioridade e não ranqueia mérito.
 
 Regras da Análise:
 
-5. Toda resposta é feita de blocos. Use "criar_bloco" para número, tabela e texto.
-   O bloco "numero" cita um nó em "no"; toda célula de tabela é o id de um nó,
-   nunca um valor literal. O texto livre final é marcado automaticamente: número
-   que não for valor de nó citado aparece como sem origem.
+5. Toda resposta é feita de blocos. Use "criar_bloco" para número, tabela e
+   texto. O bloco "numero" cita um nó em "no". Na tabela, a primeira coluna
+   pode ser um rótulo de linha em texto literal ("Pessoal", "Serviços PJ") ou
+   o id de um nó; as demais colunas citam só ids de nós. Texto literal nas
+   colunas 2 em diante é recusado.
 
 6. Número só por "criar_bloco" ou "calcular". Não escreva número solto no texto,
    não repita no texto o número que já está num bloco e não invente valor para
    preencher tabela. "calcular" só soma e subtrai nós de moeda/número da mesma
    unidade; regra de negócio (livre, taxa, folha, projeção) é sempre RPC.
 
-7. O texto final tem no máximo 3 frases. Ele diz o que os blocos mostram e a
-   ressalva que muda a leitura; não enumera campo por campo.
+7. Não escreva id de nó ("r2.7", "c1", "{{r2.7}}") no texto final nem em bloco
+   de texto. O id existe para o "criar_bloco"; a pessoa não lê id.
 
-8. Sem dado, diga que não há. Diga o porquê só quando a ferramenta informar o
+8. Número no texto só se for valor de nó já citado em bloco ou "calcular".
+   Prefira deixar números e tabelas nos blocos ("criar_bloco") e manter o texto
+   final em até 3 frases corridas, sem repetir tabela markdown nem listas de
+   números no texto.
+
+9. Sem dado, diga que não há. Diga o porquê só quando a ferramenta informar o
    motivo; se nenhuma ferramenta traz o dado nem o motivo, diga só que ele não
    está disponível, sem supor onde estaria nem por quê. Ferramenta que falha
    volta como erro: nunca trate o erro como zero, lista vazia ou "sem dado".
 
-9. Nome de pessoa aparece como ⟦P1⟧. Não tente adivinhar, escrever ou completar
+10. Nome de pessoa aparece como ⟦P1⟧. Não tente adivinhar, escrever ou completar
    o nome; a tela troca o marcador pelo valor real para quem tem acesso.
 `.trim();
 
@@ -109,7 +118,7 @@ export function especificacoes() {
     ),
     ferramenta(
       'desembolsos',
-      'Parcelas do plano ativo, valor total, data do balancete e recursos recebidos/a receber e rendimento bruto do centro. O rendimento bruto já está incluído no saldo disponível do balancete e nunca se soma de novo.',
+      'Parcelas do plano ativo, valor total, data do balancete e recursos recebidos/a receber e rendimento do centro. Rendimento líquido (quando retornado): já incluído no saldo disponível; não somar de novo. Rendimento bruto tem rótulo próprio.',
       { project_id: PARAMETRO_CENTRO },
       ['project_id']
     ),
@@ -137,7 +146,7 @@ export function especificacoes() {
     ),
     ferramenta(
       'criar_bloco',
-      'Monta um bloco citando ids de nós. Numero: no + contexto opcional. Tabela: colunas e linhas de ids. Texto: texto livre com números sem origem marcados.',
+      'Monta um bloco citando ids de nós. Numero: no + contexto opcional. Tabela: colunas; na primeira coluna, um rótulo de linha em texto literal ou o id de um nó, e nas demais só ids de nós. Texto: texto livre com números sem origem marcados.',
       {
         tipo: { type: 'string', enum: ['numero', 'tabela', 'texto'], description: 'Tipo do bloco.' },
         titulo: { type: 'string', description: 'Título curto, sem número que não seja de nó.' },
@@ -147,7 +156,8 @@ export function especificacoes() {
         linhas: {
           type: 'array',
           items: { type: 'array', items: { type: 'string' } },
-          description: 'Linhas da tabela; cada célula é o id de um nó.',
+          description:
+            'Linhas da tabela. Na primeira coluna, um rótulo de linha em texto literal ou o id de um nó; nas demais, só ids de nós.',
         },
         texto: { type: 'string', description: 'Texto do bloco texto.' },
       },
@@ -187,7 +197,8 @@ export function criarSessao({ rpc, hoje } = {}) {
   const registro = criarRegistro();
   const mascara = criarMascara({ rpc });
   const citados = [];
-  const blocos = criarBlocos({ registro, citados, mascara });
+  let nomesCentros = [];
+  const blocos = criarBlocos({ registro, citados, mascara, nomesCentros: () => nomesCentros });
   const calculadora = criarCalculadora({ registro, citados });
 
   const ctx = {
@@ -213,6 +224,11 @@ export function criarSessao({ rpc, hoje } = {}) {
         throw new Error(`${mensagemRpc('resumo_projetos_v2')} (formato)`);
       }
       centrosCache = resposta.dados;
+      // Nome de centro não é nome de pessoa: entra na conferência de "sem
+      // origem" para que o dígito de "GPW fase 2" não seja marcado.
+      nomesCentros = centrosCache.centros
+        .map((centro) => (centro && typeof centro.name === 'string' ? centro.name.trim() : null))
+        .filter((nome) => Boolean(nome));
       return centrosCache;
     })();
     try {
@@ -289,7 +305,7 @@ export function criarSessao({ rpc, hoje } = {}) {
   }
 
   function marcarTexto(texto) {
-    return marcarTextoBase(texto, { mascara, citados });
+    return marcarTextoBase(texto, { mascara, citados, nomesCentros });
   }
 
   /**

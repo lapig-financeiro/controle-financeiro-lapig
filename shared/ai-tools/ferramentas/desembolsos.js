@@ -61,7 +61,10 @@ function recursosValidos(recursos) {
     (recursos.a_receber === undefined || recursos.a_receber === null || numeroOuNulo(recursos.a_receber) !== null) &&
     (recursos.rendimento_bruto === undefined ||
       recursos.rendimento_bruto === null ||
-      numeroOuNulo(recursos.rendimento_bruto) !== null)
+      numeroOuNulo(recursos.rendimento_bruto) !== null) &&
+    (recursos.rendimento_liquido === undefined ||
+      recursos.rendimento_liquido === null ||
+      numeroOuNulo(recursos.rendimento_liquido) !== null)
   );
 }
 
@@ -182,6 +185,7 @@ export async function executar(ctx, args) {
   let recebido = null;
   let aReceber = null;
   let rendimentoBruto = null;
+  let rendimentoLiquido = null;
   if (dados.recursos && typeof dados.recursos === 'object') {
     const noRecebido = registrarMoeda(
       ctx,
@@ -195,11 +199,23 @@ export async function executar(ctx, args) {
       'Recursos a receber',
       semDocumento('recursos lidos do balancete vigente', 'get_repasses_v2')
     );
-    const noRendimento = registrarMoeda(
+    const noRendimentoBruto = registrarMoeda(
       ctx,
       dados.recursos.rendimento_bruto,
       'Rendimento bruto de aplicação',
-      semDocumento('rendimento lido do balancete vigente', 'get_repasses_v2')
+      semDocumento(
+        'rendimento bruto de aplicação lido do balancete vigente',
+        'get_repasses_v2'
+      )
+    );
+    const noRendimentoLiquido = registrarMoeda(
+      ctx,
+      dados.recursos.rendimento_liquido,
+      'Rendimento líquido de aplicação',
+      semDocumento(
+        'rendimento líquido lido do balancete vigente; já incluído no saldo disponível, não somar',
+        'get_repasses_v2'
+      )
     );
     if (noRecebido) {
       recebido = noRecebido.id;
@@ -209,9 +225,13 @@ export async function executar(ctx, args) {
       aReceber = noAReceber.id;
       nos.push(noAReceber);
     }
-    if (noRendimento) {
-      rendimentoBruto = noRendimento.id;
-      nos.push(noRendimento);
+    if (noRendimentoBruto) {
+      rendimentoBruto = noRendimentoBruto.id;
+      nos.push(noRendimentoBruto);
+    }
+    if (noRendimentoLiquido) {
+      rendimentoLiquido = noRendimentoLiquido.id;
+      nos.push(noRendimentoLiquido);
     }
   }
 
@@ -222,7 +242,12 @@ export async function executar(ctx, args) {
       data_balancete: dataBalancete ? dataBalancete.id : null,
       recursos:
         dados.recursos && typeof dados.recursos === 'object'
-          ? { recebido, a_receber: aReceber, rendimento_bruto: rendimentoBruto }
+          ? {
+              recebido,
+              a_receber: aReceber,
+              rendimento_bruto: rendimentoBruto,
+              rendimento_liquido: rendimentoLiquido,
+            }
           : null,
       nos: nos.map(mini),
     },

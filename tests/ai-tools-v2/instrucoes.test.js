@@ -1,52 +1,81 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 
 import { INSTRUCOES, especificacoes } from '../../shared/ai-tools/index.js';
 
-const aqui = dirname(fileURLToPath(import.meta.url));
-const fonteMcp = readFileSync(resolve(aqui, '..', '..', 'mcp', 'src', 'index.js'), 'utf8');
-
-/** O bloco das quatro regras, idêntico no MCP e no pacote da Análise. */
-function quatroRegras(texto) {
-  const inicio = texto.indexOf('Quatro regras valem para todas as tools:');
-  const fim = texto.indexOf('alfabética e não significa prioridade.');
-  if (inicio === -1 || fim === -1) return null;
-  return texto
-    .slice(inicio, fim + 'alfabética e não significa prioridade.'.length)
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const TEXTO = INSTRUCOES.replace(/\s+/g, ' ');
 
 describe('INSTRUCOES', () => {
-  it('repete as quatro regras do MCP palavra por palavra', () => {
-    const doMcp = quatroRegras(fonteMcp);
-    const daAnalise = quatroRegras(INSTRUCOES);
-    expect(doMcp).not.toBeNull();
-    expect(daAnalise).not.toBeNull();
-    expect(daAnalise).toBe(doMcp);
+  it('não cita ferramenta nem campo que a Análise não tem', () => {
+    for (const proibido of [
+      'panorama',
+      'simular_alocacao',
+      'compromissos_cobertura',
+      'situacao_dado',
+      'caixa.cobertura',
+      'risco_devolucao.base',
+      'truncado',
+    ]) {
+      expect(TEXTO).not.toContain(proibido);
+    }
   });
 
-  it('acrescenta as regras da Análise', () => {
-    expect(INSTRUCOES).toContain('Toda resposta é feita de blocos');
-    expect(INSTRUCOES).toContain('máximo 3 frases');
-    expect(INSTRUCOES).toContain('Sem dado, diga que não há.');
-    expect(INSTRUCOES).toContain('Número só por "criar_bloco" ou "calcular"');
-    expect(INSTRUCOES).toContain('⟦P1⟧');
+  it('mantém as quatro regras adaptadas às ferramentas reais', () => {
+    expect(TEXTO).toContain('1. Não calcule');
+    expect(TEXTO).toContain('"calcular"');
+    expect(TEXTO).toContain('2. Não recomende — apresente');
+    expect(TEXTO).toContain('"listar_centros"');
+    expect(TEXTO).toContain('"explicar_livre"');
+    expect(TEXTO).toContain('"situacao_centro"');
+    expect(TEXTO).toContain('"desembolsos"');
+    expect(TEXTO).toContain('"termos_contrato"');
+    expect(TEXTO).toContain('"pendencias"');
+    expect(TEXTO).toContain('"bolsas"');
+    expect(TEXTO).toContain('3. Diga o que o número cobre');
+    expect(TEXTO).toContain('data do balancete');
+    expect(TEXTO).toContain('centro sem plano ou sem balancete');
+    expect(TEXTO).toContain('vigência do cadastro contra a do contrato');
+    expect(TEXTO).toContain('folha atrasada');
+    expect(TEXTO).toContain('rendimento líquido');
+    expect(TEXTO).toContain('já está incluído no saldo disponível');
+    expect(TEXTO).toContain('4. "listar_centros" descreve os centros');
+    expect(TEXTO).toContain('não ranqueia mérito');
   });
 
-  it('proíbe especular quando o dado não vem de nenhuma ferramenta', () => {
-    const texto = INSTRUCOES.replace(/\s+/g, ' ');
-    expect(texto).toContain('não está disponível');
-    expect(texto).toContain('Diga o porquê só quando a ferramenta informar o motivo');
-    expect(texto).toContain('sem supor onde estaria nem por quê');
-    expect(texto).not.toContain('diga que não há e por quê');
+  it('proíbe id de nó no texto e número sem nó citado', () => {
+    expect(TEXTO).toContain('Não escreva id de nó ("r2.7", "c1", "{{r2.7}}")');
+    expect(TEXTO).toContain('nem em bloco de texto');
+    expect(TEXTO).toContain('Número no texto só se for valor de nó já citado');
+    expect(TEXTO).toContain('até 3 frases corridas');
+    expect(TEXTO).toContain('sem repetir tabela markdown');
+  });
+
+  it('explica o rótulo de linha da tabela', () => {
+    expect(TEXTO).toContain('a primeira coluna pode ser um rótulo de linha em texto literal');
+    expect(TEXTO).toContain('as demais colunas citam só ids de nós');
+    expect(TEXTO).toContain('Texto literal nas colunas 2 em diante é recusado');
+  });
+
+  it('mantém as regras de bloco, dado ausente e nome mascarado', () => {
+    expect(TEXTO).toContain('Toda resposta é feita de blocos');
+    expect(TEXTO).toContain('Número só por "criar_bloco" ou "calcular"');
+    expect(TEXTO).toContain('Sem dado, diga que não há.');
+    expect(TEXTO).toContain('⟦P1⟧');
+  });
+
+  it('não manda especular quando o dado não vem de nenhuma ferramenta', () => {
+    expect(TEXTO).toContain('não está disponível');
+    expect(TEXTO).toContain('Diga o porquê só quando a ferramenta informar o motivo');
+    expect(TEXTO).toContain('sem supor onde estaria nem por quê');
+    expect(TEXTO).not.toContain('diga que não há e por quê');
   });
 });
 
 describe('especificacoes', () => {
   const specs = especificacoes();
+
+  function descricao(nome) {
+    return specs.find((spec) => spec.function.name === nome).function.description;
+  }
 
   it('tem uma função por ferramenta do contrato §4', () => {
     expect(specs).toHaveLength(9);
@@ -85,5 +114,20 @@ describe('especificacoes', () => {
         expect(Object.keys(properties), spec.function.name).toContain(exigido);
       }
     }
+  });
+
+  it('desembolsos: a ressalva de somar é do rendimento líquido, nunca do bruto', () => {
+    const texto = descricao('desembolsos');
+    expect(texto).toContain('Rendimento líquido');
+    expect(texto).toContain('já incluído no saldo disponível; não somar');
+    expect(texto).not.toMatch(/rendimento bruto[^.]*já está incluído/i);
+    expect(texto).not.toMatch(/rendimento bruto não está incluído/i);
+  });
+
+  it('criar_bloco: primeira coluna aceita rótulo literal; as demais, só id de nó', () => {
+    const spec = specs.find((item) => item.function.name === 'criar_bloco');
+    expect(spec.function.description).toContain('rótulo de linha em texto literal');
+    expect(spec.function.parameters.properties.linhas.description).toContain('rótulo de linha');
+    expect(spec.function.parameters.properties.linhas.description).toContain('nas demais, só ids de nós');
   });
 });
