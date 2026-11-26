@@ -26,10 +26,6 @@ const MENSAGEM_EXCLUIR = 'Não foi possível excluir a conversa.';
 const MENSAGEM_NAO_DISPONIVEL = 'Esta conversa não está mais disponível.';
 const MENSAGEM_TITULO = 'O título precisa ter entre 1 e 120 caracteres.';
 
-function modoExemplo(env = import.meta.env) {
-  return Boolean(env?.DEV && env?.VITE_DADOS === 'exemplo');
-}
-
 function dataValida(valor) {
   if (typeof valor !== 'string' || !valor.trim()) return false;
   const data = new Date(valor);
@@ -97,7 +93,7 @@ function mensagemDaRpc(error, padrao) {
  * é o `atualizada_em` do último item da página anterior.
  */
 export async function listarConversas({ limite = 30, antes = null } = {}) {
-  if (modoExemplo()) {
+  if (import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo') {
     const modulo = await import('./analiseExemplo.js');
     return modulo.listarConversasExemplo({ limite, antes });
   }
@@ -125,7 +121,7 @@ export async function lerConversa(id) {
   if (typeof id !== 'string' || !UUID.test(id)) {
     return { dados: null, erro: MENSAGEM_LER };
   }
-  if (modoExemplo()) {
+  if (import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo') {
     const modulo = await import('./analiseExemplo.js');
     return modulo.lerConversaExemplo(id);
   }
@@ -151,7 +147,7 @@ export async function renomearConversa(id, titulo) {
   if (limpo.length < 1 || limpo.length > 120) {
     return { dados: null, erro: MENSAGEM_TITULO };
   }
-  if (modoExemplo()) {
+  if (import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo') {
     const modulo = await import('./analiseExemplo.js');
     return modulo.renomearConversaExemplo(id, limpo);
   }
@@ -173,7 +169,7 @@ export async function excluirConversa(id) {
   if (typeof id !== 'string' || !UUID.test(id)) {
     return { dados: null, erro: MENSAGEM_EXCLUIR };
   }
-  if (modoExemplo()) {
+  if (import.meta.env.DEV && import.meta.env.VITE_DADOS === 'exemplo') {
     const modulo = await import('./analiseExemplo.js');
     return modulo.excluirConversaExemplo(id);
   }
