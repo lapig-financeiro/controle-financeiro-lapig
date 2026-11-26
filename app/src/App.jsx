@@ -57,6 +57,13 @@ export function App() {
   const genResumoRef = useRef(0);
   const genSinoRef = useRef(0);
   const salvandoFiltroRef = useRef(false);
+  // Id do usuário já aplicado: o Supabase repete `SIGNED_IN` toda vez que a aba
+  // do navegador volta a ficar visível; reaplicar o mesmo usuário recarregava o
+  // perfil e desmontava a página aberta (a Análise perdia pergunta e respostas).
+  const usuarioIdRef = useRef(null);
+  // A Análise fica montada (escondida) depois da primeira visita, para a
+  // conversa sobreviver à troca de aba do site.
+  const [analiseMontada, setAnaliseMontada] = useState(false);
 
   useEffect(() => {
     montadoRef.current = true;
@@ -76,7 +83,9 @@ export function App() {
   }, []);
 
   const aplicarUsuario = useCallback(async (user) => {
+    usuarioIdRef.current = user?.id ?? null;
     if (!user) {
+      setAnaliseMontada(false);
       genResumoRef.current += 1;
       genSinoRef.current += 1;
       setUsuario(null);
@@ -144,6 +153,7 @@ export function App() {
           if (ativo) aplicarUsuario(null);
         }, 0);
       } else if (evento === 'SIGNED_IN' && sessao?.user) {
+        if (sessao.user.id === usuarioIdRef.current) return;
         setTimeout(() => {
           if (ativo) aplicarUsuario(sessao.user);
         }, 0);
@@ -158,6 +168,11 @@ export function App() {
 
   const papelConhecido = !carregandoSessao && !carregandoPerfil && perfil.erro === null && perfil.role !== null;
   const isAdmin = papelConhecido && perfil.role === 'admin';
+  const naAnalise = rota.pagina === 'analise';
+
+  useEffect(() => {
+    if (naAnalise && isAdmin) setAnaliseMontada(true);
+  }, [naAnalise, isAdmin]);
   const podeBolsistas = papelConhecido && (isAdmin || perfil.role === 'professor');
 
   const carregarResumo = useCallback(async () => {
@@ -374,10 +389,8 @@ export function App() {
       );
     }
 
-    if (rota.pagina === 'analise') {
-      if (!papelConhecido || !isAdmin) return null;
-      return <Analise />;
-    }
+    // A Análise é desenhada fora daqui (ver `analiseMontada`).
+    if (rota.pagina === 'analise') return null;
 
     return (
       <Projetos
@@ -419,7 +432,14 @@ export function App() {
         }
         onNavegar={navegarPara}
       />
-      <main>{renderizarPagina()}</main>
+      <main>
+        {renderizarPagina()}
+        {analiseMontada && isAdmin && !perfil.erro && (
+          <div hidden={!naAnalise}>
+            <Analise ativa={naAnalise} />
+          </div>
+        )}
+      </main>
     </div>
   );
 }

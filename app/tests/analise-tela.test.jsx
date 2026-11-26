@@ -163,7 +163,7 @@ afterEach(() => {
 });
 
 describe('pergunta e envio', () => {
-  it('vazia ou só espaços não envia; 2.001 desabilita; Enter não envia; Ctrl+Enter envia', async () => {
+  it('vazia ou só espaços não envia; 2.001 desabilita; Shift+Enter não envia; Enter envia', async () => {
     const executarAnalise = criarExecucao();
     renderizar(executarAnalise);
 
@@ -186,18 +186,18 @@ describe('pergunta e envio', () => {
 
     await digitar('Quanto o 30.910 tem livre?');
     campo.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
     );
     await tick();
     expect(executarAnalise).not.toHaveBeenCalled();
 
     campo.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'Enter',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true,
-      })
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     );
     await tick();
     expect(executarAnalise).toHaveBeenCalledTimes(1);

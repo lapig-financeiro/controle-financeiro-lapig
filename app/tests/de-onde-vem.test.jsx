@@ -521,4 +521,46 @@ describe('DeOndeVem', () => {
     expect(itemLegado.textContent).not.toContain('achado pelo código');
     expect(itemLegado.querySelector('.aviso-falha').textContent).toContain('Falha na nova tentativa.');
   });
+
+  it('folha com ref aberta direto no painel: o valor do topo consulta a origem', async () => {
+    const buscarOrigem = vi.fn().mockResolvedValue({
+      dados: { tipo: 'legado', valor: 212800, documento: null, fato: null, busca: null, nota: 'sem arquivo' },
+      erro: null,
+    });
+    const folha = {
+      valor: 212800,
+      rotulo: 'Bolsas',
+      tipo: 'legado',
+      chave: 'linha:1',
+      sinal: 1,
+      ref: { alvo_tabela: 'work_plan_lines', alvo_id: 'l-1', campo: 'valor' },
+      partes: [],
+    };
+    render(<DeOndeVem arvore={folha} buscarOrigem={buscarOrigem} />, document.body);
+    await tick();
+
+    expect(document.body.textContent).toContain('anterior à rastreabilidade: a linha é procurada ao abrir');
+    const botao = document.querySelector('button[aria-label*="Ver origem"]');
+    expect(botao).not.toBeNull();
+    botao.click();
+    await tick();
+    expect(buscarOrigem).toHaveBeenCalledWith(folha.ref);
+  });
+
+  it('nó calculado aberto direto continua sem clique no topo', async () => {
+    const buscarOrigem = vi.fn();
+    render(
+      <DeOndeVem
+        arvore={{ valor: 10, rotulo: 'Total', tipo: 'calculo', sinal: 1, partes: [
+          { valor: 10, rotulo: 'A', tipo: 'digitado', sinal: 1, partes: [] },
+        ] }}
+        buscarOrigem={buscarOrigem}
+      />,
+      document.body
+    );
+    await tick();
+    const destaque = document.querySelector('.de-onde-vem').firstElementChild;
+    expect(destaque.querySelector('button[aria-label*="Ver origem"]')).toBeNull();
+  });
 });
+

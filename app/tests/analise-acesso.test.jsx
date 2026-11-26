@@ -14,6 +14,7 @@ const {
   origemMock,
   termosContratoMock,
   arquivoDeOrigemMock,
+  ouvinteAuth,
 } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
   carregarPerfilMock: vi.fn(),
@@ -26,6 +27,7 @@ const {
   origemMock: vi.fn(),
   termosContratoMock: vi.fn(),
   arquivoDeOrigemMock: vi.fn(),
+  ouvinteAuth: { atual: null },
 }));
 
 vi.mock('../src/servicos/supabase.js', () => ({
@@ -34,9 +36,10 @@ vi.mock('../src/servicos/supabase.js', () => ({
   supabase: {
     auth: {
       getSession: getSessionMock,
-      onAuthStateChange: vi.fn(() => ({
-        data: { subscription: { unsubscribe: vi.fn() } },
-      })),
+      onAuthStateChange: vi.fn((callback) => {
+        ouvinteAuth.atual = callback;
+        return { data: { subscription: { unsubscribe: vi.fn() } } };
+      }),
     },
   },
   carregarPerfil: carregarPerfilMock,
@@ -172,5 +175,41 @@ describe('acesso à Análise', () => {
       email: 'pessoa@example.org',
     });
     await tick();
+  });
+
+  it('a pergunta digitada sobrevive à troca de aba do site e à volta da aba do navegador', async () => {
+    carregarPerfilMock.mockResolvedValue({
+      erro: null,
+      role: 'admin',
+      nome: 'Pessoa Admin',
+      email: 'admin@example.org',
+    });
+    window.location.hash = '#/analise';
+
+    render(<App />, document.body);
+
+    const campo = await esperarPor(() => document.querySelector('.analise__campo'));
+    campo.value = 'Quanto o 30.910 tem livre?';
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick();
+
+    // Troca de aba do site: a Análise fica escondida, não desmontada.
+    window.location.hash = '#/projetos';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await esperarPor(() => document.querySelector('.analise')?.closest('[hidden]'));
+    expect(document.querySelector('.analise').closest('[hidden]')).not.toBeNull();
+
+    window.location.hash = '#/analise';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await esperarPor(() => !document.querySelector('.analise')?.closest('[hidden]'));
+    expect(document.querySelector('.analise__campo').value).toBe('Quanto o 30.910 tem livre?');
+
+    // Volta da aba do navegador: o Supabase repete SIGNED_IN do mesmo usuário.
+    const chamadasPerfil = carregarPerfilMock.mock.calls.length;
+    ouvinteAuth.atual('SIGNED_IN', { user: { id: 'u-1', email: 'pessoa@example.org' } });
+    await tick();
+    await tick();
+    expect(carregarPerfilMock.mock.calls.length).toBe(chamadasPerfil);
+    expect(document.querySelector('.analise__campo').value).toBe('Quanto o 30.910 tem livre?');
   });
 });

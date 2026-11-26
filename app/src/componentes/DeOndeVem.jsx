@@ -393,6 +393,12 @@ export function DeOndeVem({
   };
 
   const falhaRaiz = falhas.get('0');
+  // A Análise pode abrir o painel direto numa folha (ex.: a linha do plano
+  // citada numa tabela). Sem partes abaixo, o valor do topo é o único caminho
+  // até o documento: ele abre a origem como a folha abriria dentro da árvore.
+  const raizEhFolhaComRef =
+    !(Array.isArray(arvore.partes) && arvore.partes.length > 0) && Boolean(arvore.ref);
+  const estadoRaiz = estadoFolhas['0'];
   const contextoRaiz = [
     arvore.conta || null,
     arvore.data_referencia ? `balancete de ${dataCompacta(arvore.data_referencia)}` : null,
@@ -409,11 +415,27 @@ export function DeOndeVem({
             valor={arvore.valor}
             centavos
             problema={Number(arvore.valor) < 0}
-            semOrigem="Total calculado pelas partes abaixo"
+            origem={raizEhFolhaComRef ? { resumo: arvore.rotulo } : null}
+            onOrigem={raizEhFolhaComRef ? () => consultarFolha(arvore, '0') : null}
+            semOrigem={raizEhFolhaComRef ? '' : 'Total calculado pelas partes abaixo'}
           />
         }
         contexto={contextoRaiz || undefined}
       />
+
+      {raizEhFolhaComRef && textoFolha(arvore, estadoRaiz) && (
+        <p class="de-onde-vem__nota">{textoFolha(arvore, estadoRaiz)}</p>
+      )}
+
+      {estadoRaiz?.carregando && (
+        <p class="de-onde-vem__status-folha" role="status">
+          Consultando origem…
+        </p>
+      )}
+
+      {estadoRaiz?.erro && (
+        <AvisoFalha mensagem={estadoRaiz.erro} aoTentarNovamente={() => consultarFolha(arvore, '0')} />
+      )}
 
       {arvore.tipo === 'digitado' && (
         <p class="de-onde-vem__nota">valor digitado, sem documento</p>

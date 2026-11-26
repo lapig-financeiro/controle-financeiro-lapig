@@ -216,6 +216,15 @@ Relatório `relatorios/analise-2a-tela.md`. **No ar em 26/11** com o ok do Victo
 45860524317 e deploy 45860524472 verdes; bundle `index-BT-kQVSQ.js` com a tela e sem dado de exemplo). **Falta:**
 o Victor fazer 5 perguntas reais com o login dele.
 
+**Primeiras perguntas reais do Victor (26/11)**: ele estranhou três coisas, todas corrigidas pelo Claude: o Enter agora
+envia (Shift+Enter quebra a linha); a conversa sumia ao trocar de aba, porque o `SIGNED_IN` repetido do Supabase
+desmontava a tela e a troca de aba do site também (agora a Análise fica montada e escondida); e o painel abria num beco
+sem saída quando o modelo citava a própria linha do plano (agora o valor do topo abre o documento). Conferido em
+produção: o realizado abre o balancete na linha e o previsto abre o plano na linha. App 338, raiz 931, lint e build
+verdes. Relatório `relatorios/analise-primeiras-perguntas.md`. O Victor quer **histórico** (desistiu de apagar em
+180 dias) e uma tela com cara de **conversa contínua**, com "Nova conversa". Desenho conversado com o GPT-6.2 Sol
+medium (ver relatório); falta a decisão do Victor.
+
 **Próximo passo, nesta ordem:**
 1. As 5 perguntas reais do Victor na tela publicada (anotar aqui o que ele estranhar).
 2. Resto da Etapa 2: 072 `projecao_bolsas_v2` (porta `app/src/servicos/projecao.js` para SQL) e a

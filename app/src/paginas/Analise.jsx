@@ -163,6 +163,7 @@ export function Analise({
   carregarExplicacao = carregarExplicacaoPadrao,
   consultarOrigem = consultarOrigemPadrao,
   carregarTermos = carregarTermosPadrao,
+  ativa = true,
 } = {}) {
   const campoId = useId();
   const [pergunta, setPergunta] = useState('');
@@ -192,6 +193,17 @@ export function Analise({
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
+
+  // O App deixa a tela montada (escondida) quando se troca de aba do site;
+  // ao sair, fecha painel e documento para não ficarem presos sobre a outra
+  // página. A pergunta, as respostas e a análise em curso seguem intactas.
+  useEffect(() => {
+    if (ativa) return;
+    painelGenRef.current += 1;
+    setPainel(null);
+    setVoltarConta(null);
+    setDocumento(null);
+  }, [ativa]);
 
   const atualizarAnalise = (id, atualizador) => {
     if (!montadoRef.current) return;
@@ -736,7 +748,9 @@ export function Analise({
     pergunta.length <= LIMITE_PERGUNTA;
 
   const aoTeclar = (evento) => {
-    if (evento.key === 'Enter' && (evento.ctrlKey || evento.metaKey)) {
+    // Enter envia, como nas outras IAs; Shift+Enter quebra a linha. Durante a
+    // composição de acento (IME) o Enter confirma o caractere, não envia.
+    if (evento.key === 'Enter' && !evento.shiftKey && !evento.isComposing) {
       evento.preventDefault();
       enviar();
     }
