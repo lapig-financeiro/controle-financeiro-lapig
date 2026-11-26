@@ -335,3 +335,13 @@ describe('A7 — nome de centro, ano sozinho e valor em R$', () => {
     expect(marcarNumeros('dez/2027', [])).toEqual([]);
   });
 });
+
+describe('semMarkdownDeEnfase', () => {
+  it('tira negrito e título de markdown sem mexer em asterisco solto', async () => {
+    const { semMarkdownDeEnfase } = await import('../../shared/ai-tools/texto.js');
+    expect(semMarkdownDeEnfase('O ICS tem **R$ 514.864,60** livres.')).toBe('O ICS tem R$ 514.864,60 livres.');
+    expect(semMarkdownDeEnfase('## Leitura\nfim')).toBe('Leitura\nfim');
+    expect(semMarkdownDeEnfase('a*b e 2*3')).toBe('a*b e 2*3');
+  });
+});
+

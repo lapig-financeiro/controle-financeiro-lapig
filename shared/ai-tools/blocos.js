@@ -31,6 +31,33 @@ function citar(citados, nos) {
   }
 }
 
+const MOTIVO_CELULA_VAZIA = 'sem valor para esta coluna';
+
+function mesmoNo(a, b) {
+  if (!a || !b) return false;
+  return (
+    a.rotulo === b.rotulo &&
+    Number(a.valor) === Number(b.valor) &&
+    JSON.stringify(a.ref ?? null) === JSON.stringify(b.ref ?? null)
+  );
+}
+
+/**
+ * `filho` está abaixo de `pai` por uma cadeia de filhos únicos: é o mesmo
+ * número um nível abaixo (o "Previsto" e a única linha do plano). Citar os
+ * dois na mesma linha da tabela põe um valor na coluna errada.
+ */
+function abaixoPorFilhoUnico(pai, filho) {
+  if (pai?.origem?.tipo !== 'no' || filho?.origem?.tipo !== 'no') return false;
+  let atual = pai.origem.no;
+  const alvo = filho.origem.no;
+  while (atual && Array.isArray(atual.partes) && atual.partes.length === 1) {
+    atual = atual.partes[0];
+    if (mesmoNo(atual, alvo)) return true;
+  }
+  return false;
+}
+
 function pareceIdDeNo(valor) {
   return /^[rc]\d+(?:\.\d+)?$/.test(valor);
 }
@@ -155,6 +182,7 @@ export function criarBlocos({ registro, citados = [], mascara, nomesCentros }) {
         return erro(`a linha ${indiceLinha + 1} não tem o mesmo número de colunas.`);
       }
       const saida = [];
+      const nosDaLinha = [];
       for (let indiceColuna = 0; indiceColuna < linha.length; indiceColuna += 1) {
         const bruto = linha[indiceColuna];
         const primeira = indiceColuna === 0;
@@ -191,8 +219,19 @@ export function criarBlocos({ registro, citados = [], mascara, nomesCentros }) {
           continue;
         }
 
+        if (!primeira && bruto === null) {
+          // Célula sem nó (ex.: grupo sem realizado no balancete): a tela
+          // mostra "—". A unidade é a da coluna, resolvida depois do laço.
+          saida.push({
+            valor: null,
+            unidade: null,
+            origem: { tipo: 'sem_documento', motivo: MOTIVO_CELULA_VAZIA, consulta: '' },
+          });
+          nosDaLinha.push(null);
+          continue;
+        }
         if (typeof bruto !== 'string') {
-          return erro('toda célula da tabela é o id de um nó, não um valor literal.');
+          return erro('toda célula da tabela é o id de um nó ou null (célula vazia), não um valor literal.');
         }
         const no = registro.obter(bruto.trim());
         if (!no) return erro(`nó não encontrado: ${bruto}`);
@@ -200,8 +239,30 @@ export function criarBlocos({ registro, citados = [], mascara, nomesCentros }) {
         if (conflito) return conflito;
         saida.push({ valor: no.valor, unidade: no.unidade, origem: origemDoNo(no) });
         usados.push(no);
+        nosDaLinha.push(no);
+      }
+      for (let a = 0; a < nosDaLinha.length; a += 1) {
+        for (let b = 0; b < nosDaLinha.length; b += 1) {
+          if (a === b || !nosDaLinha[a] || !nosDaLinha[b]) continue;
+          if (abaixoPorFilhoUnico(nosDaLinha[a], nosDaLinha[b])) {
+            return erro(
+              `na linha ${indiceLinha + 1}, a coluna "${colunas[b + 1].rotulo}" repete o valor da ` +
+                `coluna "${colunas[a + 1].rotulo}" (é o mesmo item, um nível abaixo). Se não há nó ` +
+                'para a coluna, use null (célula vazia).'
+            );
+          }
+        }
       }
       linhas.push(saida);
+    }
+
+    for (const linha of linhas) {
+      linha.forEach((celula, indice) => {
+        if (celula.unidade === null) celula.unidade = colunas[indice].unidade ?? 'texto';
+      });
+    }
+    if (colunas.some((coluna, indice) => indice > 0 && coluna.unidade === null)) {
+      return erro('toda coluna precisa de ao menos uma célula com nó.');
     }
 
     if (tituloComNumeroSemOrigem(titulo, citados, nomesDaSessao(), usados)) {

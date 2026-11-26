@@ -302,7 +302,19 @@ export function marcarNumeros(texto, citados = [], { nomesCentros = [] } = {}) {
 }
 
 /** Marca o texto já mascarado; devolve o texto e os intervalos sem origem. */
+/**
+ * A tela mostra o texto final como texto simples: negrito e título de
+ * markdown viravam asteriscos e cerquilhas literais ("**R$ 514.864,60**").
+ */
+export function semMarkdownDeEnfase(texto) {
+  return String(texto)
+    .replace(/\*\*([^*\n]+?)\*\*/g, '$1')
+    .replace(/__([^_\n]+?)__/g, '$1')
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, '');
+}
+
 export function marcarTexto(texto, { mascara, citados = [], nomesCentros = [] } = {}) {
-  const limpo = mascara ? mascara.texto(texto) : texto;
+  const simples = semMarkdownDeEnfase(texto);
+  const limpo = mascara ? mascara.texto(simples) : simples;
   return { texto: limpo, semOrigem: marcarNumeros(limpo, citados, { nomesCentros }) };
 }

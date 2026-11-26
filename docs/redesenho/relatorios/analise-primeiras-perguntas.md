@@ -103,3 +103,26 @@ O componente é o mesmo da página do projeto, que ganha as duas melhorias. Test
 O exemplo não tem folha de balancete com arquivo, então o atalho do balancete fica para conferir em produção.
 
 Verificação: lint limpo; raiz 932; worker 204; app 339; builds `app` e `edge` ok.
+
+## 6. Conferência em produção depois da publicação (26/11)
+
+Pergunta real "Quanto o 30.109 tem livre hoje, e de onde vem?":
+- O texto melhorou: resposta direta com o número, explicação de previsto, realizado e comprometido, e "as tabelas
+  abaixo".
+- O atalho "Ver no plano ›" apareceu nas folhas do plano.
+- **Defeito novo, mais grave**: na tabela "Previsto, realizado e livre por grupo", Passagens, Diárias e
+  Investimento mostravam **Realizado = previsto** (R$ 141.000,00 etc.). Esses grupos não têm lançamento no
+  balancete, a árvore não traz nó de realizado, e o modelo preencheu a coluna com a única linha do plano, que fica
+  logo abaixo do "Previsto". As instruções novas, que pedem para explicar a conta, levaram o modelo a montar uma
+  tabela maior, e a falta de célula vazia apareceu.
+- O número saiu entre `**…**`, porque a tela não interpreta markdown.
+
+Correções:
+- `criar_bloco` aceita `null` nas colunas 2 em diante, e a tela mostra "—" com "sem valor para esta coluna".
+  A linha que cita um nó e o seu filho único é recusada, com a instrução de usar `null`. Uma coluna só de vazias
+  é recusada.
+- `INSTRUCOES` 5 e 12: célula sem nó é `null`, nunca outro nó parecido; texto sem markdown.
+- `semMarkdownDeEnfase` tira `**`, `__` e `#` de título antes de marcar o texto (vale para o Worker e para a Edge).
+- Testes: `tests/ai-tools-v2/blocos.test.js` (a recusa e a célula vazia), `texto.test.js` e
+  `app/tests/bloco-analise-celula-vazia.test.jsx`. Bancada real 4/4 nas repetições (a pergunta 3 teve um texto fraco
+  uma vez e passou nas 3 seguintes).

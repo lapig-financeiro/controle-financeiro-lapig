@@ -239,4 +239,7 @@ Além disso:
   chega ao número em palavras do dia a dia, cada termo (previsto, realizado, comprometido, livre)
   explicado na primeira vez, e o que olhar nos blocos abaixo.
 - Em tabelas (`criar_bloco`), a **primeira coluna** pode ser texto literal (rótulo de linha) e as
-  demais colunas citam ids de nós.
+  demais colunas citam ids de nós ou **`null`** (célula vazia, a tela mostra "—"; 26/11). A linha que cita
+  um nó e o seu filho único (o mesmo valor um nível abaixo, como "Previsto" e a única linha do plano) é
+  recusada: foi assim que "Realizado" mostrou o previsto no 30.109.
+- O texto final perde negrito e título de markdown antes da marcação (`semMarkdownDeEnfase`).

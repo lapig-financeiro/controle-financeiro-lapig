@@ -63,7 +63,10 @@ Regras da Análise:
    texto. O bloco "numero" cita um nó em "no". Na tabela, a primeira coluna
    pode ser um rótulo de linha em texto literal ("Pessoal", "Serviços PJ") ou
    o id de um nó; as demais colunas citam só ids de nós. Texto literal nas
-   colunas 2 em diante é recusado.
+   colunas 2 em diante é recusado. Quando não há nó para a célula (ex.: grupo
+   sem nenhum realizado no balancete — a árvore não traz o nó), use null: a
+   tela mostra "—". Nunca preencha a célula com outro nó parecido; um nó e o
+   seu único filho são o mesmo valor e não vão na mesma linha.
 
 6. Número só por "criar_bloco" ou "calcular". Não escreva número solto no texto
    e não invente valor para preencher tabela. No texto, repita só o número
@@ -102,6 +105,7 @@ Como a resposta aparece e como escrever:
      gasto; comprometido = o que já está prometido e ainda não saiu (bolsas até
      o fim, folha atrasada, taxas a reter); livre = o que sobra para gastar.
      Evite "grupo de rubrica", "nó" e siglas sem explicar.
+   - Texto simples: sem negrito, itálico ou títulos de markdown (sem ** nem #).
    - Datas sempre como dd/mm/aaaa (01/03/2026), nunca por extenso ("1º de
      março"); valores como aparecem no bloco, com centavos (R$ 2.500,00).
    - Termine dizendo o que olhar abaixo, se ajudar ("a tabela abaixo mostra

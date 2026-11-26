@@ -439,3 +439,69 @@ describe('ids dos blocos', () => {
     expect(bloco.tabela.linhas[0][0].origem.tipo).toBe('sem_documento');
   });
 });
+
+describe('criarBloco tabela — célula vazia e valor repetido (retorno do 30.109, 26/11)', () => {
+  async function arvore(sessao) {
+    return JSON.parse((await sessao.executar('explicar_livre', { project_id: '30.901' })).paraModelo);
+  }
+
+  it('recusa o Previsto e a sua única linha do plano na mesma linha da tabela', async () => {
+    const sessao = montar();
+    await dadosDosCentros(sessao);
+    const dados = await arvore(sessao);
+    const previsto = porRotulo(dados, 'Previsto — Serviços técnicos');
+    const linhaPlano = dados.nos.find((no) => no.rotulo === 'Serviços técnicos especializados');
+    const resultado = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: 'Por grupo',
+      colunas: ['Grupo', 'Previsto', 'Realizado'],
+      linhas: [['Serviços PJ', previsto.id, linhaPlano.id]],
+    });
+    expect(resultado.erro).toContain('repete o valor');
+    expect(resultado.erro).toContain('use null');
+  });
+
+  it('aceita null como célula vazia, com a unidade da coluna e origem sem documento', async () => {
+    const sessao = montar();
+    await dadosDosCentros(sessao);
+    const dados = await arvore(sessao);
+    const previsto = porRotulo(dados, 'Previsto — Serviços técnicos');
+    const realizado = porRotulo(dados, 'Realizado — Serviços técnicos');
+    const previstoEq = porRotulo(dados, 'Previsto — Equipamentos');
+    const { bloco, erro } = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: 'Por grupo',
+      colunas: ['Grupo', 'Previsto', 'Realizado'],
+      linhas: [
+        ['Serviços PJ', previsto.id, realizado.id],
+        ['Equipamentos', previstoEq.id, null],
+      ],
+    });
+    expect(erro).toBeUndefined();
+    const vazia = bloco.tabela.linhas[1][2];
+    expect(vazia.valor).toBeNull();
+    expect(vazia.unidade).toBe('moeda');
+    expect(vazia.origem.tipo).toBe('sem_documento');
+  });
+
+  it('recusa coluna só de células vazias e null na primeira coluna', async () => {
+    const sessao = montar();
+    await dadosDosCentros(sessao);
+    const dados = await arvore(sessao);
+    const previsto = porRotulo(dados, 'Previsto — Serviços técnicos');
+    const soVazia = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: 'Por grupo',
+      colunas: ['Grupo', 'Previsto', 'Realizado'],
+      linhas: [['Serviços PJ', previsto.id, null]],
+    });
+    expect(soVazia.erro).toContain('ao menos uma célula');
+    const primeiraNula = sessao.criarBloco({
+      tipo: 'tabela',
+      titulo: 'Por grupo',
+      colunas: ['Grupo', 'Previsto'],
+      linhas: [[null, previsto.id]],
+    });
+    expect(primeiraNula.erro).toBeTruthy();
+  });
+});

@@ -155,6 +155,8 @@ describe('especificacoes', () => {
     expect(TEXTO).toContain('previsto = o que o');
     expect(TEXTO).toContain('Não crie bloco de');
     expect(TEXTO).toContain('Datas sempre como dd/mm/aaaa');
+    expect(TEXTO).toContain('use null: a');
+    expect(TEXTO).toContain('sem ** nem #');
   });
 });
 
