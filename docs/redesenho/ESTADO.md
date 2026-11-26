@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 25/11/2026 (revisão da Etapa 1 da Análise por Gemini e MiniMax; bancada de testes do Worker com a 1ª bateria real das 20 perguntas).
+Última atualização: 26/11/2026 (071 `analise_uso` aplicada em produção; a Edge Function da Análise ainda não foi publicada).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -174,12 +174,11 @@ alternativa dele, o laço no navegador, ficou anotada no `analise-plano.md` §2 
 `redesenho/analise-edge` (DeepSeek max, 2 rodadas; MiniMax max revisou; Claude conferiu): núcleo comum
 `worker/src/nucleo.js` com duas entradas (Worker, que segue publicado até a troca, e
 `supabase/functions/analise/`, gerada por `npm --prefix worker run build:edge`), contador diário em tabela pela
-**071 `analise_uso`** (escrita, ensaiada só no PGlite com 6 mutantes, **não aplicada**), ping SSE a cada 15 s e a
+**071 `analise_uso`** (6 mutantes no PGlite; **aplicada em produção em 26/11** pelo cofre, aplicar 45807023653, fechada sem login conferido pela API), ping SSE a cada 15 s e a
 bancada contando chamadas externas. 2ª bateria real pelo núcleo novo: 9/20 de novo (as falhas variam com o modelo),
 e a pergunta 9 chegou a **43 chamadas**, parada pelo teto de 30 consultas: as perguntas "por centro" pedem consulta
 de todos os centros de uma vez (Etapa 2). Testes: Worker 168, raiz 858, lint verde. Relatório
-`relatorios/analise-edge.md`. Falta, com o ok do Victor: publicar no master, ensaiar e aplicar a 071 pelo cofre,
-publicar a Edge Function e provar uma pergunta real (limite de fetch não documentado, `request.signal` e SSE pelo
+`relatorios/analise-edge.md`. Falta, com o ok do Victor: publicar a Edge Function e provar uma pergunta real (limite de fetch não documentado, `request.signal` e SSE pelo
 gateway). A numeração planejada desloca: projeção das bolsas vira 072 e análises salvas 073.
 
 **Próximo passo, nesta ordem:**
