@@ -466,7 +466,8 @@ describe('página do Projeto', () => {
     { semItem: 25, oculto: 0, divergencia: 0 },
     { semItem: 0, oculto: 30, divergencia: 0 },
     { semItem: 0, oculto: 0, divergencia: 10 },
-  ])('concilia o realizado por item ($semItem sem vínculo, $oculto fora da lista, $divergencia de diferença)', async ({ semItem, oculto, divergencia }) => {
+    { semItem: 0, oculto: 0, divergencia: 0, mascarado: true },
+  ])('concilia o realizado por item ($semItem sem vínculo, $oculto fora da lista, $divergencia de diferença, máscara $mascarado)', async ({ semItem, oculto, divergencia, mascarado }) => {
     configurarPadrao();
     const saldo = (await saldoLivreMock()).dados;
     const [pessoal] = (await explicarLivreMock()).dados.partes;
@@ -475,7 +476,8 @@ describe('página do Projeto', () => {
       id, rotulo, valor, partes: [], tipo: 'legado',
       ref: { alvo_tabela: 'plano_rubricas', alvo_id: id, campo: 'valor_previsto' },
     });
-    previsto.partes = [folha('1', 'Material gráfico', 100), folha('2', 'Peças', 80), folha('3', 'Item sem previsão', 0)];
+    const rotuloGrafico = mascarado ? 'Material gráfico ***.***.***-**' : 'Material gráfico';
+    previsto.partes = [folha('1', rotuloGrafico, 100), folha('2', 'Peças', 80), folha('3', 'Item sem previsão', 0)];
     saldo.balancete_id = 'bal-1';
     const realizado = 125 + semItem + oculto + divergencia;
     saldo.rubricas = [{ grupo_code: 'a', rubrica_code: 'a', previsto: 180, realizado, compromissos: 0 }];
@@ -503,12 +505,12 @@ describe('página do Projeto', () => {
     await tick();
     const secao = document.querySelector('.projeto__acordeao-rubrica');
     const [grafico, pecas] = secao.querySelectorAll('tbody tr');
-    expect(grafico.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe(divergencia ? '—' : '125,00');
-    expect(grafico.querySelector('td[data-rotulo="Livre (R$)"]').textContent).toBe(semItem || divergencia ? '—' : '−25,00');
+    expect(grafico.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe(divergencia || mascarado ? '—' : '125,00');
+    expect(grafico.querySelector('td[data-rotulo="Livre (R$)"]').textContent).toBe(semItem || divergencia || mascarado ? '—' : '−25,00');
     expect(pecas.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe(semItem || divergencia ? '—' : '0,00');
     expect(secao.textContent).not.toContain('Item sem previsão');
     expect(secao.textContent.includes('Realizado sem item atribuído')).toBe(Boolean(semItem));
-    expect(secao.textContent.includes('Realizado vinculado fora das linhas acima')).toBe(Boolean(oculto));
+    expect(secao.textContent.includes('Realizado vinculado fora das linhas acima')).toBe(Boolean(oculto || mascarado));
     expect(secao.textContent.includes('não fechou com os totais')).toBe(Boolean(divergencia));
   });
 

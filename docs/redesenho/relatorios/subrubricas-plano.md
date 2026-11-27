@@ -21,7 +21,8 @@ reais em 1280 e 390 px. Nenhuma alteração de banco foi necessária.
 Revisão independente pelo OpenCode com DeepSeek V4.1 Flash max. Após a revisão,
 o acordeão passou a conciliar as contas, o realizado vinculado e o valor sem item
 antes de exibir a divisão. Também distingue um código que é subrubrica por si só
-de um item que precisa de vínculo individual. A API recusou consulta sem sessão.
+de um item que precisa de vínculo individual. Um rótulo com CPF mascarado não é
+usado como identificador para atribuir valores. A API recusou consulta sem sessão.
 
 ## Acordeão e painel de origem
 

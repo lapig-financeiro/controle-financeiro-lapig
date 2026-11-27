@@ -50,14 +50,19 @@ export function indexarExecucaoRubricas(rubricas) {
   }));
 }
 
-export function execucaoDoItem(detalhe, rubrica, linha, chaveUnica) {
+export function execucaoDoItem(detalhe, rubrica, linha, chaveUnica, linhaUnica) {
+  // A máscara protege o rótulo de apresentação, mas muda sua identidade.
+  if (linha.rotulo.includes('***.***.***-**')) return null;
   const item = detalhe?.itens.get(chaveItemPlano(linha.rotulo));
   if (!item || !chaveUnica || !execucaoConferida(detalhe, rubrica) ||
       centavos(item.previsto) !== centavos(linha.valor)) return null;
 
-  const unico = detalhe.itens.size === 1 && detalhe.previstoSemDescricao === 0 &&
+  const unico = linhaUnica && detalhe.itens.size === 1 && detalhe.previstoSemDescricao === 0 &&
     centavos(item.previsto) === centavos(rubrica.previsto);
-  const compromissos = unico || Number(rubrica.compromissos) === 0 ? rubrica.compromissos : null;
+  const totalCompromissos = rubrica.compromissos == null || String(rubrica.compromissos).trim() === ''
+    ? null : Number(rubrica.compromissos);
+  const compromissos = Number.isFinite(totalCompromissos) && (unico || totalCompromissos === 0)
+    ? totalCompromissos : null;
   const realizado = item.vinculado || !detalhe.temSemItem ? item.realizado : null;
   const saldoLivre = detalhe.temSemItem || compromissos == null
     ? null : (centavos(item.saldo) - centavos(compromissos)) / 100;

@@ -200,11 +200,11 @@ function subrubricasDoPlano(noGrupo, grupo, rubricas, execucao) {
       if (!(previsto > 0)) continue;
       if (no.chave === `rubrica:${grupo.grupo_code}:previsto` && linha.rotulo.trim() === grupo.grupo_name.trim()) continue;
       const linhaCobreSubrubrica = rubrica?.rubrica_code !== grupo.grupo_code &&
-        linhas.length === 1 && previsto === numeroFinito(rubrica?.previsto);
+        linhas.length === 1 && previsto === numeroFinito(rubrica?.previsto) &&
+        linha.rotulo.trim() === rubrica.rubrica_name;
       const numeros = detalhe?.itens.size
-        ? execucaoDoItem(detalhe, rubrica, linha, ocorrencias.get(chaveItemPlano(linha.rotulo)) === 1)
-        : linhaCobreSubrubrica && (!detalhe || (execucaoConferida(detalhe, rubrica) &&
-          linha.rotulo.trim() === rubrica.rubrica_name)) ? rubrica : null;
+        ? execucaoDoItem(detalhe, rubrica, linha, ocorrencias.get(chaveItemPlano(linha.rotulo)) === 1, linhas.length === 1)
+        : linhaCobreSubrubrica && (!detalhe || execucaoConferida(detalhe, rubrica)) ? rubrica : null;
       itens.push({ ...numeros, id: linha.ref.alvo_id, rotulo: linha.rotulo, previsto, codigo: rubrica?.rubrica_code });
     }
   }
