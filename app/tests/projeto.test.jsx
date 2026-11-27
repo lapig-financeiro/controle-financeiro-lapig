@@ -480,7 +480,7 @@ describe('página do Projeto', () => {
     previsto.partes = [folha('1', rotuloGrafico, 100), folha('2', 'Peças', 80), folha('3', 'Item sem previsão', 0)];
     saldo.balancete_id = 'bal-1';
     const realizado = 125 + semItem + oculto + divergencia;
-    saldo.rubricas = [{ grupo_code: 'a', rubrica_code: 'a', previsto: 180, realizado, compromissos: 0 }];
+    saldo.rubricas = [{ grupo_code: 'a', rubrica_code: 'a', previsto: 180, realizado, compromissos: 0, saldo_livre: 180 - realizado }];
     execucaoRubricasMock.mockResolvedValue({ dados: {
       balancete_id: 'bal-1',
       rubricas: [{
@@ -506,7 +506,11 @@ describe('página do Projeto', () => {
     const secao = document.querySelector('.projeto__acordeao-rubrica');
     const [grafico, pecas] = secao.querySelectorAll('tbody tr');
     expect(grafico.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe(divergencia || mascarado ? '—' : '125,00');
-    expect(grafico.querySelector('td[data-rotulo="Livre (R$)"]').textContent).toBe(semItem || divergencia || mascarado ? '—' : '−25,00');
+    // Livre por item só quando os itens exibidos somam o livre da rubrica:
+    // a linha oculta com realizado deixaria a soma da tela maior que a do grupo.
+    const livreFecha = !(semItem || oculto || divergencia || mascarado);
+    expect(grafico.querySelector('td[data-rotulo="Livre (R$)"]').textContent).toBe(livreFecha ? '−25,00' : '—');
+    expect(pecas.querySelector('td[data-rotulo="Livre (R$)"]').textContent).toBe(livreFecha ? '80,00' : '—');
     expect(pecas.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe(semItem || divergencia ? '—' : '0,00');
     expect(secao.textContent).not.toContain('Item sem previsão');
     expect(secao.textContent.includes('Realizado sem item atribuído')).toBe(Boolean(semItem));

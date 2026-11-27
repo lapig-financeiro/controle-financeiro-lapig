@@ -1,5 +1,27 @@
 # Subrubricas do plano na v2
 
+## Revisão do Claude e do DeepSeek (27/11, tarde)
+
+O Claude e o DeepSeek V4.1 Flash max (OpenCode, só leitura) revisaram os quatro commits
+(`a26e99b`..`6e19c0e`). Nenhum dos dois achou número errado nos totais. A revisão encontrou um caso em
+que o livre por item não somava o livre do grupo: quando a rubrica tem uma linha oculta (previsto zero ou
+negativo, ou a linha genérica com o nome do grupo) com realizado, os itens visíveis somavam mais que o
+grupo. Agora o livre por item só aparece quando os itens exibidos somam, ao centavo, o `saldo_livre` da
+rubrica em `get_saldo_livre`. Nos outros casos aparece o traço, com a nota que já existia. O teste de tela
+cobre o caso e falha sem a correção. `subrubricas.js` ganhou testes próprios: normalização igual à
+`norm_item`, fechamento, valor sem item, rótulo repetido, CPF mascarado, previsto diferente e
+compromissos de item único.
+
+Ficaram de fora, com motivo:
+- A nota "sem item" para rubrica sem itens no plano não foi acrescentada. Nesse caso a rubrica inteira
+  aparece numa linha própria (ou na linha do grupo), então o valor já está na tela.
+- A máscara de CPF do payload de `get_previsto_vs_realizado` continua só na tela. É a mesma RPC que o site
+  antigo já entrega ao professor do centro. Trocar por uma chave opaca exige migração `*_v2`.
+- A cor do Realizado e do Livre (exceção em `estetica.md`) depende da confirmação do Victor.
+
+Lint, 941 testes da raiz, 408 do app e build verdes. O modo exemplo não traz realizado por item, por isso
+a tela não foi conferida no navegador. A conferência com dados reais depende de login.
+
 ## Execução por item do plano
 
 O acordeão consulta os vínculos registrados no balancete que o site antigo já lê

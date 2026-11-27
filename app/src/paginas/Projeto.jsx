@@ -177,6 +177,24 @@ function numeroFinito(valor) {
   return Number.isFinite(n) ? n : null;
 }
 
+// O livre por item só aparece quando os itens exibidos somam, ao centavo, o
+// livre que get_saldo_livre devolve para a rubrica. Uma linha oculta (previsto
+// zero ou negativo, ou a linha genérica com o nome do grupo) ou um item sem
+// número deixaria a soma da tela diferente do livre do grupo.
+function omitirLivreQueNaoFecha(itensDaRubrica, rubrica) {
+  if (!itensDaRubrica.length) return;
+  const livreRubrica = numeroFinito(rubrica?.saldo_livre);
+  let soma = 0;
+  for (const item of itensDaRubrica) {
+    const livre = numeroFinito(item.saldo_livre);
+    if (livre === null) { soma = null; break; }
+    soma += Math.round(livre * 100);
+  }
+  if (livreRubrica === null || soma !== Math.round(livreRubrica * 100)) {
+    for (const item of itensDaRubrica) item.saldo_livre = null;
+  }
+}
+
 function subrubricasDoPlano(noGrupo, grupo, rubricas, execucao) {
   const rubricasDoGrupo = new Map(rubricas
     .filter((r) => r.grupo_code === grupo.grupo_code)
@@ -195,6 +213,7 @@ function subrubricasDoPlano(noGrupo, grupo, rubricas, execucao) {
       const chave = chaveItemPlano(linha.rotulo);
       ocorrencias.set(chave, (ocorrencias.get(chave) ?? 0) + 1);
     }
+    const inicio = itens.length;
     for (const linha of linhas) {
       const previsto = numeroFinito(linha.valor);
       if (!(previsto > 0)) continue;
@@ -207,6 +226,7 @@ function subrubricasDoPlano(noGrupo, grupo, rubricas, execucao) {
         : linhaCobreSubrubrica && (!detalhe || execucaoConferida(detalhe, rubrica)) ? rubrica : null;
       itens.push({ ...numeros, id: linha.ref.alvo_id, rotulo: linha.rotulo, previsto, codigo: rubrica?.rubrica_code });
     }
+    omitirLivreQueNaoFecha(itens.slice(inicio), rubrica);
   }
   for (const rubrica of rubricasDoGrupo.values()) {
     if (rubrica.rubrica_code !== grupo.grupo_code && numeroFinito(rubrica.previsto) > 0) {

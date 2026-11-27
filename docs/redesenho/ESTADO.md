@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 27/11/2026 (realizado por item no acordeão da v2).
+Última atualização: 27/11/2026 (revisão do acordeão: livre por item só quando fecha com a rubrica).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -37,7 +37,7 @@
 ## Onde está
 | Item | Situação |
 |---|---|
-| Subrubricas do plano | **No ar desde 27/11.** Em Dinheiro, a linha expande os itens com previsão positiva e “Ver origem dos valores” abre o painel com o resumo e os atalhos. O acordeão consulta os vínculos da migração 053 para mostrar o realizado por item e indica quando há lançamentos sem item atribuído. [Relatório](relatorios/subrubricas-plano.md) |
+| Subrubricas do plano | **No ar desde 27/11.** Em Dinheiro, a linha expande os itens com previsão positiva e “Ver origem dos valores” abre o painel com o resumo e os atalhos. O acordeão consulta os vínculos da migração 053 para mostrar o realizado por item e indica quando há lançamentos sem item atribuído. Desde a revisão de 27/11, o livre por item só aparece quando os itens exibidos somam o livre da rubrica. [Relatório](relatorios/subrubricas-plano.md) |
 | Revisão da v2 | **Aplicada em produção em 26/11/2026.** A Análise usa um centro visível nas sugestões, o guia acompanha a navegação e Bolsistas exige permissão por conta. A 076 (commit `986e02a`) passou no ensaio `45911591317` e na aplicação `45913752116` com “Tudo bate”. A API confirmou a concessão exclusiva à conta indicada, as bolsas do escopo para a Análise e a recusa sem login. Interface publicada na mesma janela. [Relatório](relatorios/revisao-v2.md) |
 | Plano, estética, tarefas F0-A/F0-B | escritos e revisados por dois DeepSeek (correções em README §7b) |
 | Identidade do Buriti | Pronta no worktree `redesenho/identidade-buriti`: símbolo em leque, logotipo Inter 600 em curvas, favicon e ícones de instalação, marca no topo, login, manutenção e catálogo do `/v2/`. Faltam a revisão do Claude e o ok do Victor para publicar. [Relatório](relatorios/identidade-buriti.md) |
