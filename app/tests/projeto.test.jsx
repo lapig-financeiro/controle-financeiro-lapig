@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   saldoLivreMock,
+  execucaoRubricasMock,
   situacaoCentroMock,
   repassesMock,
   balancetesMock,
@@ -18,6 +19,7 @@ const {
   usarVigenciaDoContratoMock,
 } = vi.hoisted(() => ({
   saldoLivreMock: vi.fn(),
+  execucaoRubricasMock: vi.fn(),
   situacaoCentroMock: vi.fn(),
   repassesMock: vi.fn(),
   balancetesMock: vi.fn(),
@@ -34,6 +36,7 @@ const {
 
 vi.mock('../src/servicos/dados.js', () => ({
   saldoLivre: saldoLivreMock,
+  execucaoRubricas: execucaoRubricasMock,
   situacaoCentro: situacaoCentroMock,
   repasses: repassesMock,
   balancetes: balancetesMock,
@@ -78,6 +81,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  execucaoRubricasMock.mockReset().mockResolvedValue({ dados: null, erro: null });
   saldoLivreMock.mockReset();
   situacaoCentroMock.mockReset();
   repassesMock.mockReset();
@@ -455,6 +459,57 @@ describe('página do Projeto', () => {
     abrirServicos.click();
     await tick();
     expect(abrirServicos.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it.each([
+    { semItem: 0, oculto: 0, divergencia: 0 },
+    { semItem: 25, oculto: 0, divergencia: 0 },
+    { semItem: 0, oculto: 30, divergencia: 0 },
+    { semItem: 0, oculto: 0, divergencia: 10 },
+  ])('concilia o realizado por item ($semItem sem vínculo, $oculto fora da lista, $divergencia de diferença)', async ({ semItem, oculto, divergencia }) => {
+    configurarPadrao();
+    const saldo = (await saldoLivreMock()).dados;
+    const [pessoal] = (await explicarLivreMock()).dados.partes;
+    const previsto = pessoal.partes[0];
+    const folha = (id, rotulo, valor) => ({
+      id, rotulo, valor, partes: [], tipo: 'legado',
+      ref: { alvo_tabela: 'plano_rubricas', alvo_id: id, campo: 'valor_previsto' },
+    });
+    previsto.partes = [folha('1', 'Material gráfico', 100), folha('2', 'Peças', 80), folha('3', 'Item sem previsão', 0)];
+    saldo.balancete_id = 'bal-1';
+    const realizado = 125 + semItem + oculto + divergencia;
+    saldo.rubricas = [{ grupo_code: 'a', rubrica_code: 'a', previsto: 180, realizado, compromissos: 0 }];
+    execucaoRubricasMock.mockResolvedValue({ dados: {
+      balancete_id: 'bal-1',
+      rubricas: [{
+        rubrica_code: 'a', previsto: 180, realizado,
+        previsto_sem_descricao: 0, realizado_sem_item: semItem,
+        detalhes: [
+          { descricao: 'MATERIAL GRAFICO', previsto: 100, realizado: 125, saldo: -25 },
+          { descricao: 'Peças', previsto: 80, realizado: 0, saldo: 80 },
+          { descricao: 'Item sem previsão', previsto: 0, realizado: oculto, saldo: -oculto },
+        ],
+        contas: [
+          { item: 'Material gráfico', realizado: 125 },
+          { item: 'Item sem previsão', realizado: oculto },
+          ...(semItem ? [{ item: 'Item de um plano anterior', realizado: semItem }] : []),
+        ],
+      }],
+    }, erro: null });
+
+    render(<Projeto projectId="p-1" resumoCentro={{ id: 'p-1', livre: 84300 }} />, document.body);
+    await tick();
+    document.querySelector('.projeto__tabela-rubricas .tabela__gatilho').click();
+    await tick();
+    const secao = document.querySelector('.projeto__acordeao-rubrica');
+    const [grafico, pecas] = secao.querySelectorAll('tbody tr');
+    expect(grafico.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe(divergencia ? '—' : '125,00');
+    expect(grafico.querySelector('td[data-rotulo="Livre (R$)"]').textContent).toBe(semItem || divergencia ? '—' : '−25,00');
+    expect(pecas.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe(semItem || divergencia ? '—' : '0,00');
+    expect(secao.textContent).not.toContain('Item sem previsão');
+    expect(secao.textContent.includes('Realizado sem item atribuído')).toBe(Boolean(semItem));
+    expect(secao.textContent.includes('Realizado vinculado fora das linhas acima')).toBe(Boolean(oculto));
+    expect(secao.textContent.includes('não fechou com os totais')).toBe(Boolean(divergencia));
   });
 
   it('oculta Pasta no Drive para professor mesmo com URL preenchida e acusa divergência na árvore DeOndeVem', async () => {

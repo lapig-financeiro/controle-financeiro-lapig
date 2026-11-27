@@ -59,6 +59,17 @@
   white-space: nowrap;
 }
 
+@media (max-width: 640px) {
+  .projeto__tabela-subrubricas .tabela__td:first-child {
+    text-align: left;
+    font-weight: var(--fw-medio);
+  }
+
+  .projeto__tabela-subrubricas .tabela__td:first-child::before {
+    content: none;
+  }
+}
+
 .valor.projeto__valor-realizado {
   color: var(--cor-problema);
 }

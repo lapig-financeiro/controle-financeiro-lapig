@@ -25,6 +25,7 @@ import {
   balancetes,
   conferirTermoContrato,
   explicarLivre,
+  execucaoRubricas,
   origem,
   pendencias,
   planos,
@@ -36,6 +37,7 @@ import {
   usarVigenciaDoContrato,
 } from '../servicos/dados.js';
 import { projetarBolsas } from '../servicos/projecao.js';
+import { chaveItemPlano, execucaoConferida, execucaoDoItem, indexarExecucaoRubricas } from '../servicos/subrubricas.js';
 import {
   dataCompacta,
   dataCompleta,
@@ -175,31 +177,42 @@ function numeroFinito(valor) {
   return Number.isFinite(n) ? n : null;
 }
 
-function subrubricasDoPlano(noGrupo, grupo, rubricas) {
-  const rubricasFilhas = new Map(rubricas
-    .filter((r) => r.grupo_code === grupo.grupo_code && r.rubrica_code !== grupo.grupo_code)
+function subrubricasDoPlano(noGrupo, grupo, rubricas, execucao) {
+  const rubricasDoGrupo = new Map(rubricas
+    .filter((r) => r.grupo_code === grupo.grupo_code)
     .map((r) => [`rubrica:${r.rubrica_code}:previsto`, r]));
   const itens = [];
   for (const no of noGrupo?.partes ?? []) {
     if (!no.chave?.startsWith('rubrica:') || !no.chave.endsWith(':previsto')) continue;
-    const rubrica = rubricasFilhas.get(no.chave);
+    const rubrica = rubricasDoGrupo.get(no.chave);
+    const detalhe = execucao.get(rubrica?.rubrica_code);
     const linhas = (no.partes ?? []).filter((linha) =>
       linha.ref?.alvo_tabela === 'plano_rubricas' && linha.ref.campo === 'valor_previsto'
     );
-    if (linhas.length) rubricasFilhas.delete(no.chave);
+    if (linhas.length) rubricasDoGrupo.delete(no.chave);
+    const ocorrencias = new Map();
+    for (const linha of linhas) {
+      const chave = chaveItemPlano(linha.rotulo);
+      ocorrencias.set(chave, (ocorrencias.get(chave) ?? 0) + 1);
+    }
     for (const linha of linhas) {
       const previsto = numeroFinito(linha.valor);
       if (!(previsto > 0)) continue;
       if (no.chave === `rubrica:${grupo.grupo_code}:previsto` && linha.rotulo.trim() === grupo.grupo_name.trim()) continue;
-      // O balancete dá execução por código de rubrica. Só a mostramos ao lado
-      // de uma linha do plano quando ela representa toda aquela subrubrica.
-      const numeros = linhas.length === 1 && previsto === numeroFinito(rubrica?.previsto) ? rubrica : null;
-      itens.push({ ...numeros, id: linha.ref.alvo_id, rotulo: linha.rotulo, previsto });
+      const linhaCobreSubrubrica = rubrica?.rubrica_code !== grupo.grupo_code &&
+        linhas.length === 1 && previsto === numeroFinito(rubrica?.previsto);
+      const numeros = detalhe?.itens.size
+        ? execucaoDoItem(detalhe, rubrica, linha, ocorrencias.get(chaveItemPlano(linha.rotulo)) === 1)
+        : linhaCobreSubrubrica && (!detalhe || (execucaoConferida(detalhe, rubrica) &&
+          linha.rotulo.trim() === rubrica.rubrica_name)) ? rubrica : null;
+      itens.push({ ...numeros, id: linha.ref.alvo_id, rotulo: linha.rotulo, previsto, codigo: rubrica?.rubrica_code });
     }
   }
-  for (const rubrica of rubricasFilhas.values()) {
-    if (numeroFinito(rubrica.previsto) > 0) {
-      itens.push({ ...rubrica, id: rubrica.rubrica_code, rotulo: rubrica.rubrica_name });
+  for (const rubrica of rubricasDoGrupo.values()) {
+    if (rubrica.rubrica_code !== grupo.grupo_code && numeroFinito(rubrica.previsto) > 0) {
+      const detalhe = execucao.get(rubrica.rubrica_code);
+      const numeros = !detalhe || (!detalhe.itens.size && execucaoConferida(detalhe, rubrica)) ? rubrica : null;
+      itens.push({ ...numeros, previsto: rubrica.previsto, id: rubrica.rubrica_code, rotulo: rubrica.rubrica_name });
     }
   }
   return itens;
@@ -608,6 +621,7 @@ export function Projeto({
 
   const [painelOrigem, setPainelOrigem] = useState(null);
   const [rubricaExpandida, setRubricaExpandida] = useState(null);
+  const [execucaoSt, setExecucaoSt] = useState({ carregando: false, consultado: false, dados: null, erro: null });
   const [explicarSt, setExplicarSt] = useState({
     carregando: false,
     dados: null,
@@ -644,6 +658,7 @@ export function Projeto({
   const genPendenciasRef = useRef(0);
   const genResolucaoRef = useRef(0);
   const genExplicarRef = useRef(0);
+  const genExecucaoRef = useRef(0);
   const genDocAbaRef = useRef(0);
   const genTermosRef = useRef(0);
 
@@ -659,8 +674,11 @@ export function Projeto({
   }, [projectId, abaInicial]);
 
   useEffect(() => {
+    genExplicarRef.current += 1;
+    genExecucaoRef.current += 1;
     setPainelOrigem(null);
     setRubricaExpandida(null);
+    setExecucaoSt({ carregando: false, consultado: false, dados: null, erro: null });
     setExplicarSt({ carregando: false, dados: null, erro: null, consultado: false });
     setDocAbaSt({ carregandoId: null, erro: null, nota: null, refPendente: null, doc: null });
     setDocsSt(docsVazios(projectId));
@@ -729,6 +747,24 @@ export function Projeto({
       return;
     }
     setSaldoSt({ carregando: false, dados: res.dados, erro: res.erro });
+  }, [projectId]);
+
+  const carregarExecucao = useCallback(async () => {
+    const id = projectId;
+    const gen = ++genExecucaoRef.current;
+    setExecucaoSt({ carregando: true, consultado: false, dados: null, erro: null });
+    let resposta;
+    try {
+      resposta = await execucaoRubricas(id);
+    } catch {
+      resposta = { dados: null, erro: 'Não foi possível consultar o realizado por item do plano.' };
+    }
+    if (!montadoRef.current || projectIdRef.current !== id || gen !== genExecucaoRef.current) return;
+    const { dados, erro } = resposta;
+    setExecucaoSt({
+      carregando: false, consultado: true, erro,
+      dados: dados && { balanceteId: dados.balancete_id, rubricas: indexarExecucaoRubricas(dados.rubricas) },
+    });
   }, [projectId]);
 
   const carregarSituacao = useCallback(async () => {
@@ -1140,6 +1176,13 @@ export function Projeto({
   const alternarRubrica = (grupo) => {
     setRubricaExpandida((atual) => atual === grupo.grupo_code ? null : grupo.grupo_code);
     if (!explicarSt.consultado && !explicarSt.carregando) carregarExplicar();
+    if (!execucaoSt.consultado && !execucaoSt.carregando) carregarExecucao();
+  };
+
+  const recarregarDetalhamento = () => {
+    carregarSaldo();
+    carregarExplicar();
+    carregarExecucao();
   };
 
   const marcarTermoConferido = async (termo) => {
@@ -1825,7 +1868,20 @@ export function Projeto({
   ];
 
   const renderDetalheRubrica = (grupo) => {
-    const itens = subrubricasDoPlano(noDeOrigemDoGrupo(grupo), grupo, rubricas);
+    const balanceteDiverge = execucaoSt.dados && saldoSt.dados &&
+      execucaoSt.dados.balanceteId !== saldoSt.dados.balancete_id;
+    const execucao = (balanceteDiverge ? null : execucaoSt.dados?.rubricas) ?? new Map();
+    const itens = subrubricasDoPlano(noDeOrigemDoGrupo(grupo), grupo, rubricas, execucao);
+    const detalhes = rubricas.filter((r) => r.grupo_code === grupo.grupo_code)
+      .map((r) => ({ rubrica: r, detalhe: execucao.get(r.rubrica_code) }))
+      .filter(({ detalhe }) => detalhe?.itens.size);
+    const conferidos = detalhes.filter(({ rubrica, detalhe }) => execucaoConferida(detalhe, rubrica));
+    const semItem = conferidos.filter(({ detalhe }) => detalhe.temSemItem);
+    const foraDaListaCentavos = conferidos.reduce((soma, { rubrica, detalhe }) => {
+      const exibido = itens.filter((item) => item.codigo === rubrica.rubrica_code)
+        .reduce((total, item) => total + Math.round((numeroFinito(item.realizado) ?? 0) * 100), 0);
+      return soma + detalhe.realizadoVinculadoCentavos - exibido;
+    }, 0);
     return (
       <div class="projeto__acordeao-rubrica">
         <div class="projeto__acordeao-cabecalho">
@@ -1834,7 +1890,7 @@ export function Projeto({
             Ver origem dos valores
           </Botao>
         </div>
-        {explicarSt.carregando ? (
+        {explicarSt.carregando || execucaoSt.carregando ? (
           <Esqueleto variante="linha" linhas={2} rotulo="Carregando subrubricas do plano" />
         ) : (
           <>
@@ -1853,8 +1909,29 @@ export function Projeto({
                 {noDeOrigemDoGrupo(grupo) ? 'Esta rubrica não tem subrubricas com valor previsto.' : 'Detalhamento do plano indisponível.'}
               </p>
             )}
-            {hasBalancete && itens.some((item) => numeroFinito(item.realizado) === null) && (
-              <p class="projeto__nota-discreta">O traço indica valores que o sistema não tem separados por item.</p>
+            {hasBalancete && itens.some((item) =>
+              numeroFinito(item.realizado) === null || numeroFinito(item.saldo_livre) === null
+            ) && (
+              <p class="projeto__nota-discreta">O traço indica valores indisponíveis por item.</p>
+            )}
+            {semItem.length > 0 && (
+              <p class="projeto__nota-discreta">
+                Realizado sem item atribuído: {dinheiro(semItem.reduce((soma, { detalhe }) => soma + detalhe.realizadoSemItem, 0), { centavos: true })}.
+              </p>
+            )}
+            {foraDaListaCentavos !== 0 && (
+              <p class="projeto__nota-discreta">
+                Realizado vinculado fora das linhas acima: {dinheiro(foraDaListaCentavos / 100, { centavos: true })}.
+              </p>
+            )}
+            {detalhes.length !== conferidos.length && (
+              <AvisoFalha mensagem="O detalhamento por item não fechou com os totais da rubrica." aoTentarNovamente={recarregarDetalhamento} />
+            )}
+            {execucaoSt.erro && (
+              <AvisoFalha mensagem={execucaoSt.erro} aoTentarNovamente={carregarExecucao} />
+            )}
+            {balanceteDiverge && (
+              <AvisoFalha mensagem="O balancete mudou durante a consulta." aoTentarNovamente={recarregarDetalhamento} />
             )}
           </>
         )}

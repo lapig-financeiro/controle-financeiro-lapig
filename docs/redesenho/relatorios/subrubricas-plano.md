@@ -1,5 +1,28 @@
 # Subrubricas do plano na v2
 
+## Execução por item do plano
+
+O acordeão consulta os vínculos registrados no balancete que o site antigo já lê
+por `get_previsto_vs_realizado` (migração 053). O encaixe com a árvore da v2 usa o
+código da rubrica e a descrição normalizada, preservando os rótulos da árvore com
+a máscara por perfil. A tela confere o identificador do balancete e os totais da
+rubrica antes de usar os valores por item.
+
+Lançamentos sem item atribuído e valores vinculados que ficaram fora da lista
+aparecem em totais à parte. O livre por item só aparece quando as despesas estão
+atribuídas e não há compromisso a repartir. O saldo livre do grupo continua vindo
+de `get_saldo_livre`.
+
+Conferência só de leitura no 30.068. Os três itens de Material de Consumo têm
+vínculo no balancete. O realizado fecha ao centavo com o grupo e a tela mostra o
+saldo negativo do item que ultrapassou o previsto. Conferido no Edge com dados
+reais em 1280 e 390 px. Nenhuma alteração de banco foi necessária.
+
+Revisão independente pelo OpenCode com DeepSeek V4.1 Flash max. Após a revisão,
+o acordeão passou a conciliar as contas, o realizado vinculado e o valor sem item
+antes de exibir a divisão. Também distingue um código que é subrubrica por si só
+de um item que precisa de vínculo individual. A API recusou consulta sem sessão.
+
 ## Acordeão e painel de origem
 
 Na aba Dinheiro, clicar na linha expande as subrubricas logo abaixo. A tabela

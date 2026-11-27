@@ -458,6 +458,27 @@ export async function saldoLivre(projectId) {
   );
 }
 
+export async function execucaoRubricas(projectId) {
+  const exemplo = await carregarExemplo();
+  // O catálogo sintético usa os totais da rubrica para os itens únicos.
+  if (exemplo) return { dados: null, erro: exemplo.erro || null };
+
+  return chamarRpc(
+    'get_previsto_vs_realizado',
+    { p_project_id: projectId },
+    'Não foi possível consultar o realizado por item do plano.',
+    {
+      validar: (dados) => dados?.has_plano === true && Array.isArray(dados.rubricas) &&
+        dados.rubricas.every((r) => typeof r.rubrica_code === 'string' &&
+          [r.previsto, r.realizado, r.previsto_sem_descricao, r.realizado_sem_item].every(numeroFinitoEstrito) &&
+          Array.isArray(r.detalhes) && r.detalhes.every((item) => typeof item.descricao === 'string' &&
+            [item.previsto, item.realizado, item.saldo].every(numeroFinitoEstrito)) &&
+          Array.isArray(r.contas) && r.contas.every((conta) => numeroFinitoEstrito(conta.realizado) &&
+            (conta.item == null || typeof conta.item === 'string'))),
+    }
+  );
+}
+
 export async function repasses(projectId) {
   const opcoes = {
     validar: (d) => Boolean(d && typeof d === 'object' && Array.isArray(d.parcelas)),
