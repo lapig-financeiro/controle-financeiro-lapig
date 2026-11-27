@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'preact/hooks';
-import { ExternalLink } from 'lucide-preact';
+import { ChevronRight, ExternalLink } from 'lucide-preact';
 import { situacaoDasParcelas } from '../../../frontend/js/planejamento-dinheiro.js';
 import {
   Abas,
@@ -173,6 +173,18 @@ function numeroFinito(valor) {
   if (valor === null || valor === undefined || valor === '') return null;
   const n = typeof valor === 'number' ? valor : Number(valor);
   return Number.isFinite(n) ? n : null;
+}
+
+function subrubricasDoPlano(noGrupo, grupo) {
+  const chavePrevistoDoGrupo = `rubrica:${grupo.grupo_code}:previsto`;
+  return (noGrupo.partes ?? [])
+    .filter((no) => no.chave?.startsWith('rubrica:') && no.chave.endsWith(':previsto'))
+    .flatMap((no) => (no.partes ?? []).filter((linha) =>
+      linha.ref?.alvo_tabela === 'plano_rubricas' &&
+      linha.ref.campo === 'valor_previsto' &&
+      numeroFinito(linha.valor) > 0 &&
+      (no.chave !== chavePrevistoDoGrupo || linha.rotulo.trim() !== grupo.grupo_name.trim())
+    ));
 }
 
 function somarGrupos(grupos) {
@@ -1754,7 +1766,12 @@ export function Projeto({
     {
       chave: 'grupo_name',
       titulo: 'Rubrica',
-      render: (g) => <span class="projeto__rubrica">{g.grupo_name}</span>,
+      render: (g) => (
+        <span class="projeto__rubrica">
+          {g.grupo_name}
+          <ChevronRight aria-hidden="true" />
+        </span>
+      ),
     },
     {
       chave: 'previsto',
@@ -2463,6 +2480,10 @@ export function Projeto({
           (p) => p && typeof p === 'object' && p.chave === `grupo:${grupoPainel.grupo_code}`
         ) || null
       : null;
+  const subrubricasPlano = noGrupoArvore ? subrubricasDoPlano(noGrupoArvore, grupoPainel) : [];
+  const subrubricasReserva = rubricasGrupo.filter((r) =>
+    r.rubrica_code !== grupoPainel.grupo_code && numeroFinito(r.previsto) > 0
+  );
   const grupoTemBolsas = rubricasGrupo.some(
     (rubrica) => rubrica?.compromisso_tipo === 'bolsas'
   );
@@ -2629,11 +2650,11 @@ export function Projeto({
         {grupoTemBolsas && fraseFolhaAtrasadaPainel ? ` ${fraseFolhaAtrasadaPainel}` : null}
       </p>
 
-      {rubricasGrupo.length > 0 && (
+      {subrubricasReserva.length > 0 && (
         <div class="projeto__subrubricas">
           <h3 class="projeto__subtitulo-painel">Rubricas deste grupo</h3>
           <dl class="projeto__lista-definicao">
-            {rubricasGrupo.map((r) => (
+            {subrubricasReserva.map((r) => (
               <div key={r.rubrica_code} class="projeto__par-conta">
                 <div class="projeto__par">
                   <dt>
@@ -2827,6 +2848,24 @@ export function Projeto({
             </div>
           ) : noGrupoArvore ? (
             <>
+              {subrubricasPlano.length > 0 && (
+                <div class="projeto__subrubricas">
+                  <div class="projeto__par">
+                    <h3 class="projeto__subtitulo-painel">Subrubricas do plano</h3>
+                    <span class="projeto__nota-discreta">Previsto</span>
+                  </div>
+                  <dl class="projeto__lista-definicao">
+                    {subrubricasPlano.map((linha) => (
+                      <div key={linha.ref.alvo_id} class="projeto__par">
+                        <dt>{linha.rotulo}</dt>
+                        <dd>
+                          <Valor valor={linha.valor} centavos semOrigem="Valor previsto no plano ativo" />
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
               {grupoTemBolsas && linhaCabeAtePainel()}
               {grupoTemBolsas && linhaFolhaAtrasadaPainel()}
               {/* O painel de uma rubrica abre o caminho até cada folha com

@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 26/11/2026 (revisão local da v2).
+Última atualização: 27/11/2026 (subrubricas do plano na v2).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -37,6 +37,7 @@
 ## Onde está
 | Item | Situação |
 |---|---|
+| Subrubricas do plano | **Implementado localmente em 27/11.** Em Dinheiro, a seta ao lado da rubrica indica que a linha abre um painel. A seção “Subrubricas do plano” reúne os itens com valor previsto positivo no plano ativo, usando as linhas da árvore de origem. [Relatório](relatorios/subrubricas-plano.md) |
 | Revisão da v2 | **Aplicada em produção em 26/11/2026.** A Análise usa um centro visível nas sugestões, o guia acompanha a navegação e Bolsistas exige permissão por conta. A 076 (commit `986e02a`) passou no ensaio `45911591317` e na aplicação `45913752116` com “Tudo bate”. A API confirmou a concessão exclusiva à conta indicada, as bolsas do escopo para a Análise e a recusa sem login. Interface publicada na mesma janela. [Relatório](relatorios/revisao-v2.md) |
 | Plano, estética, tarefas F0-A/F0-B | escritos e revisados por dois DeepSeek (correções em README §7b) |
 | Identidade do Buriti | Pronta no worktree `redesenho/identidade-buriti`: símbolo em leque, logotipo Inter 600 em curvas, favicon e ícones de instalação, marca no topo, login, manutenção e catálogo do `/v2/`. Faltam a revisão do Claude e o ok do Victor para publicar. [Relatório](relatorios/identidade-buriti.md) |

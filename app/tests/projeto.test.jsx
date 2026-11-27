@@ -392,6 +392,56 @@ describe('página do Projeto', () => {
     expect(painelGrupo.textContent).toContain('Realizado — Bolsas');
   });
 
+  it('mostra no painel somente as subrubricas previstas com valor positivo', async () => {
+    configurarPadrao();
+    const resposta = await explicarLivreMock();
+    explicarLivreMock.mockClear();
+    const [pessoal, servicos] = resposta.dados.partes;
+    const folhaPlano = (id, rotulo, valor) => ({
+      chave: `linha:${id}`,
+      rotulo,
+      valor,
+      tipo: 'legado',
+      sinal: 1,
+      ref: { alvo_tabela: 'plano_rubricas', alvo_id: id, campo: 'valor_previsto' },
+      partes: [],
+    });
+    pessoal.partes[0].partes = [
+      folhaPlano('geral', pessoal.rotulo, 750000),
+      folhaPlano('1', 'Apoio de campo', 50000),
+    ];
+    pessoal.partes.push({
+      ...pessoal.partes[0],
+      chave: 'rubrica:a.estag:previsto',
+      rotulo: 'Previsto — Estágio',
+      valor: 0,
+      partes: [folhaPlano('2', 'Estágio', 0)],
+    });
+    const previstoServicos = servicos.partes.find((no) => no.chave.endsWith(':previsto'));
+    previstoServicos.partes = [folhaPlano('3', servicos.rotulo, previstoServicos.valor)];
+
+    render(<Projeto projectId="p-1" resumoCentro={{ id: 'p-1', livre: 84300 }} />, document.body);
+    await tick();
+    const tabela = document.querySelector('.projeto__tabela-rubricas');
+    expect(tabela.textContent).not.toContain('Apoio de campo');
+    expect(explicarLivreMock).not.toHaveBeenCalled();
+
+    const [abrirPessoal, abrirServicos] = tabela.querySelectorAll('.tabela__gatilho');
+    abrirPessoal.click();
+    await tick();
+    const subrubricas = document.querySelector('.painel-lateral .projeto__subrubricas');
+    expect(subrubricas.textContent).toContain('Subrubricas do plano');
+    expect(subrubricas.textContent).toContain('Apoio de campo');
+    expect(subrubricas.textContent).toContain('50.000,00');
+    expect(subrubricas.querySelectorAll('dt')).toHaveLength(1);
+
+    document.querySelector('.painel-lateral__fechar').click();
+    await tick();
+    abrirServicos.click();
+    await tick();
+    expect(document.querySelector('.painel-lateral .projeto__subrubricas')).toBeNull();
+  });
+
   it('oculta Pasta no Drive para professor mesmo com URL preenchida e acusa divergência na árvore DeOndeVem', async () => {
     configurarPadrao({
       grupos: [

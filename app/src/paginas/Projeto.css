@@ -5,7 +5,18 @@
 }
 
 .projeto__rubrica {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--esp-1);
   font-weight: var(--fw-medio);
+}
+
+.projeto__rubrica svg {
+  width: var(--icone-1);
+  height: var(--icone-1);
+  flex: none;
+  color: var(--cor-acento);
+  stroke-width: var(--traco-icone);
 }
 
 .projeto__lista-definicao {
@@ -77,6 +88,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--esp-3);
+}
+
+.projeto__subrubricas dd {
+  white-space: nowrap;
+}
+
+.projeto__subrubricas dt {
+  overflow-wrap: anywhere;
 }
 
 .projeto__subtitulo-painel {
