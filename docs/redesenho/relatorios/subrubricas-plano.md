@@ -1,5 +1,25 @@
 # Subrubricas do plano na v2
 
+## Acordeão e painel de origem
+
+Na aba Dinheiro, clicar na linha expande as subrubricas logo abaixo. A tabela
+mostra previsto, realizado, comprometido e livre. O realizado positivo é vermelho
+e o livre positivo é verde. O filtro mantém apenas itens com previsão positiva.
+Quando o plano descreve vários itens sob o mesmo código, o sistema mostra o
+previsto de cada item. Um traço indica os valores que só existem no total do código.
+
+O botão “Ver origem dos valores” abre o painel com as quatro medidas no topo e a
+origem abaixo. Os atalhos para o plano e o balancete continuam visíveis na árvore.
+O acordeão e o painel aproveitam a mesma consulta, com máscaras e escopo vindos
+da RPC existente.
+
+Na revisão, passaram o lint, os 941 testes da raiz, os 391 do app e o build. O Edge
+foi conferido em 1280 e 390 px no modo exemplo, incluindo o acordeão por teclado,
+as cores, os atalhos de origem e o retorno de foco ao fechar. O centro 30.068 segue
+pendente de conferência em produção.
+
+## Primeira versão
+
 Na aba Dinheiro, uma seta ao lado do nome indica que a rubrica abre o painel lateral.
 Quando há detalhamento, “Subrubricas do plano” mostra o nome e o valor previsto com
 centavos. Entram apenas linhas com valor previsto positivo. Uma linha genérica com o

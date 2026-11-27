@@ -386,13 +386,15 @@ describe('página do Projeto', () => {
     await tick();
     document.querySelector('.abas__painel .tabela__gatilho').click();
     await tick();
+    document.querySelector('.projeto__acordeao-cabecalho button').click();
+    await tick();
     const painelGrupo = document.querySelector('.painel-lateral');
     expect(painelGrupo.textContent).toContain('Pessoal');
     expect(painelGrupo.textContent).toContain('60.000,00');
     expect(painelGrupo.textContent).toContain('Realizado — Bolsas');
   });
 
-  it('mostra no painel somente as subrubricas previstas com valor positivo', async () => {
+  it('expande na tabela somente as subrubricas previstas com valor positivo', async () => {
     configurarPadrao();
     const resposta = await explicarLivreMock();
     explicarLivreMock.mockClear();
@@ -429,17 +431,30 @@ describe('página do Projeto', () => {
     const [abrirPessoal, abrirServicos] = tabela.querySelectorAll('.tabela__gatilho');
     abrirPessoal.click();
     await tick();
-    const subrubricas = document.querySelector('.painel-lateral .projeto__subrubricas');
+    expect(abrirPessoal.getAttribute('aria-expanded')).toBe('true');
+    expect(abrirPessoal.closest('tr').nextElementSibling.id).toBe(abrirPessoal.getAttribute('aria-controls'));
+    const subrubricas = tabela.querySelector('.projeto__acordeao-rubrica');
     expect(subrubricas.textContent).toContain('Subrubricas do plano');
     expect(subrubricas.textContent).toContain('Apoio de campo');
     expect(subrubricas.textContent).toContain('50.000,00');
-    expect(subrubricas.querySelectorAll('dt')).toHaveLength(1);
+    expect(subrubricas.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(subrubricas.querySelector('td[data-rotulo="Realizado (R$)"]').textContent).toBe('—');
+    expect(document.querySelector('.painel-lateral')).toBeNull();
 
+    subrubricas.querySelector('button').click();
+    await tick();
+    expect(document.querySelector('.painel-lateral').textContent).toContain('Origem dos valores');
     document.querySelector('.painel-lateral__fechar').click();
     await tick();
+
     abrirServicos.click();
     await tick();
-    expect(document.querySelector('.painel-lateral .projeto__subrubricas')).toBeNull();
+    expect(abrirPessoal.getAttribute('aria-expanded')).toBe('false');
+    expect(abrirServicos.getAttribute('aria-expanded')).toBe('true');
+    expect(tabela.querySelector('.projeto__tabela-subrubricas')).toBeNull();
+    abrirServicos.click();
+    await tick();
+    expect(abrirServicos.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('oculta Pasta no Drive para professor mesmo com URL preenchida e acusa divergência na árvore DeOndeVem', async () => {
@@ -1038,6 +1053,8 @@ describe('página do Projeto', () => {
     await tick();
     document.querySelector('.abas__painel .tabela__gatilho').click();
     await tick();
+    document.querySelector('.projeto__acordeao-cabecalho button').click();
+    await tick();
     const painelGrupo = document.querySelector('.painel-lateral');
     expect(painelGrupo.querySelector('.aviso-falha').textContent).toContain('indisponível');
     expect(painelGrupo.textContent).toContain('Compromissos de bolsas incluídos até o fim da vigência.');
@@ -1251,6 +1268,8 @@ describe('página do Projeto', () => {
     document.querySelector('.painel-lateral__fechar').click();
     await tick();
     document.querySelector('.abas__painel .tabela__gatilho').click();
+    await tick();
+    document.querySelector('.projeto__acordeao-cabecalho button').click();
     await tick();
     const painelGrupoAusente = document.querySelector('.painel-lateral');
     expect(painelGrupoAusente.querySelector('.aviso-falha')).toBeNull();

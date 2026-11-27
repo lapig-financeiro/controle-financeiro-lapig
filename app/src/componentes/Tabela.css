@@ -86,6 +86,15 @@
   text-align: right;
 }
 
+.tabela__detalhe > td {
+  padding: 0;
+  border-bottom: var(--borda);
+}
+
+.tabela__detalhe:last-child > td {
+  border-bottom: 0;
+}
+
 @media (max-width: 640px) {
   .tabela__cabecalho {
     position: absolute;
@@ -101,6 +110,8 @@
 
   .tabela,
   .tabela__corpo,
+  .tabela__detalhe,
+  .tabela__detalhe > td,
   .tabela__linha,
   .tabela__td {
     display: block;

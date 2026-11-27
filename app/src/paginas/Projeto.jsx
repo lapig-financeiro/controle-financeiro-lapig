@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'preact/hooks';
-import { ChevronRight, ExternalLink } from 'lucide-preact';
+import { ChevronDown, ExternalLink, FileText } from 'lucide-preact';
 import { situacaoDasParcelas } from '../../../frontend/js/planejamento-dinheiro.js';
 import {
   Abas,
@@ -175,16 +175,58 @@ function numeroFinito(valor) {
   return Number.isFinite(n) ? n : null;
 }
 
-function subrubricasDoPlano(noGrupo, grupo) {
-  const chavePrevistoDoGrupo = `rubrica:${grupo.grupo_code}:previsto`;
-  return (noGrupo.partes ?? [])
-    .filter((no) => no.chave?.startsWith('rubrica:') && no.chave.endsWith(':previsto'))
-    .flatMap((no) => (no.partes ?? []).filter((linha) =>
-      linha.ref?.alvo_tabela === 'plano_rubricas' &&
-      linha.ref.campo === 'valor_previsto' &&
-      numeroFinito(linha.valor) > 0 &&
-      (no.chave !== chavePrevistoDoGrupo || linha.rotulo.trim() !== grupo.grupo_name.trim())
-    ));
+function subrubricasDoPlano(noGrupo, grupo, rubricas) {
+  const rubricasFilhas = new Map(rubricas
+    .filter((r) => r.grupo_code === grupo.grupo_code && r.rubrica_code !== grupo.grupo_code)
+    .map((r) => [`rubrica:${r.rubrica_code}:previsto`, r]));
+  const itens = [];
+  for (const no of noGrupo?.partes ?? []) {
+    if (!no.chave?.startsWith('rubrica:') || !no.chave.endsWith(':previsto')) continue;
+    const rubrica = rubricasFilhas.get(no.chave);
+    const linhas = (no.partes ?? []).filter((linha) =>
+      linha.ref?.alvo_tabela === 'plano_rubricas' && linha.ref.campo === 'valor_previsto'
+    );
+    if (linhas.length) rubricasFilhas.delete(no.chave);
+    for (const linha of linhas) {
+      const previsto = numeroFinito(linha.valor);
+      if (!(previsto > 0)) continue;
+      if (no.chave === `rubrica:${grupo.grupo_code}:previsto` && linha.rotulo.trim() === grupo.grupo_name.trim()) continue;
+      // O balancete dá execução por código de rubrica. Só a mostramos ao lado
+      // de uma linha do plano quando ela representa toda aquela subrubrica.
+      const numeros = linhas.length === 1 && previsto === numeroFinito(rubrica?.previsto) ? rubrica : null;
+      itens.push({ ...numeros, id: linha.ref.alvo_id, rotulo: linha.rotulo, previsto });
+    }
+  }
+  for (const rubrica of rubricasFilhas.values()) {
+    if (numeroFinito(rubrica.previsto) > 0) {
+      itens.push({ ...rubrica, id: rubrica.rubrica_code, rotulo: rubrica.rubrica_name });
+    }
+  }
+  return itens;
+}
+
+const METRICAS_RUBRICA = [
+  { chave: 'previsto', rotulo: 'Previsto', origem: 'Valor previsto no plano ativo' },
+  { chave: 'realizado', rotulo: 'Realizado', origem: 'Valor registrado no balancete' },
+  { chave: 'compromissos', rotulo: 'Comprometido', origem: 'Compromissos registrados' },
+  { chave: 'saldo_livre', rotulo: 'Livre', origem: 'Previsto menos realizado e comprometido' },
+];
+
+function valorRubrica(item, metrica, hasBalancete, centavos = false, semPrefixo = true) {
+  const { chave, origem } = metrica;
+  const valor = chave === 'previsto' || hasBalancete ? numeroFinito(item[chave]) : null;
+  return (
+    <Valor
+      valor={valor}
+      centavos={centavos}
+      semPrefixo={semPrefixo}
+      alinhadoDireita={semPrefixo}
+      problema={chave === 'saldo_livre' && valor < 0}
+      className={valor > 0 ? `projeto__valor-${chave}` : ''}
+      motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
+      semOrigem={origem}
+    />
+  );
 }
 
 function somarGrupos(grupos) {
@@ -565,6 +607,7 @@ export function Projeto({
   const projecaoTituloId = useId();
 
   const [painelOrigem, setPainelOrigem] = useState(null);
+  const [rubricaExpandida, setRubricaExpandida] = useState(null);
   const [explicarSt, setExplicarSt] = useState({
     carregando: false,
     dados: null,
@@ -617,6 +660,7 @@ export function Projeto({
 
   useEffect(() => {
     setPainelOrigem(null);
+    setRubricaExpandida(null);
     setExplicarSt({ carregando: false, dados: null, erro: null, consultado: false });
     setDocAbaSt({ carregandoId: null, erro: null, nota: null, refPendente: null, doc: null });
     setDocsSt(docsVazios(projectId));
@@ -1091,6 +1135,11 @@ export function Projeto({
     if (!explicarSt.consultado && !explicarSt.carregando) {
       carregarExplicar();
     }
+  };
+
+  const alternarRubrica = (grupo) => {
+    setRubricaExpandida((atual) => atual === grupo.grupo_code ? null : grupo.grupo_code);
+    if (!explicarSt.consultado && !explicarSt.carregando) carregarExplicar();
   };
 
   const marcarTermoConferido = async (termo) => {
@@ -1762,6 +1811,57 @@ export function Projeto({
     contextoDinheiro = 'abrindo documento…';
   }
 
+  const noDeOrigemDoGrupo = (grupo) => explicarSt.dados?.partes?.find(
+    (no) => no?.chave === `grupo:${grupo.grupo_code}`
+  );
+  const colunasSubrubricas = [
+    { chave: 'rotulo', titulo: 'Subrubrica' },
+    ...METRICAS_RUBRICA.map((metrica) => ({
+      chave: metrica.chave,
+      titulo: `${metrica.rotulo} (R$)`,
+      alinhamento: 'direita',
+      render: (item) => valorRubrica(item, metrica, hasBalancete, true),
+    })),
+  ];
+
+  const renderDetalheRubrica = (grupo) => {
+    const itens = subrubricasDoPlano(noDeOrigemDoGrupo(grupo), grupo, rubricas);
+    return (
+      <div class="projeto__acordeao-rubrica">
+        <div class="projeto__acordeao-cabecalho">
+          <h3 class="projeto__subtitulo-painel">Subrubricas do plano</h3>
+          <Botao variante="secundario" icone={FileText} aria-haspopup="dialog" onClick={() => abrirPainelGrupo(grupo)}>
+            Ver origem dos valores
+          </Botao>
+        </div>
+        {explicarSt.carregando ? (
+          <Esqueleto variante="linha" linhas={2} rotulo="Carregando subrubricas do plano" />
+        ) : (
+          <>
+            {itens.length > 0 && (
+              <Tabela
+                className="projeto__tabela-subrubricas"
+                colunas={colunasSubrubricas}
+                dados={itens}
+                legenda={`Subrubricas de ${grupo.grupo_name}`}
+              />
+            )}
+            {explicarSt.erro ? (
+              <AvisoFalha mensagem="Não foi possível consultar os itens do plano." aoTentarNovamente={carregarExplicar} />
+            ) : itens.length === 0 && (
+              <p class="projeto__nota-discreta">
+                {noDeOrigemDoGrupo(grupo) ? 'Esta rubrica não tem subrubricas com valor previsto.' : 'Detalhamento do plano indisponível.'}
+              </p>
+            )}
+            {hasBalancete && itens.some((item) => numeroFinito(item.realizado) === null) && (
+              <p class="projeto__nota-discreta">O traço indica valores que o sistema não tem separados por item.</p>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
   const colunasGrupos = [
     {
       chave: 'grupo_name',
@@ -1769,74 +1869,16 @@ export function Projeto({
       render: (g) => (
         <span class="projeto__rubrica">
           {g.grupo_name}
-          <ChevronRight aria-hidden="true" />
+          <ChevronDown aria-hidden="true" />
         </span>
       ),
     },
-    {
-      chave: 'previsto',
-      titulo: 'Previsto (R$)',
+    ...METRICAS_RUBRICA.map((metrica) => ({
+      chave: metrica.chave,
+      titulo: `${metrica.rotulo} (R$)`,
       alinhamento: 'direita',
-      render: (g) => (
-        <Valor
-          valor={g.previsto}
-          centavos={false}
-          semPrefixo
-          alinhadoDireita
-          semOrigem="Previsto do grupo no plano ativo (clique na linha para ver a origem)"
-        />
-      ),
-    },
-    {
-      chave: 'realizado',
-      titulo: 'Realizado (R$)',
-      alinhamento: 'direita',
-      render: (g) => (
-        <Valor
-          valor={hasBalancete ? g.realizado : null}
-          centavos={false}
-          semPrefixo
-          alinhadoDireita
-          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-          semOrigem="Realizado do grupo no balancete (clique na linha para ver a origem)"
-        />
-      ),
-    },
-    {
-      chave: 'compromissos',
-      titulo: 'Comprometido (R$)',
-      alinhamento: 'direita',
-      render: (g) => (
-        <Valor
-          valor={hasBalancete ? g.compromissos : null}
-          centavos={false}
-          semPrefixo
-          alinhadoDireita
-          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-          semOrigem="Compromissos do grupo (clique na linha para ver a origem)"
-        />
-      ),
-    },
-    {
-      chave: 'saldo_livre',
-      titulo: 'Livre (R$)',
-      alinhamento: 'direita',
-      render: (g) => (
-        <Valor
-          valor={hasBalancete ? g.saldo_livre : null}
-          centavos={false}
-          semPrefixo
-          problema={
-            hasBalancete &&
-            numeroFinito(g.saldo_livre) !== null &&
-            Number(g.saldo_livre) < 0
-          }
-          alinhadoDireita
-          motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-          semOrigem="Saldo livre do grupo (clique na linha para ver a origem)"
-        />
-      ),
-    },
+      render: (grupo) => valorRubrica(grupo, metrica, hasBalancete),
+    })),
     {
       chave: 'cabe_ate',
       titulo: 'Cabe até',
@@ -1886,11 +1928,16 @@ export function Projeto({
           {avisosRpc.map((aviso, idx) => (
             <AvisoFalha key={idx} mensagem={aviso} />
           ))}
+          <p class="projeto__nota-discreta projeto__instrucao-rubricas">
+            Abra uma rubrica para ver as subrubricas e conferir a origem dos valores.
+          </p>
           <Tabela
             colunas={colunasGrupos}
             dados={grupos}
             chaveLinha={(g) => g.grupo_code}
-            onClicarLinha={(g) => abrirPainelGrupo(g)}
+            onClicarLinha={alternarRubrica}
+            chaveExpandida={rubricaExpandida}
+            renderDetalhe={renderDetalheRubrica}
             rotuloLinha={(g) => `Abrir detalhe de ${g.grupo_name}`}
             legenda="Execução por grupo de rubrica"
             className="projeto__tabela-rubricas"
@@ -2474,16 +2521,7 @@ export function Projeto({
   const rubricasGrupo = grupoPainel
     ? rubricas.filter((r) => r.grupo_code === grupoPainel.grupo_code)
     : [];
-  const noGrupoArvore =
-    grupoPainel && Array.isArray(explicarSt.dados?.partes)
-      ? explicarSt.dados.partes.find(
-          (p) => p && typeof p === 'object' && p.chave === `grupo:${grupoPainel.grupo_code}`
-        ) || null
-      : null;
-  const subrubricasPlano = noGrupoArvore ? subrubricasDoPlano(noGrupoArvore, grupoPainel) : [];
-  const subrubricasReserva = rubricasGrupo.filter((r) =>
-    r.rubrica_code !== grupoPainel.grupo_code && numeroFinito(r.previsto) > 0
-  );
+  const noGrupoArvore = grupoPainel ? noDeOrigemDoGrupo(grupoPainel) : null;
   const grupoTemBolsas = rubricasGrupo.some(
     (rubrica) => rubrica?.compromisso_tipo === 'bolsas'
   );
@@ -2584,59 +2622,7 @@ export function Projeto({
     </>
   );
 
-  const renderPainelGrupoDetalheFallback = (grupo) => (
-    <>
-      <dl class="projeto__lista-definicao">
-        <div class="projeto__par">
-          <dt>Previsto</dt>
-          <dd>
-            <Valor
-              valor={grupo.previsto}
-              centavos
-              semOrigem="Previsto do grupo na composição reserva"
-            />
-          </dd>
-        </div>
-        <div class="projeto__par">
-          <dt>Realizado</dt>
-          <dd>
-            <Valor
-              valor={hasBalancete ? grupo.realizado : null}
-              centavos
-              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-              semOrigem="Realizado do grupo na composição reserva"
-            />
-          </dd>
-        </div>
-        <div class="projeto__par">
-          <dt>Comprometido</dt>
-          <dd>
-            <Valor
-              valor={hasBalancete ? grupo.compromissos : null}
-              centavos
-              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-              semOrigem="Comprometido do grupo na composição reserva"
-            />
-          </dd>
-        </div>
-        <div class="projeto__par">
-          <dt>Livre</dt>
-          <dd>
-            <Valor
-              valor={hasBalancete ? grupo.saldo_livre : null}
-              centavos
-              problema={
-                hasBalancete &&
-                numeroFinito(grupo.saldo_livre) !== null &&
-                Number(grupo.saldo_livre) < 0
-              }
-              motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-              semOrigem="Saldo livre do grupo na composição reserva"
-            />
-          </dd>
-        </div>
-      </dl>
-
+  const renderCoberturaGrupo = (grupo) => (
       <p class="texto-corrido projeto__cobertura">
         {grupo.compromissos_cobertura === 'bolsas'
           ? 'Compromissos de bolsas incluídos até o fim da vigência.'
@@ -2647,64 +2633,7 @@ export function Projeto({
             : grupo.compromissos_cobertura === 'bolsas e taxas'
               ? 'Compromissos de bolsas e taxas da fundação e da universidade ainda a reter contam como comprometidos.'
               : 'Nenhum compromisso futuro descontado neste grupo além do já realizado.'}
-        {grupoTemBolsas && fraseFolhaAtrasadaPainel ? ` ${fraseFolhaAtrasadaPainel}` : null}
       </p>
-
-      {subrubricasReserva.length > 0 && (
-        <div class="projeto__subrubricas">
-          <h3 class="projeto__subtitulo-painel">Rubricas deste grupo</h3>
-          <dl class="projeto__lista-definicao">
-            {subrubricasReserva.map((r) => (
-              <div key={r.rubrica_code} class="projeto__par-conta">
-                <div class="projeto__par">
-                  <dt>
-                    {r.rubrica_name}{' '}
-                    <span class="projeto__codigo-discreto">({r.rubrica_code})</span>
-                  </dt>
-                  <dd>
-                    <Valor
-                      valor={hasBalancete ? r.saldo_livre : null}
-                      centavos
-                      problema={
-                        hasBalancete &&
-                        numeroFinito(r.saldo_livre) !== null &&
-                        Number(r.saldo_livre) < 0
-                      }
-                      motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-                      semOrigem="Saldo livre da rubrica na composição reserva"
-                    />
-                  </dd>
-                </div>
-                <span class="projeto__formula">
-                  Previsto{' '}
-                  <Valor
-                    valor={r.previsto}
-                    centavos
-                    semOrigem="Previsto da rubrica na composição reserva"
-                  />{' '}
-                  · Realizado{' '}
-                  <Valor
-                    valor={hasBalancete ? r.realizado : null}
-                    centavos
-                    motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-                    semOrigem="Realizado da rubrica na composição reserva"
-                  />{' '}
-                  · Comprometido{' '}
-                  <Valor
-                    valor={hasBalancete ? r.compromissos : null}
-                    centavos
-                    motivoSemDado={hasBalancete ? 'sem dado' : 'sem balancete'}
-                    semOrigem="Comprometido da rubrica na composição reserva"
-                  />
-                </span>
-                {r.compromisso_tipo === 'bolsas' && linhaCabeAtePainel()}
-                {r.compromisso_tipo === 'bolsas' && linhaFolhaAtrasadaPainel()}
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
-    </>
   );
 
   const arvoreDados = explicarSt.dados;
@@ -2838,63 +2767,42 @@ export function Projeto({
           ) : null
         )}
 
-        {painelOrigem?.modo === 'grupo' && grupoPainel && (
-          explicarSt.carregando ? (
-            <DeOndeVem carregando />
-          ) : explicarSt.erro ? (
-            <div class="projeto__painel-reserva">
-              <AvisoFalha mensagem={explicarSt.erro} aoTentarNovamente={carregarExplicar} />
-              {renderPainelGrupoDetalheFallback(grupoPainel)}
-            </div>
-          ) : noGrupoArvore ? (
-            <>
-              {subrubricasPlano.length > 0 && (
-                <div class="projeto__subrubricas">
-                  <div class="projeto__par">
-                    <h3 class="projeto__subtitulo-painel">Subrubricas do plano</h3>
-                    <span class="projeto__nota-discreta">Previsto</span>
-                  </div>
-                  <dl class="projeto__lista-definicao">
-                    {subrubricasPlano.map((linha) => (
-                      <div key={linha.ref.alvo_id} class="projeto__par">
-                        <dt>{linha.rotulo}</dt>
-                        <dd>
-                          <Valor valor={linha.valor} centavos semOrigem="Valor previsto no plano ativo" />
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
+        {grupoPainel && (
+          <>
+            <dl class="projeto__resumo-rubrica">
+              {METRICAS_RUBRICA.map((metrica) => (
+                <div key={metrica.chave}>
+                  <dt>{metrica.rotulo}</dt>
+                  <dd>{valorRubrica(grupoPainel, metrica, hasBalancete, true, false)}</dd>
                 </div>
+              ))}
+            </dl>
+            {grupoTemBolsas && linhaCabeAtePainel()}
+            {grupoTemBolsas && linhaFolhaAtrasadaPainel()}
+            {!noGrupoArvore && renderCoberturaGrupo(grupoPainel)}
+
+            <div class="projeto__origem-rubrica">
+              <h3 class="projeto__subtitulo-painel">Origem dos valores</h3>
+              {explicarSt.carregando ? (
+                <DeOndeVem carregando />
+              ) : explicarSt.erro ? (
+                <AvisoFalha mensagem={explicarSt.erro} aoTentarNovamente={carregarExplicar} />
+              ) : noGrupoArvore ? (
+                <DeOndeVem
+                  arvore={noGrupoArvore}
+                  valorEsperado={numeroFinito(grupoPainel.saldo_livre)}
+                  abrirAteDocumentos
+                  mostrarDestaque={false}
+                />
+              ) : explicarSt.consultado && (
+                <p class="projeto__nota-discreta">
+                  {arvoreRaizNula && arvoreDados.motivo
+                    ? `Origem indisponível (${arvoreDados.motivo}).`
+                    : 'A origem detalhada desta rubrica não está disponível.'}
+                </p>
               )}
-              {grupoTemBolsas && linhaCabeAtePainel()}
-              {grupoTemBolsas && linhaFolhaAtrasadaPainel()}
-              {/* O painel de uma rubrica abre o caminho até cada folha com
-                  documento: o "Ver no balancete/plano ›" mora na folha e,
-                  fechado atrás de setas, a pessoa não chegava ao documento.
-                  As bolsas do comprometido (sem arquivo) ficam fechadas. */}
-              <DeOndeVem
-                arvore={noGrupoArvore}
-                valorEsperado={numeroFinito(grupoPainel.saldo_livre)}
-                abrirAteDocumentos
-              />
-            </>
-          ) : arvoreRaizNula ? (
-            <div class="projeto__painel-reserva">
-              <p class="projeto__nota-discreta">
-                {arvoreDados.motivo
-                  ? `Sem árvore detalhada (${arvoreDados.motivo}); exibindo a composição por rubrica.`
-                  : 'Sem árvore detalhada; exibindo a composição por rubrica.'}
-              </p>
-              {renderPainelGrupoDetalheFallback(grupoPainel)}
             </div>
-          ) : explicarSt.consultado ? (
-            <div class="projeto__painel-reserva">
-              <p class="projeto__nota-discreta">
-                A árvore detalhada deste grupo não está disponível; exibindo a composição por rubrica.
-              </p>
-              {renderPainelGrupoDetalheFallback(grupoPainel)}
-            </div>
-          ) : null
+          </>
         )}
       </PainelLateral>
 

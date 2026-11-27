@@ -498,7 +498,7 @@ describe('Projeto — projeção das bolsas na tela', () => {
     expect(secao.getAttribute('aria-labelledby')).toBe(titulo.id);
   });
 
-  it('repete o "Cabe até" no painel "Rubricas deste grupo", na rubrica de bolsas', async () => {
+  it('mantém o "Cabe até" no painel de origem da rubrica de bolsas', async () => {
     configurarPadrao();
     explicarLivreMock.mockResolvedValue({ dados: null, erro: 'Sem árvore no teste.' });
     render(<Projeto projectId="p-1" hoje={HOJE} />, document.body);
@@ -509,9 +509,11 @@ describe('Projeto — projeção das bolsas na tela', () => {
     ).find((linha) => linha.textContent.includes('Pessoal'));
     linhaPessoal.querySelector('.tabela__gatilho').click();
     await tick();
+    document.querySelector('.projeto__acordeao-cabecalho button').click();
+    await tick();
 
     const painel = document.querySelector('.painel-lateral');
-    expect(painel.textContent).toContain('Rubricas deste grupo');
+    expect(painel.textContent).toContain('Origem dos valores');
     expect(painel.textContent).toContain('Cabe até');
     expect(painel.textContent).toContain('mar/27');
     expect(painel.textContent).toContain('abr/27 depende do desembolso 4');
@@ -588,6 +590,8 @@ describe('Projeto — projeção das bolsas na tela', () => {
       document.querySelectorAll('.abas__painel tbody tr')
     ).find((linha) => linha.textContent.includes('Pessoal'));
     linhaPessoal.querySelector('.tabela__gatilho').click();
+    await tick();
+    document.querySelector('.projeto__acordeao-cabecalho button').click();
     await tick();
 
     const painel = document.querySelector('.painel-lateral');
@@ -822,14 +826,12 @@ describe('Projeto — projeção das bolsas na tela', () => {
     ).find((linha) => linha.textContent.includes('Pessoal'));
     linhaPessoal.querySelector('.tabela__gatilho').click();
     await tick();
+    document.querySelector('.projeto__acordeao-cabecalho button').click();
+    await tick();
 
     const painel = document.querySelector('.painel-lateral');
     expect(painel.textContent).toContain('Cabe até');
-    const rubricaBolsas = Array.from(
-      painel.querySelectorAll('.projeto__subrubricas .projeto__par-conta')
-    ).find((item) => item.textContent.includes('a.bolsas'));
-    expect(rubricaBolsas).toBeTruthy();
-    const fraseRubrica = rubricaBolsas.querySelector('.projeto__folha-atrasada-painel');
+    const fraseRubrica = painel.querySelector('.projeto__folha-atrasada-painel');
     expect(fraseRubrica).toBeTruthy();
     expect(fraseRubrica.textContent).toContain('20.000,00');
     expect(fraseRubrica.textContent).toContain(
@@ -863,6 +865,8 @@ describe('Projeto — projeção das bolsas na tela', () => {
       document.querySelectorAll('.abas__painel tbody tr')
     ).find((linha) => linha.textContent.includes('Pessoal'));
     linhaPessoal.querySelector('.tabela__gatilho').click();
+    await tick();
+    document.querySelector('.projeto__acordeao-cabecalho button').click();
     await tick();
 
     const painel = document.querySelector('.painel-lateral');

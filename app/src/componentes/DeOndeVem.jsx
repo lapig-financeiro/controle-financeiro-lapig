@@ -164,6 +164,7 @@ export function DeOndeVem({
   carregadorMammoth = undefined,
   abrirTudoAte = ABRE_TUDO_ATE,
   abrirAteDocumentos = false,
+  mostrarDestaque = true,
 }) {
   const baseId = useId();
   const [abertos, setAbertos] = useState({});
@@ -474,20 +475,22 @@ export function DeOndeVem({
 
   return (
     <div class="de-onde-vem">
-      <Destaque
-        rotulo={arvore.rotulo}
-        valor={
-          <Valor
-            valor={arvore.valor}
-            centavos
-            problema={Number(arvore.valor) < 0}
-            origem={raizEhFolhaComRef ? { resumo: arvore.rotulo } : null}
-            onOrigem={raizEhFolhaComRef ? () => consultarFolha(arvore, '0') : null}
-            semOrigem={raizEhFolhaComRef ? '' : 'Total calculado pelas partes abaixo'}
-          />
-        }
-        contexto={contextoRaiz || undefined}
-      />
+      {mostrarDestaque && (
+        <Destaque
+          rotulo={arvore.rotulo}
+          valor={
+            <Valor
+              valor={arvore.valor}
+              centavos
+              problema={Number(arvore.valor) < 0}
+              origem={raizEhFolhaComRef ? { resumo: arvore.rotulo } : null}
+              onOrigem={raizEhFolhaComRef ? () => consultarFolha(arvore, '0') : null}
+              semOrigem={raizEhFolhaComRef ? '' : 'Total calculado pelas partes abaixo'}
+            />
+          }
+          contexto={contextoRaiz || undefined}
+        />
+      )}
 
       {raizEhFolhaComRef && textoDoAtalho(arvore) && (
         <button

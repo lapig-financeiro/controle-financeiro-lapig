@@ -41,6 +41,10 @@
 **Números nunca são verdes.** Valor positivo é `--cor-texto`. Só o negativo que significa problema vai para
 `--cor-problema`. O verde é da interação; a situação de um centro é dita pela Situação (ponto + palavra).
 
+**Exceção na aba Dinheiro (27/11):** na tabela de rubricas, nas subrubricas expandidas e no resumo do painel
+de origem, a coluna Realizado usa `--cor-problema` para valores positivos e Livre usa `--cor-acento` para
+valores positivos. O nome de cada medida permanece visível, inclusive no celular.
+
 Gráficos (no máximo 4 séries): `--grafico-1 #2E7D3B`, `--grafico-2 #9CC9A2`, `--grafico-3 #A87F1E`,
 `--grafico-4 #6F726B`. Séries claras (`--grafico-2`) levam contorno de 1,5 px em `--grafico-1` para
 chegar a 3:1. Previsto = clara com contorno; realizado = cheia (`--grafico-1`). Grade em `--cor-borda`, sem
