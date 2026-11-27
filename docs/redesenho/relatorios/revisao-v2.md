@@ -37,4 +37,6 @@ O DeepSeek fez uma segunda leitura dos ajustes e não apontou impedimento. A vol
 
 ## Resultado do ensaio
 
-O [ensaio 45911591317](https://github.com/CofreIA/cofre-lapig/actions/runs/45911591317) passou na cópia da produção com a migração do commit `986e02a`. As seis contas ganharam o campo de permissão desligado. O total de contas ficou igual, nenhuma outra tabela teve linhas alteradas e a 076 não abriu acesso sem login. A aplicação e a concessão em produção aguardam autorização.
+O [ensaio 45911591317](https://github.com/CofreIA/cofre-lapig/actions/runs/45911591317) passou na cópia da produção com a migração do commit `986e02a`. As seis contas ganharam o campo de permissão desligado. O total de contas ficou igual, nenhuma outra tabela teve linhas alteradas e a 076 não abriu acesso sem login.
+
+Em 26/11/2026, o [cofre aplicou a migração](https://github.com/CofreIA/cofre-lapig/actions/runs/45913752116) e confirmou que o efeito bateu com o ensaio. A API confirmou uma única conta autorizada após a concessão. A consulta de bolsas para a Análise continuou respondendo para uma conta sem permissão para o pedido, com equipes nulas e caixas vazias. A API recusou a consulta sem login.
