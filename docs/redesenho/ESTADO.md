@@ -5,7 +5,7 @@
 > [`estetica.md`](estetica.md). Atualize este arquivo **a cada passo concluído ou decisão nova**, no mesmo
 > commit do passo. Análises e retratos com dados reais ficam fora do git, em `NãoColocarNoGit/repensar-2026-11-18/`.
 
-Última atualização: 27/11/2026 (revisão do acordeão: livre por item só quando fecha com a rubrica).
+Última atualização: 27/11/2026 (datas de fim de 10 bolsas corrigidas no banco: as 8 do 30.110 terminam em 31/10/2027, porque o 3º remanejamento põe a última parcela em out/2027, e o livre de bolsas fica em R$ 88.400, a "cota resto" do documento; as 2 bolsas antigas do 30.068 que terminavam em 30/04/2026 passam a terminar em 31/03/2026, como na planilha da FUNAPE).
 
 > **Nomes das frentes:** F3-A, F3-B e F3-C foram pedidos urgentes do Victor (termos do contrato, pedido de bolsas,
 > motivo dos selos). Elas **não são** a "F3 — Leitura automática" do plano (README §6), que segue por fazer.
@@ -299,9 +299,7 @@ Os achados das revisões da 063 entraram na 064 e os da 064 na 065 (ver o cabeç
   R$ 5.200 e 5 pessoas fora do plano do 30.111.
 - Teto opcional para a tarifa bancária virar "atenção" (hoje vale qualquer valor, desde que o negativo caiba nela).
 - Possível duplicidade 30.XXX × 30.121 "TJGO" (Kalungas).
-- 30.110: 5 bolsas ativas terminam em 01/11/2027 (as outras 3 em 12/11/2027, fim do contrato). Novembro de 2027
-  é pago? Se não, o fim vira 31/10/2027 (pede a planilha da FUNAPE do centro). E 1 bolsa ativa sem centro
-  (`project_id` nulo, criada em 05/06/2026): de qual centro é, ou cancelar?
+- 1 bolsa ativa sem centro (`project_id` nulo, criada em 05/06/2026): de qual centro é, ou cancelar?
 - Contratos que não estão na pasta do Drive: 30.068, 30.088, 30.100, 30.110, 30.117 e 78.215 (pendências abertas).
 
 ## Retorno de uso
